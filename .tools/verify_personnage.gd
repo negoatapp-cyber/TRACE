@@ -29,7 +29,7 @@ func run() -> void:
 		Input.action_press("push"); await frames(40)
 		check(String(perso.anim.current_animation).to_lower().contains("run"), "joue la course en courant")
 		Input.action_release("push"); Input.action_release("move_forward"); await frames(60)
-		check(String(perso.anim.current_animation).to_lower().contains("idle"), "revient à l'attente à l'arrêt")
+		check(perso.anim.current_animation == perso._clips["attente"], "revient à l'attente à l'arrêt")
 	else:
 		check(p.get_node("Visual/Body").visible, "sans fichier, la capsule reste")
 	print("RESULT failures=", failures)

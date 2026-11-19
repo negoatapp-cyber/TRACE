@@ -47,7 +47,7 @@ func _mettre_a_l_echelle() -> void:
 	var premier := true
 	for mi in modele.find_children("*", "MeshInstance3D", true, false):
 		var m := mi as MeshInstance3D
-		var b := m.global_transform * m.get_aabb()
+		var b := (modele.global_transform.affine_inverse() * m.global_transform) * m.get_aabb()
 		boite = b if premier else boite.merge(b)
 		premier = false
 	if premier or boite.size.y <= 0.0:
@@ -55,6 +55,9 @@ func _mettre_a_l_echelle() -> void:
 	var s := TAILLE / boite.size.y
 	modele.scale = Vector3.ONE * s
 	modele.position = Vector3(-(boite.position.x + boite.size.x * 0.5) * s, -boite.position.y * s, -(boite.position.z + boite.size.z * 0.5) * s)
+	# Le modèle de Meshy regarde vers +Z ; le joueur regarde vers -Z.
+	modele.rotation.y = PI
+	modele.position = modele.position.rotated(Vector3.UP, PI)
 
 
 func _trouver_animations(n: Node) -> AnimationPlayer:
@@ -71,7 +74,7 @@ func _ranger_clips() -> void:
 	var mots := {
 		"attente": ["idle", "stand", "breath"],
 		"marche": ["walk"],
-		"course": ["run", "jog", "sprint"],
+		"course": ["running", "run", "jog", "sprint"],
 		"saut": ["jump"],
 	}
 	for nom in anim.get_animation_list():
