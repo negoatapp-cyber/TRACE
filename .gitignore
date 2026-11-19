@@ -1,7 +1,7 @@
 # Godot 4
 .godot/
 /android/
-export_presets.cfg
+# export_presets.cfg (gardé : seulement le préréglage Web, sans secret)
 *.tmp
 
 # Moteur et outils de validation locaux

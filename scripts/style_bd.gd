@@ -4,10 +4,13 @@ extends Node
 ##  - pose l'encrage (traits sur silhouettes et arêtes) sur tout l'écran ;
 ##  - règle le ciel et l'ambiance pour des aplats francs.
 ## Les objets créés plus tard (graffitis, Loums importé…) sont convertis à leur arrivée.
+## Crée aussi le nœud Habillage (mobilier urbain, scripts/habillage.gd).
 ## Touche B : comparer avec le rendu d'origine.
 
 const TOON := preload("res://shaders/bd_toon.gdshader")
-const ENCRAGE := preload("res://shaders/bd_encrage.gdshader")
+const ENCRAGE_PATH := "res://shaders/bd_encrage.gdshader"
+const ENCRAGE_WEB_PATH := "res://shaders/bd_encrage_web.gdshader"  # sans normales : mode Compatibilité (web, mobile)
+const HABILLAGE := preload("res://scripts/habillage.gd")
 
 ## Ciel et ambiance en mode BD.
 @export var ciel_haut := Color(0.16, 0.48, 0.93)
@@ -46,6 +49,7 @@ func basculer(oui: bool) -> void:
 
 
 func _convertir_tout() -> void:
+	_poser_habillage()
 	RenderingServer.global_shader_parameter_set("bd_actif", 1.0)
 	_ambiance(true)
 	_convertir(get_tree().current_scene if get_tree().current_scene else get_parent())
@@ -89,8 +93,13 @@ func _remplacer(mi: MeshInstance3D, s: int, m: Material) -> void:
 		t.shader = TOON
 		t.set_shader_parameter("couleur", std.albedo_color)
 		if std.albedo_texture:
+			# Matériau peint (Loums, modèles importés) : on garde sa texture, réduite à quelques
+			# teintes, sans le grain du décor (qui « glisserait » sur un corps en mouvement).
 			t.set_shader_parameter("texture_couleur", std.albedo_texture)
 			t.set_shader_parameter("avec_texture", true)
+			t.set_shader_parameter("paliers", 12.0)
+			t.set_shader_parameter("grain", 0.0)
+			t.set_shader_parameter("personnage", true)
 		_toon[m] = t
 	_origine[[mi, s]] = m
 	if actif:
@@ -104,6 +113,19 @@ func _poser(mi: MeshInstance3D, s: int, m: Material) -> void:
 		mi.set_surface_override_material(s, m)
 
 
+## Le mobilier urbain (habillage.gd) se pose après la construction du quartier.
+func _poser_habillage() -> void:
+	var scene := get_tree().current_scene if get_tree().current_scene else get_parent()
+	var q := scene.get_node_or_null("Quartier")
+	if q == null or scene.has_node("Habillage"):
+		return
+	var hab := Node3D.new()
+	hab.set_script(HABILLAGE)
+	hab.name = "Habillage"
+	hab.set("quartier", q)
+	scene.add_child(hab)
+
+
 ## Un quad plein écran attaché à la caméra porte l'encrage.
 func _poser_encrage() -> void:
 	var cam := get_viewport().get_camera_3d()
@@ -114,7 +136,8 @@ func _poser_encrage() -> void:
 	q.size = Vector2(1, 1)
 	_encrage.mesh = q
 	var m := ShaderMaterial.new()
-	m.shader = ENCRAGE
+	var compat := RenderingServer.get_current_rendering_method() == "gl_compatibility"
+	m.shader = load(ENCRAGE_WEB_PATH if compat else ENCRAGE_PATH)
 	_encrage.material_override = m
 	_encrage.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_encrage.extra_cull_margin = 16384.0

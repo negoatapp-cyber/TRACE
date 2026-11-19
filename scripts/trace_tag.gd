@@ -65,6 +65,31 @@ func _sprite(t: Texture2D, c: Color, ordre: int) -> Sprite3D:
 	return sp
 
 
+var _doigt := Vector2(-1, -1)
+var _index_doigt := -1
+
+
+## Sur téléphone : le doigt peint (sauf sur les boutons, et GRAFF pose le tag).
+func _input(event: InputEvent) -> void:
+	if not TouchControls.actif:
+		return
+	if event is InputEventScreenTouch:
+		if event.pressed and not (TouchControls.call("_bouton_sous", event.position) as Array).is_empty():
+			return
+		if event.pressed and _index_doigt < 0:
+			_index_doigt = event.index
+			_doigt = event.position
+			appuye = true
+			get_viewport().set_input_as_handled()
+		elif not event.pressed and event.index == _index_doigt:
+			_index_doigt = -1
+			appuye = false
+			get_viewport().set_input_as_handled()
+	elif event is InputEventScreenDrag and event.index == _index_doigt:
+		_doigt = event.position
+		get_viewport().set_input_as_handled()
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		appuye = event.pressed
@@ -82,7 +107,7 @@ func _unhandled_input(event: InputEvent) -> void:
 func point_souris() -> Vector2:
 	if camera == null:
 		return Vector2(-1, -1)
-	var m := get_viewport().get_mouse_position()
+	var m := _doigt if TouchControls.actif else get_viewport().get_mouse_position()
 	var o := camera.project_ray_origin(m)
 	var d := camera.project_ray_normal(m)
 	var plan := Plane(global_transform.basis.z, global_position)

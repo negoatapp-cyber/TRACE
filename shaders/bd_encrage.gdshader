@@ -8,8 +8,14 @@ render_mode unshaded, blend_mix, depth_draw_never, depth_test_disabled, cull_dis
 
 uniform sampler2D tex_prof : hint_depth_texture, filter_nearest;
 uniform sampler2D tex_norm : hint_normal_roughness_texture, filter_nearest;
-uniform vec4 encre : source_color = vec4(0.09, 0.06, 0.13, 1.0);
-uniform float epaisseur = 1.7;      // en pixels (rapportés à 900 px de haut)
+uniform sampler2D tex_ecran : hint_screen_texture, filter_linear;
+uniform vec4 encre : source_color = vec4(0.16, 0.08, 0.22, 1.0);
+// Le trait prend la couleur de ce qu'il borde, assombrie (comme un trait de BD colorisé),
+// mêlée à une encre violette. 0 = encre pure, 1 = couleur de la surface assombrie.
+uniform float trait_colore = 0.65;
+uniform float assombri = 0.38;
+uniform float opacite = 0.9;
+uniform float epaisseur = 1.3;      // en pixels (rapportés à 900 px de haut)
 uniform float seuil_prof = 0.06;    // sensibilité aux ruptures de profondeur
 uniform float seuil_angle = 0.40;   // 0,4 ≈ arêtes de plus de 50°
 uniform float pres = 0.4;           // distance (m) en deçà de laquelle on n'encre pas (évite la caméra)
@@ -41,11 +47,14 @@ void fragment() {
 	float b = texture(tex_prof, SCREEN_UV + dy).r;
 	float ref = max(max(c, max(g, d)), max(h, b));
 	float bord = 0.0;
+	// Sur un personnage (marqué par une rugosité de 0,5), seul le contour extérieur est encré :
+	// pas de trait sur le visage ni dans les plis des vêtements.
+	bool perso = texture(tex_norm, SCREEN_UV).a < 0.75 && c > 0.0;
 	if (ref > 0.0) {
 		float lap = max(abs(g + d - 2.0 * c), abs(h + b - 2.0 * c));
-		bord = step(seuil_prof, lap / ref);
+		bord = step(perso ? seuil_prof * 6.0 : seuil_prof, lap / ref);
 		// Arêtes : seulement entre pixels de géométrie (le ciel n'a pas de normale).
-		if (c > 0.0 && g > 0.0 && d > 0.0 && h > 0.0 && b > 0.0) {
+		if (!perso && c > 0.0 && g > 0.0 && d > 0.0 && h > 0.0 && b > 0.0) {
 			vec3 n = normale(SCREEN_UV);
 			float m = min(min(dot(n, normale(SCREEN_UV - dx)), dot(n, normale(SCREEN_UV + dx))),
 					min(dot(n, normale(SCREEN_UV - dy)), dot(n, normale(SCREEN_UV + dy))));
@@ -54,6 +63,17 @@ void fragment() {
 		float z = distance_vue(ref, SCREEN_UV, INV_PROJECTION_MATRIX);
 		bord *= smoothstep(pres, pres + 0.3, z) * (1.0 - smoothstep(loin * 0.55, loin, z));
 	}
-	ALBEDO = encre.rgb;
-	ALPHA = bord * encre.a;
+	// Couleur du trait : la plus sombre des surfaces voisines, assombrie, teintée d'encre.
+	vec3 c0 = texture(tex_ecran, SCREEN_UV).rgb;
+	vec3 c1 = texture(tex_ecran, SCREEN_UV - dx * 2.0).rgb;
+	vec3 c2 = texture(tex_ecran, SCREEN_UV + dx * 2.0).rgb;
+	vec3 c3 = texture(tex_ecran, SCREEN_UV - dy * 2.0).rgb;
+	vec3 c4 = texture(tex_ecran, SCREEN_UV + dy * 2.0).rgb;
+	vec3 sombre = c0;
+	for (int k = 0; k < 4; k++) {
+		vec3 ck = k == 0 ? c1 : (k == 1 ? c2 : (k == 2 ? c3 : c4));
+		if (dot(ck, vec3(0.3, 0.59, 0.11)) < dot(sombre, vec3(0.3, 0.59, 0.11))) sombre = ck;
+	}
+	ALBEDO = mix(encre.rgb, sombre * assombri, trait_colore);
+	ALPHA = bord * encre.a * opacite;
 }

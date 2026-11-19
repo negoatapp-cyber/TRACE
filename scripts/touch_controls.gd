@@ -1,6 +1,7 @@
 extends CanvasLayer
 ## Contrôles tactiles (autoload « TouchControls »), actifs seulement sur un écran tactile.
-## Joystick flottant à gauche, glisser à droite pour la caméra, boutons d'action.
+## Paysage : joystick de direction flottant à DROITE, boutons d'action à GAUCHE,
+## glisser dans la zone libre (gauche / milieu) pour la caméra.
 ## Tout passe par les mêmes actions que le clavier et la manette (voir input_setup.gd).
 ## Pour tester sur PC : lancer avec `-- --touch`, ou ouvrir la version web avec `?touch`.
 
@@ -15,18 +16,19 @@ var _enfonces := {}          ## nom du bouton -> nombre de doigts dessus
 const JOY_RAYON := 95.0
 const SENS_CAMERA := 0.0055
 
-## [nom, libellé, action, maintenu, dx, dy, rayon]  (dx/dy depuis le coin bas-droit ; dy<0 = vers le haut)
-## Les petits boutons du haut sont donnés depuis le coin haut-droit (dy>0).
+## [nom, libellé, action, maintenu, dx, dy, rayon]
+## dx > 0 : depuis le bord gauche ; dx < 0 : depuis le bord droit.
+## dy < 0 : depuis le bas (vers le haut) ; dy > 0 : depuis le haut.
 const BOUTONS := [
-	["jump", "SAUT", "jump", false, -150, -150, 82],
-	["push", "COURIR", "push", true, -330, -85, 56],
-	["board", "PLANCHE", "toggle_board", false, -330, -225, 56],
-	["flip", "FLIP", "kickflip", false, -175, -330, 50],
-	["shove", "SHOVE", "shove_it", false, -335, -355, 50],
-	["grind", "GRIND", "grind", true, -480, -225, 50],
-	["graff", "GRAFF", "graff", true, -480, -85, 50],
-	["couleur", "COUL.", "graff_color", false, -620, -85, 40],
-	["fouille", "FOUILLE", "fouiller", false, -620, -215, 40],
+	["jump", "SAUT", "jump", false, 150, -150, 82],
+	["push", "COURIR", "push", true, 330, -85, 56],
+	["board", "PLANCHE", "toggle_board", false, 330, -225, 56],
+	["flip", "FLIP", "kickflip", false, 175, -330, 50],
+	["shove", "SHOVE", "shove_it", false, 335, -355, 50],
+	["grind", "GRIND", "grind", true, 480, -225, 50],
+	["graff", "GRAFF", "graff", true, 480, -85, 50],
+	["couleur", "COUL.", "graff_color", false, 620, -85, 40],
+	["fouille", "FOUILLE", "fouiller", false, 620, -215, 40],
 	["reset", "DÉPART", "reset", false, -60, 55, 34],
 	["bd", "BD", "style_bd", false, -150, 55, 34],
 ]
@@ -50,7 +52,8 @@ func _ready() -> void:
 func _centre(b: Array) -> Vector2:
 	var s := _canvas.size
 	var dy: float = b[5]
-	return Vector2(s.x + float(b[4]), (s.y + dy) if dy < 0.0 else dy)
+	var dx: float = b[4]
+	return Vector2(dx if dx > 0.0 else s.x + dx, (s.y + dy) if dy < 0.0 else dy)
 
 
 func _bouton_sous(p: Vector2) -> Array:
@@ -65,6 +68,7 @@ func _input(event: InputEvent) -> void:
 		return
 	if event is InputEventScreenTouch:
 		if event.pressed:
+			_plein_ecran_paysage()
 			_debut(event.index, event.position)
 		else:
 			_fin(event.index)
@@ -80,7 +84,7 @@ func _debut(i: int, p: Vector2) -> void:
 		_doigts[i] = {"role": "bouton", "b": b}
 		_enfonces[b[0]] = int(_enfonces.get(b[0], 0)) + 1
 		_envoyer(b[2], true)
-	elif p.x < _canvas.size.x * 0.45 and not _joy_vu:
+	elif p.x > _canvas.size.x * 0.55 and not _joy_vu:
 		_doigts[i] = {"role": "joy"}
 		_joy_origine = p
 		_joy_pos = p
@@ -120,6 +124,25 @@ func _fin(i: int) -> void:
 	_canvas.queue_redraw()
 
 
+var _plein_ecran_fait := false
+
+
+## Au premier toucher (un geste de l'utilisateur est exigé) : plein écran, puis verrouillage en paysage.
+func _plein_ecran_paysage() -> void:
+	if _plein_ecran_fait or not OS.has_feature("web"):
+		return
+	_plein_ecran_fait = true
+	JavaScriptBridge.eval("""
+		(function(){
+			var c = document.documentElement;
+			var r = c.requestFullscreen ? c.requestFullscreen() : Promise.resolve();
+			Promise.resolve(r).then(function(){
+				if (screen.orientation && screen.orientation.lock) { screen.orientation.lock('landscape').catch(function(){}); }
+			}).catch(function(){});
+		})();
+	""")
+
+
 func _envoyer(action: String, presse: bool) -> void:
 	var ev := InputEventAction.new()
 	ev.action = action
@@ -149,6 +172,11 @@ func _axe(action: String, force: float) -> void:
 
 func _dessiner() -> void:
 	var police := ThemeDB.fallback_font
+	if _canvas.size.y > _canvas.size.x:
+		var m := "Tourne ton téléphone en paysage"
+		var w0 := police.get_string_size(m, HORIZONTAL_ALIGNMENT_LEFT, -1, 40).x
+		_canvas.draw_string(police, Vector2((_canvas.size.x - w0) * 0.5, _canvas.size.y * 0.5), m,
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 40, Color(1, 1, 1, 0.9))
 	for b in BOUTONS:
 		var c := _centre(b)
 		var r: float = b[6]

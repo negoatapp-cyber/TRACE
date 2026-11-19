@@ -6,6 +6,7 @@ render_mode cull_disabled;
 // Rendu BD : lumière en trois tons (bd_lumiere) et cadres de fenêtres encrés.
 
 #include "res://shaders/bd_lumiere.gdshaderinc"
+#include "res://shaders/bd_grain.gdshaderinc"
 
 uniform vec3 mur : source_color = vec3(0.86, 0.84, 0.79);
 uniform vec3 garde_corps : source_color = vec3(0.78, 0.76, 0.72);
@@ -24,11 +25,13 @@ uniform float pignon_max = 0.0;
 uniform vec3 encre : source_color = vec3(0.12, 0.09, 0.16);
 
 varying vec3 ln;
+varying vec3 monde;
 // Au-delà de cette distance (m), les cadres encrés s'effacent pour éviter le fourmillement.
 uniform float encre_portee = 90.0;
 
 void vertex() {
 	ln = NORMAL;
+	monde = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 }
 
 float h21(vec2 p) {
@@ -90,6 +93,18 @@ void fragment() {
 		} else {
 			col = mc * 0.9;
 		}
+	}
+	if (bd_actif > 0.5 && abs(ln.y) < 0.5) {
+		// Coulures : sous certaines fenêtres, une traînée plus sombre descend sur l'enduit.
+		vec2 g2 = vec2(UV.x / travee, (UV.y - rdc) / etage);
+		float r3 = h21(floor(g2) + vec2(7.0, 3.0));
+		float fx = fract(g2.x);
+		if (r3 > 0.55 && fx > 0.42 && fx < 0.46 + 0.1 * r3 && fract(g2.y) < 0.3 && col == mc) {
+			col *= 0.86;
+		}
+		// Pied de façade sali par la pluie et les passages.
+		if (UV.y < 1.2) col *= 0.88;
+		col *= bd_texture(monde);
 	}
 	ALBEDO = col;
 	ROUGHNESS = rough;
