@@ -23,5 +23,5 @@ export_presets.cfg
 /*.png.import
 
 # Modèles 3D des personnages (licence Meshy privée) : gardés en local, jamais dans le dépôt public
-assets/personnages/*.glb
-assets/personnages/*.fbx
+assets/personnages/*
+!assets/personnages/LISEZMOI.md
