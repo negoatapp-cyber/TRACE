@@ -3,6 +3,7 @@
 [ext_resource type="Script" path="res://scripts/player_controller.gd" id="1_player"]
 [ext_resource type="Script" path="res://scripts/skate_controller.gd" id="2_skate"]
 [ext_resource type="Script" path="res://scripts/skateboard.gd" id="3_board"]
+[ext_resource type="Script" path="res://scripts/personnage.gd" id="4_perso"]
 
 [sub_resource type="CapsuleShape3D" id="Shape_body"]
 radius = 0.32
@@ -53,6 +54,9 @@ mesh = SubResource("Mesh_cap")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.085, 0)
 visible = false
 script = ExtResource("3_board")
+
+[node name="Personnage" type="Node3D" parent="Visual"]
+script = ExtResource("4_perso")
 
 [node name="SkateController" type="Node" parent="."]
 script = ExtResource("2_skate")
