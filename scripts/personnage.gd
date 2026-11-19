@@ -217,6 +217,7 @@ func _process(delta: float) -> void:
 	_t += delta
 	_posture(delta)
 	etat = _etat()
+	_placer_sur_vehicule()
 	if pose:
 		_composer(delta)
 	if anim == null:
@@ -236,8 +237,53 @@ func _process(delta: float) -> void:
 		anim.speed_scale = 1.0
 
 
+## Le véhicule conduit (scooter, voiture), lu dans la conduite de n°2 ; null à pied.
+var _conduite: Node
+func _vehicule() -> Node3D:
+	if _conduite == null or not is_instance_valid(_conduite):
+		var scene := get_tree().current_scene
+		_conduite = scene.find_child("Conduite", true, false) if scene else null
+	if _conduite == null:
+		return null
+	return _conduite.get("actuel") as Node3D
+
+
+## Assis : sur la selle du scooter, au volant de la voiture (à gauche). Le corps reste visible.
+const SIEGE := {"scooter": Vector3(0, -0.2, 0.12), "voiture": Vector3(-0.38, -0.42, 0.15)}
+func _placer_sur_vehicule() -> void:
+	var v := _vehicule()
+	var vis := get_parent() as Node3D
+	if v == null:
+		if position.x != 0.0 or position.z != 0.0:
+			position.x = 0.0
+			position.z = 0.0
+		return
+	if vis and not vis.visible:
+		vis.visible = true
+	var siege: Vector3 = SIEGE.get(str(v.get("type")), SIEGE.scooter)
+	position = siege
+	rotation = Vector3.ZERO
+
+
+## Assis : cuisses à l'horizontale, tibias vers le bas, mains en avant sur le guidon ou le volant.
+func _assis(c: Dictionary) -> void:
+	c.haut = 1.0
+	c.bas = 1.0
+	c.fondu = 0.15
+	var scooter := str(_vehicule().get("type")) == "scooter" if _vehicule() else true
+	c.buste = Vector3(0.12 if scooter else 0.0, 0, 0)
+	c.tete = Vector3(-0.1, 0, 0)
+	c.jg = [Vector3(0.12, -0.15, 1.0), Vector3(0.04, -1, 0.12 if scooter else 0.35)]
+	c.jd = [Vector3(-0.12, -0.15, 1.0), Vector3(-0.04, -1, 0.12 if scooter else 0.35)]
+	var ecart := 0.32 if scooter else 0.2
+	c.bg = [Vector3(ecart, -0.45, 0.85), Vector3(0.1, -0.15, 1.0)]
+	c.bd = [Vector3(-ecart, -0.45, 0.85), Vector3(-0.1, -0.15, 1.0)]
+
+
 ## Ce que fait le corps en ce moment.
 func _etat() -> String:
+	if _vehicule() != null:
+		return "assis"
 	var v := Vector2(_joueur.velocity.x, _joueur.velocity.z).length()
 	if _joueur.chute_t >= 0.0:
 		return "chute"
@@ -289,6 +335,8 @@ func _composer(delta: float) -> void:
 			_geste_bombe(c)
 		"decroche", "accroche":
 			_main_planche(c)
+		"assis":
+			_assis(c)
 	if _bombe:
 		_bombe.visible = etat == "bombe"
 	# Les poids passent de 0 à 1 en 0,2 s (fondu avec la marche) ; plus vite pour grimper.

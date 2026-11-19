@@ -27,7 +27,7 @@ func run() -> void:
 	p.global_position = sc.global_position + Vector3(0.9, 0.3, 0); p.velocity = Vector3.ZERO
 	await frames(30)
 	await appui("monter")
-	check(c.actuel == sc and not p.visual.visible, "monte sur le scooter")
+	check(c.actuel == sc and p.visual.visible and p.get_node("Visual/Personnage").etat == "assis", "monte sur le scooter, assis dessus")
 	var depart: Vector3 = sc.global_position
 	Input.action_press("move_forward"); await frames(120); Input.action_release("move_forward")
 	check(sc.global_position.distance_to(depart) > 8.0, "le scooter avance (%.1f m, %.0f km/h)" % [sc.global_position.distance_to(depart), sc.vitesse * 3.6])

@@ -1,7 +1,7 @@
 extends Node
 ## TRACE — conduire la voiture et le scooter (conversation n°2, à la demande de Louma).
-## Script indépendant : il ne modifie pas les fichiers du joueur. Pendant la conduite, Loums est caché
-## et suit le véhicule ; sa caméra (player_controller.gd) suit donc le véhicule, de dos.
+## Script indépendant : il ne modifie pas les fichiers du joueur. Pendant la conduite, Loums suit le véhicule,
+## assis dessus (la pose assise est dans personnage.gd, n°1) ; sa caméra suit donc le véhicule, de dos.
 ##
 ##   V                monter / descendre (à côté d'un véhicule, à l'arrêt ou presque)
 ##   Z / S            accélérer / freiner, puis marche arrière
@@ -136,7 +136,6 @@ func _monter(v: Vehicule) -> void:
 	actuel = v
 	joueur.set_physics_process(false)
 	joueur.velocity = Vector3.ZERO
-	(joueur.get("visual") as Node3D).visible = false
 	_hud_joueur(false)
 	var bras := joueur.get_node_or_null("CameraPivot/SpringArm3D") as SpringArm3D
 	if bras:
@@ -279,8 +278,9 @@ func _hud(v: Vehicule) -> void:
 			lignes += "\nROUE ARRIÈRE  %.1f s" % roue_arriere
 		elif record > 0.0:
 			lignes += "\nrecord roue arrière : %.1f s" % record
-		lignes += "\nZ / S gaz · Q / D tourner · Espace roue arrière · V descendre"
-	else:
+		if not TouchControls.actif:
+			lignes += "\nZ / S gaz · Q / D tourner · Espace roue arrière · V descendre"
+	elif not TouchControls.actif:
 		lignes += "\nZ / S gaz · Q / D tourner · Espace frein à main · V descendre"
 	_texte.text = lignes
 
