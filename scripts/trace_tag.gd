@@ -32,6 +32,7 @@ var camera: Camera3D
 var appuye := false           ## bouton de peinture maintenu (souris, ou forcé par les tests)
 var curseur := Vector2(-1, -1)   ## position du jet sur l'image (px), -1 si hors du tag
 var depose := 0.0             ## peinture dépensée (pour la réserve de la bombe)
+var age := 0.0                ## depuis quand on est devant le tag (Loums secoue la bombe au début)
 
 
 func preparer(tag: Image, teinte: Color, largeur: float) -> void:
@@ -103,6 +104,7 @@ func vers_monde(p: Vector2) -> Vector3:
 
 
 func _process(delta: float) -> void:
+	age += delta
 	if camera:
 		curseur = point_souris()
 	peindre(delta)

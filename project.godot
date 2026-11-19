@@ -40,5 +40,9 @@ bd_ombre={
 }
 bd_trame={
 "type": "float",
-"value": 0.12
+"value": 0.06
+}
+bd_grain={
+"type": "float",
+"value": 0.18
 }

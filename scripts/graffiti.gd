@@ -64,6 +64,7 @@ func _physics_process(delta: float) -> void:
 		return
 	_message_t = maxf(0.0, _message_t - delta)
 	if _trace:
+		_suivre_le_geste(delta)
 		_texte.text = "TRACE TON TAG   ·   clic gauche maintenu pour peindre\nG ou Entrée : poser   ·   Échap : annuler"
 		_barre.visible = false
 		return
@@ -188,7 +189,7 @@ func _commencer_trace() -> void:
 	var centre := _trace.global_position
 	# Loums se met un peu à gauche du tag, face au mur, le bras vers la peinture.
 	var sol := Vector3(g.x, float(g.y), g.z)
-	_joueur.global_position = sol + n * 0.7 - droite * 0.95
+	_joueur.global_position = sol + n * 0.55 - droite * 0.38
 	_joueur.velocity = Vector3.ZERO
 	_joueur.visual.rotation.y = atan2(n.x, n.z)
 	_joueur.set_physics_process(false)
@@ -196,13 +197,38 @@ func _commencer_trace() -> void:
 	_camera_trace = Camera3D.new()
 	_camera_trace.fov = 55.0
 	add_child(_camera_trace)
-	_camera_trace.global_position = centre + n * 1.15 + droite * 0.2 + Vector3.UP * 0.05
+	_camera_trace.global_position = centre + n * 1.45 + droite * 0.55 + Vector3.UP * 0.2
 	_camera_trace.look_at(centre, Vector3.UP)
 	_camera_trace.make_current()
 	_trace.camera = _camera_trace
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_trace.fini.connect(_finir_trace)
 	_trace.annule.connect(_sortir_trace)
+
+
+## Pendant le tracé, Loums se déplace le long du mur pour garder la bombe à portée de main :
+## il se tient un peu à gauche du jet, à 55 cm du mur.
+func _suivre_le_geste(delta: float) -> void:
+	var g := _trace_g
+	var n := Vector3(g.nx, 0, g.nz)
+	var droite := (-n).cross(Vector3.UP).normalized()
+	var jet := point_du_jet()
+	var cote := (jet - Vector3(g.x, 0, g.z)).dot(droite)
+	var but := Vector3(g.x, float(g.y), g.z) + n * 0.55 + droite * (cote - 0.38)
+	var pos := _joueur.global_position
+	pos.x = lerpf(pos.x, but.x, minf(1.0, 4.0 * delta))
+	pos.z = lerpf(pos.z, but.z, minf(1.0, 4.0 * delta))
+	_joueur.global_position = pos
+
+
+## Où la bombe vise en ce moment (dans le monde) : le curseur, ou le centre du tag.
+func point_du_jet() -> Vector3:
+	if _trace == null:
+		return Vector3.ZERO
+	var c := _trace.curseur
+	if c.x < 0.0 or c.y < 0.0:
+		return _trace.global_position
+	return _trace.vers_monde(c)
 
 
 func _finir_trace(img: Image, q: Dictionary) -> void:

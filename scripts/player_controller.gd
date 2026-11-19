@@ -13,6 +13,13 @@ enum Mode { WALK, SKATE }
 @export var jump_velocity := 4.2
 @export var mouse_sensitivity := 0.003
 @export var stick_camera_speed := 2.5
+## Caméra qui se replace d'elle-même derrière Loums quand il avance (à pied ou en skate).
+## Elle reste libre à l'arrêt, et pendant `camera_pause` secondes après qu'on l'a tournée à la main.
+@export var camera_suivi := 3.0      ## vitesse de recalage (plus grand = plus collé au dos)
+@export var camera_pause := 1.2      ## délai (s) avant que le suivi reprenne après un mouvement manuel
+@export var camera_vitesse_min := 1.0  ## en dessous (m/s), pas de suivi : on peut tourner autour de lui
+
+var _camera_libre := 0.0
 
 var mode: Mode = Mode.WALK
 var spawn_position := Vector3.ZERO
@@ -55,6 +62,7 @@ func _ready() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		_camera_libre = camera_pause
 		camera_pivot.rotate_y(-event.relative.x * mouse_sensitivity)
 		spring_arm.rotation.x = clampf(
 			spring_arm.rotation.x - event.relative.y * mouse_sensitivity, -1.2, 0.25)
@@ -111,9 +119,32 @@ func _process(delta: float) -> void:
 	camera_pivot.global_position = camera_pivot.global_position.lerp(target, minf(1.0, 12.0 * delta))
 	var cam := Input.get_vector("cam_left", "cam_right", "cam_up", "cam_down")
 	camera_pivot.rotate_y(-cam.x * stick_camera_speed * delta)
+	if absf(cam.x) > 0.1 or absf(cam.y) > 0.1:
+		_camera_libre = camera_pause
+	_suivre_de_dos(delta)
 	spring_arm.rotation.x = clampf(spring_arm.rotation.x - cam.y * stick_camera_speed * delta, -1.2, 0.25)
 	_animate_board()
 	_update_hud()
+
+
+## Replace doucement la caméra dans le dos de Loums quand il se déplace : plus il va vite, plus elle suit.
+func _suivre_de_dos(delta: float) -> void:
+	_camera_libre = maxf(0.0, _camera_libre - delta)
+	if _camera_libre > 0.0 or _mantling:
+		return
+	var v := absf(skate.speed) if mode == Mode.SKATE else Vector2(velocity.x, velocity.z).length()
+	if v < camera_vitesse_min:
+		return
+	var cap := visual.rotation.y
+	if mode == Mode.SKATE and skate.speed < 0.0:
+		cap += PI  # en fakie, on regarde dans le sens de la marche
+	# Moins de suivi quand on se déplace de côté par rapport à la caméra (sinon on tourne en rond).
+	var b := camera_pivot.global_basis
+	var avant := Vector2(-b.z.x, -b.z.z).normalized()
+	var dir := Vector2(-sin(cap), -cos(cap))
+	var face := 0.35 + 0.65 * maxf(0.0, avant.dot(dir))
+	var force := clampf(v / 4.0, 0.3, 1.6) * camera_suivi * face
+	camera_pivot.rotation.y = lerp_angle(camera_pivot.rotation.y, cap, clampf(force * delta, 0.0, 1.0))
 
 
 ## Direction voulue, relative à la caméra, à plat.

@@ -15,6 +15,7 @@ export_presets.cfg
 !.tools/lettrage.py
 !.tools/capture.gd
 !.tools/verify_animations.gd
+!.tools/verify_camera.gd
 !.tools/capture_animations.gd
 
 # Fichiers locaux à ne jamais publier (dépôt public)

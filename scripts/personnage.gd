@@ -234,7 +234,7 @@ func _etat() -> String:
 		return _joueur.transition
 	if _joueur._mantling:
 		return "grimpe"
-	if _joueur.mode == Player.Mode.WALK and _tenue_bombe() > 0.0:
+	if _joueur.mode == Player.Mode.WALK and (_tenue_bombe() > 0.0 or _trace_en_cours() != null):
 		return "bombe"
 	if _joueur.mode == Player.Mode.SKATE:
 		return "planche"
@@ -455,6 +455,15 @@ func _main_planche(c: Dictionary) -> void:
 	c.bd = [d + Vector3(0, -0.15, 0), d]
 
 
+## Le tag tracé à la main (lu seulement) : le bras suit le jet du joueur.
+func _trace_en_cours() -> Node:
+	if _graffiti == null:
+		_tenue_bombe()
+	if _graffiti == null:
+		return null
+	return _graffiti.get("_trace")
+
+
 func _tenue_bombe() -> float:
 	if _graffiti == null:
 		_graffiti = _joueur.get_node_or_null("../Graffiti")
@@ -469,6 +478,9 @@ func _geste_bombe(c: Dictionary) -> void:
 	_debout(c)
 	c.vif = 40.0
 	var t := _tenue_bombe()
+	var trace := _trace_en_cours()
+	if trace:
+		t = float(trace.get("age"))
 	if t < 0.5:
 		var secoue := sin(t * TAU * 7.0)
 		c.bd = [Vector3(-0.25, -0.55, 0.75), Vector3(-0.1, 0.15 + 0.75 * secoue, 1.0)]
@@ -476,6 +488,15 @@ func _geste_bombe(c: Dictionary) -> void:
 		c.tete = Vector3(0.25, 0, 0)
 		return
 	var cible: Dictionary = _graffiti.get("_cible")
+	if trace:
+		# Le bras vise le jet : là où le joueur peint. Bombe levée vers le mur même au repos.
+		var jet: Vector3 = _graffiti.call("point_du_jet")
+		var inv0 := squelette.global_transform.affine_inverse()
+		var dj: Vector3 = (inv0 * jet - pose.origine_repos("RightArm")).normalized()
+		c.bd = [dj + Vector3(0, -0.2, 0), dj]
+		c.buste = Vector3(-0.03, -0.12, 0)
+		c.tete = Vector3(-0.05, -0.1, 0)
+		return
 	if cible.is_empty():
 		return
 	var n: Vector3 = cible.normal
