@@ -54,6 +54,7 @@ func _ready() -> void:
 	var voies := []
 	var murs := []
 	var zones := []
+	var divers := []
 	var f := FileAccess.open(RELEVE, FileAccess.READ)
 	while not f.eof_reached():
 		var l := f.get_line().strip_edges()
@@ -70,6 +71,7 @@ func _ready() -> void:
 			"M": murs.append(c)
 			"Z": zones.append(c)
 			"A": _lire_altitudes(c)
+			_: divers.append(c)
 	_rng.seed = 13013
 	_terrain()
 	for c in zones:
@@ -86,6 +88,12 @@ func _ready() -> void:
 		_mur(_pts(c[1]))
 	for c in batiments:
 		_batiment(c[1], float(c[2]), c[3], _pts(c[4]))
+	for c in divers:
+		match c[0]:
+			"G": _grindable(c[1], float(c[2]), _pts(c[3]))
+			"W": _mur_boulevard(_pts(c[1]))
+			"T": _treillis(float(c[1]), _pts(c[2]))
+			"H": _halle(_pts(c[1])[0], float(c[2]), float(c[3]))
 	_horizon()
 	_limites()
 	_etiquette()
@@ -496,6 +504,150 @@ func _mur(pts: PackedVector2Array) -> void:
 		body.name = "Mur"
 		body.transform = Transform3D(Basis(x, y, z), Vector3((a.x + b.x) * 0.5, (ya + yb) * 0.5 + 0.5, (a.y + b.y) * 0.5))
 		add_child(body, true)
+
+
+## Découpe une ligne en tronçons courts posés sur le relief.
+func _troncons(pts: PackedVector2Array, pas: float) -> Array:
+	var out := []
+	for k in pts.size() - 1:
+		var n := maxi(1, int(ceil(pts[k].distance_to(pts[k + 1]) / pas)))
+		for t in n:
+			var a := pts[k].lerp(pts[k + 1], float(t) / n)
+			var b := pts[k].lerp(pts[k + 1], float(t + 1) / n)
+			out.append([Vector3(a.x, h(a.x, a.y), a.y), Vector3(b.x, h(b.x, b.y), b.y)])
+	return out
+
+
+## Rail (tube) ou muret (béton) à grinder, posé sur le sol.
+func _grindable(type: String, haut: float, pts: PackedVector2Array) -> void:
+	for t in _troncons(pts, 10.0):
+		var a: Vector3 = t[0]
+		var b: Vector3 = t[1]
+		var x := (b - a).normalized()
+		var z := x.cross(Vector3.UP).normalized()
+		var r := Rail.new()
+		r.length = a.distance_to(b)
+		r.height = haut
+		r.thickness = 0.07 if type == "rail" else 0.4
+		r.color = Color(0.35, 0.36, 0.38) if type == "rail" else Color(0.78, 0.76, 0.71)
+		r.transform = Transform3D(Basis(x, z.cross(x), z), a - Vector3(0, 0.05, 0))
+		r.name = "Rail" if type == "rail" else "Muret"
+		add_child(r, true)
+
+
+## Le mur du lycée côté boulevard : carrelage clair et deux bandes turquoise (état d'origine).
+func _mur_boulevard(pts: PackedVector2Array) -> void:
+	for t in _troncons(pts, 8.0):
+		var a: Vector3 = t[0]
+		var b: Vector3 = t[1]
+		var x := (b - a).normalized()
+		var z := x.cross(Vector3.UP).normalized()
+		var base := Basis(x, z.cross(x), z)
+		var long := a.distance_to(b) + 0.05
+		var milieu := (a + b) * 0.5
+		for couche in [[2.9, 0.30, 1.2, Color(0.90, 0.88, 0.83), true], [0.22, 0.36, 0.7, Color(0.16, 0.66, 0.64), false], [0.22, 0.36, 2.0, Color(0.16, 0.66, 0.64), false]]:
+			var n: Node3D = StaticBody3D.new() if couche[4] else Node3D.new()
+			if couche[4]:
+				var cs := CollisionShape3D.new()
+				var sh := BoxShape3D.new()
+				sh.size = Vector3(long, couche[0], couche[1])
+				cs.shape = sh
+				n.add_child(cs)
+			var mi := MeshInstance3D.new()
+			var bm := BoxMesh.new()
+			bm.size = Vector3(long, couche[0], couche[1])
+			mi.mesh = bm
+			mi.material_override = _mat(couche[3])
+			n.add_child(mi)
+			n.name = "MurBoulevard"
+			n.transform = Transform3D(base, milieu + Vector3(0, couche[2], 0))
+			add_child(n, true)
+
+
+func _tube(a: Vector3, b: Vector3, rayon: float, m: Material) -> void:
+	var d := b - a
+	if d.length() < 0.01:
+		return
+	var mi := MeshInstance3D.new()
+	var c := CylinderMesh.new()
+	c.top_radius = rayon
+	c.bottom_radius = rayon
+	c.height = d.length()
+	c.radial_segments = 6
+	c.rings = 1
+	mi.mesh = c
+	mi.material_override = m
+	var y := d.normalized()
+	var ref := Vector3.RIGHT if absf(y.dot(Vector3.RIGHT)) < 0.9 else Vector3.FORWARD
+	var z := y.cross(ref).normalized()
+	mi.transform = Transform3D(Basis(y.cross(z), y, z), (a + b) * 0.5)
+	mi.name = "Tube"
+	add_child(mi, true)
+
+
+## Charpente bleue en treillis au-dessus des toits du lycée.
+func _treillis(au_dessus: float, pts: PackedVector2Array) -> void:
+	var bleu := _mat(Color(0.42, 0.70, 0.90))
+	var y0 := h(pts[0].x, pts[0].y) + au_dessus + 1.0
+	var up := Vector3(0, 3.2, 0)
+	for k in pts.size() - 1:
+		var a := Vector3(pts[k].x, y0, pts[k].y)
+		var b := Vector3(pts[k + 1].x, y0, pts[k + 1].y)
+		var n := maxi(2, int(a.distance_to(b) / 6.0))
+		_tube(a, b, 0.14, bleu)
+		_tube(a + up, b + up, 0.14, bleu)
+		for i in n + 1:
+			var p := a.lerp(b, float(i) / n)
+			_tube(p, p + up, 0.09, bleu)
+			if i < n:
+				var q := a.lerp(b, float(i + 1) / n)
+				if i % 2 == 0:
+					_tube(p, q + up, 0.08, bleu)
+				else:
+					_tube(p + up, q, 0.08, bleu)
+			if i % 3 == 0:
+				_tube(p - Vector3(0, 4.0, 0), p, 0.16, bleu)
+
+
+## La halle vitrée en arc de l'entrée.
+func _halle(centre: Vector2, rayon: float, angle_deg: float) -> void:
+	var y := h(centre.x, centre.y)
+	var base := Basis(Vector3.UP, deg_to_rad(angle_deg))
+	var verre := StandardMaterial3D.new()
+	verre.albedo_color = Color(0.45, 0.68, 0.80, 0.55)
+	verre.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	verre.metallic = 0.3
+	verre.roughness = 0.08
+	verre.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var mi := MeshInstance3D.new()
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = rayon
+	cyl.bottom_radius = rayon
+	cyl.height = rayon * 1.8
+	cyl.radial_segments = 40
+	mi.mesh = cyl
+	mi.material_override = verre
+	mi.transform = Transform3D(base * Basis(Vector3.RIGHT, PI * 0.5), Vector3(centre.x, y, centre.y))
+	mi.name = "HalleVitree"
+	add_child(mi, true)
+	var bleu := _mat(Color(0.42, 0.70, 0.90))
+	for i in 5:
+		var dz := (i - 2) * rayon * 0.42
+		for k in 14:
+			var a0 := PI * float(k) / 14.0
+			var a1 := PI * float(k + 1) / 14.0
+			var p0 := Vector3(centre.x, y, centre.y) + base * Vector3(cos(a0) * (rayon + 0.1), sin(a0) * (rayon + 0.1), dz)
+			var p1 := Vector3(centre.x, y, centre.y) + base * Vector3(cos(a1) * (rayon + 0.1), sin(a1) * (rayon + 0.1), dz)
+			_tube(p0, p1, 0.14, bleu)
+	var corps := StaticBody3D.new()
+	var cs := CollisionShape3D.new()
+	var sh := BoxShape3D.new()
+	sh.size = Vector3(rayon * 1.9, rayon * 1.6, rayon * 1.8)
+	cs.shape = sh
+	corps.add_child(cs)
+	corps.transform = Transform3D(base, Vector3(centre.x, y + rayon * 0.5, centre.y))
+	corps.name = "HalleCollision"
+	add_child(corps, true)
 
 
 func _horizon() -> void:
