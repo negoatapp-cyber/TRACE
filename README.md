@@ -73,3 +73,19 @@ des immeubles sont des estimations : elles se corrigent dans le fichier de relev
 Les habitants, eux, restent fictifs.
 
 Vérification automatique : `.tools/verify_quartier.gd`.
+
+## Rendu « bande dessinée »
+
+Le quartier est rendu en BD : aplats de couleur en trois tons (soleil, demi-teinte, ombre teintée violet),
+traits d'encre sur les silhouettes et les arêtes, cadres de fenêtres encrés, ciel franc.
+**Touche B** : comparer avec l'éclairage d'origine.
+
+- `scripts/style_bd.gd` (nœud `StyleBD` de `lauriers.tscn`) convertit automatiquement chaque matériau
+  standard en matériau BD, y compris les objets ajoutés plus tard (Loums importé, décors…).
+- `shaders/bd_lumiere.gdshaderinc` : la lumière en trois tons, partagée par tous les matériaux.
+- `shaders/bd_encrage.gdshader` : l'encrage plein écran (épaisseur, sensibilité, portée réglables).
+- Réglages communs dans *Projet > Paramètres du projet > Shader Globals* :
+  `bd_ombre` (couleur des ombres), `bd_trame` (hachures dans les ombres, 0 = aucune), `bd_actif`.
+- La palette des sols et des voies est dans `scripts/quartier_reel.gd` (constantes `VOIES`, `ZONES`, `STYLES`).
+
+Captures automatiques : `godot --path . -s .tools/capture.gd -- <dossier> [bd|brut]`.

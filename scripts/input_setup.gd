@@ -15,6 +15,7 @@ extends Node
 ##   G      graffiti (maintenir) bouton épaule gauche
 ##   C      changer de couleur   croix haut
 ##   R      revenir au départ    Select
+##   B      rendu BD / d'origine —
 ##   Échap  libérer la souris
 
 
@@ -51,6 +52,7 @@ func _ready() -> void:
 	_button("graff_color", JOY_BUTTON_DPAD_UP)
 	_key("reset", KEY_R)
 	_button("reset", JOY_BUTTON_BACK)
+	_key("style_bd", KEY_B)
 
 
 func _ensure(action: StringName) -> void:

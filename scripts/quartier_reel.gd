@@ -15,28 +15,39 @@ const STYLES := {
 	"barre_lauriers": [Color(0.93, 0.90, 0.80), true, 0.45, 2.8, 3.4, Color(0.86, 0.70, 0.36)],
 	"barre_renovee": [Color(0.86, 0.83, 0.74), true, 0.30, 2.8, 3.4, Color(0.80, 0.77, 0.68)],
 	"barre_blanche": [Color(0.90, 0.88, 0.83), true, 0.45, 2.8, 3.4],
-	"barre_rose": [Color(0.84, 0.60, 0.56), true, 0.40, 2.8, 3.4],
+	"barre_rose": [Color(0.92, 0.66, 0.62), true, 0.40, 2.8, 3.4],
 	"tour_grise": [Color(0.70, 0.66, 0.58), false, 0.55, 2.8, 3.4],
-	"tour_ocre": [Color(0.80, 0.60, 0.34), false, 0.50, 2.8, 3.4],
+	"tour_ocre": [Color(0.90, 0.66, 0.38), false, 0.50, 2.8, 3.4],
 	"lycee": [Color(0.80, 0.78, 0.73), false, 0.10, 3.6, 4.2],
 	"hopital": [Color(0.84, 0.82, 0.78), false, 0.10, 3.4, 3.0],
 	"clair": [Color(0.82, 0.80, 0.75), false, 0.20, 3.2, 3.6],
 	"recent": [Color(0.92, 0.91, 0.88), true, 0.25, 2.8, 3.2],
+	# D'après les photos de Louma (2014, depuis les toits du lycée et des Lauriers) :
+	"cypres_tour": [Color(0.91, 0.85, 0.71), false, 0.45, 2.8, 3.0],
+	"cypres_barre": [Color(0.90, 0.82, 0.67), true, 0.40, 2.8, 3.2, Color(0.84, 0.76, 0.62)],
+	"genets_blanc": [Color(0.94, 0.93, 0.89), true, 0.40, 2.8, 3.2],
 }
+## Bandes de couleur : [couleur, largeur des bandes d'angle (m), pignons pleins si mur plus court que (m), antenne]
+const BANDES := {
+	"cypres_tour": [Color(0.84, 0.46, 0.28), 2.6, 0.0, true],   # bandes orange aux angles, antenne
+	"cypres_barre": [Color(0.86, 0.50, 0.30), 0.0, 15.0, false], # pignons orange
+}
+## Palette « Marseille délavée par le soleil » : couleurs claires et chaudes pour le décor ;
+## les couleurs vives sont réservées à Loums et aux traces du joueur (graffitis…).
 const VOIES := {
-	"b": [12.0, Color(0.22, 0.22, 0.24)],
-	"r": [7.0, Color(0.27, 0.27, 0.29)],
-	"s": [5.0, Color(0.31, 0.31, 0.33)],
-	"p": [2.6, Color(0.66, 0.63, 0.58)],
+	"b": [12.0, Color(0.40, 0.39, 0.45)],
+	"r": [7.0, Color(0.45, 0.44, 0.49)],
+	"s": [5.0, Color(0.50, 0.49, 0.53)],
+	"p": [2.6, Color(0.84, 0.78, 0.66)],
 }
 const ZONES := {
-	"terrain": Color(0.30, 0.50, 0.30),
-	"bitume": Color(0.36, 0.36, 0.40),
+	"terrain": Color(0.46, 0.62, 0.32),
+	"bitume": Color(0.50, 0.49, 0.54),
 	"skatepark": Color(0.76, 0.46, 0.46),
-	"parking": Color(0.33, 0.33, 0.35),
-	"jardin": Color(0.42, 0.50, 0.30),
+	"parking": Color(0.48, 0.47, 0.52),
+	"jardin": Color(0.56, 0.62, 0.34),
 	"chantier": Color(0.66, 0.58, 0.46),
-	"friche": Color(0.60, 0.55, 0.42),
+	"friche": Color(0.78, 0.68, 0.48),
 }
 
 ## "avant" = le quartier de 2014-2015, "apres" = aujourd'hui. Touche T pour passer de l'un à l'autre.
@@ -185,7 +196,7 @@ func _terrain() -> void:
 					n = -n
 				_tri(st, faces, tri[0], tri[1], tri[2], n)
 	var m := StandardMaterial3D.new()
-	m.albedo_color = Color(0.56, 0.54, 0.48)
+	m.albedo_color = Color(0.80, 0.72, 0.58)
 	m.roughness = 0.95
 	m.cull_mode = BaseMaterial3D.CULL_DISABLED
 	_corps("Terrain", st.commit(), m, faces).add_to_group("terrain")
@@ -234,8 +245,10 @@ func _batiment(nom: String, hauteur: float, style: String, poly: PackedVector2Ar
 		var u1 := Vector2(u + long, y0 - moy)
 		var u2 := Vector2(u + long, hauteur)
 		var u3 := Vector2(u, hauteur)
-		_tri(st, faces, p0, p1, p2, n, u0, u1, u2)
-		_tri(st, faces, p0, p2, p3, n, u0, u2, u3)
+		var w0 := Vector2(0.0, long)
+		var w1 := Vector2(long, long)
+		_tri(st, faces, p0, p1, p2, n, u0, u1, u2, w0, w1, w1)
+		_tri(st, faces, p0, p2, p3, n, u0, u2, u3, w0, w1, w0)
 		u += long
 	var tri := Geometry2D.triangulate_polygon(poly)
 	for t in range(0, tri.size(), 3):
@@ -250,6 +263,20 @@ func _batiment(nom: String, hauteur: float, style: String, poly: PackedVector2Ar
 	sm.set_shader_parameter("vie", s[2])
 	sm.set_shader_parameter("etage", s[3])
 	sm.set_shader_parameter("travee", s[4])
+	if BANDES.has(style):
+		var bd: Array = BANDES[style]
+		sm.set_shader_parameter("bande", bd[0])
+		sm.set_shader_parameter("bande_largeur", bd[1])
+		sm.set_shader_parameter("pignon_max", bd[2])
+		if bd[3]:
+			var c := Vector2.ZERO
+			for p in poly:
+				c += p
+			c /= poly.size()
+			var gris := _mat(Color(0.55, 0.55, 0.58))
+			_tube(Vector3(c.x, y1, c.y), Vector3(c.x, y1 + 9.0, c.y), 0.12, gris)
+			_tube(Vector3(c.x - 1.5, y1 + 6.5, c.y), Vector3(c.x + 1.5, y1 + 6.5, c.y), 0.06, gris)
+			_boite("Edicule", c.x + 3.0, c.y + 2.0, Vector3(4.0, 2.6, 3.0), (s[0] as Color).darkened(0.08)).position.y = y1 + 1.3
 	var b := _corps(nom, st.commit(), sm, faces)
 	b.add_to_group("batiment")
 	b.set_meta("style", style)
@@ -667,7 +694,7 @@ func _horizon() -> void:
 		s.radius = c[2]
 		s.height = c[2] * 2.0
 		m.mesh = s
-		m.material_override = _mat(Color(0.52, 0.53, 0.42))
+		m.material_override = _mat(Color(0.70, 0.71, 0.73))  # calcaire du massif de l'Étoile (photo depuis les Lauriers)
 		m.position = Vector3(c[0], -40.0, c[1])
 		m.scale = Vector3(1, 0.42, 1)
 		m.name = "Colline"
@@ -714,7 +741,7 @@ func _mat(c: Color) -> StandardMaterial3D:
 
 
 ## Ajoute un triangle dont la face visible regarde du côté de `n`.
-func _tri(st: SurfaceTool, faces: PackedVector3Array, p0: Vector3, p1: Vector3, p2: Vector3, n: Vector3, u0 := Vector2.ZERO, u1 := Vector2.ZERO, u2 := Vector2.ZERO) -> void:
+func _tri(st: SurfaceTool, faces: PackedVector3Array, p0: Vector3, p1: Vector3, p2: Vector3, n: Vector3, u0 := Vector2.ZERO, u1 := Vector2.ZERO, u2 := Vector2.ZERO, w0 := Vector2(-1, -1), w1 := Vector2(-1, -1), w2 := Vector2(-1, -1)) -> void:
 	if (p2 - p0).cross(p1 - p0).dot(n) < 0.0:
 		var tp := p1
 		p1 = p2
@@ -722,9 +749,13 @@ func _tri(st: SurfaceTool, faces: PackedVector3Array, p0: Vector3, p1: Vector3, 
 		var tu := u1
 		u1 = u2
 		u2 = tu
-	for e in [[p0, u0], [p1, u1], [p2, u2]]:
+		var tw := w1
+		w1 = w2
+		w2 = tw
+	for e in [[p0, u0, w0], [p1, u1, w1], [p2, u2, w2]]:
 		st.set_normal(n)
 		st.set_uv(e[1])
+		st.set_uv2(e[2])
 		st.add_vertex(e[0])
 		faces.append(e[0])
 

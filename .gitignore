@@ -11,12 +11,15 @@ export_presets.cfg
 !.tools/verify_graffiti.gd
 !.tools/verify_grimpe.gd
 !.tools/verify_personnage.gd
+!.tools/capture.gd
 
 # Fichiers locaux à ne jamais publier (dépôt public)
 *.mp4
 *.zip
 *.pdf
 /*.png
+/*.jpg
+/*.jpeg
 /*.png.import
 
 # Modèles 3D des personnages (licence Meshy privée) : gardés en local, jamais dans le dépôt public
