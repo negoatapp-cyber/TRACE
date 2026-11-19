@@ -7,6 +7,7 @@ export_presets.cfg
 # Moteur et outils de validation locaux
 .tools/*
 !.tools/verify_phase1.gd
+!.tools/verify_lauriers.gd
 
 # Fichiers locaux à ne jamais publier (dépôt public)
 *.mp4

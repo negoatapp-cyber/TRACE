@@ -52,10 +52,22 @@ Si une figure n'est pas finie à l'atterrissage, c'est une **chute** : la vitess
 ### Structure
 ```
 project.godot
-scenes/   ilot_grey.tscn (niveau), player.tscn (LOUMS)
+scenes/   lauriers.tscn (le quartier, scène lancée par défaut), ilot_grey.tscn (cour de réglage du skate), player.tscn (LOUMS)
 scripts/  player_controller.gd (marche, caméra, HUD)
           skate_controller.gd  (physique du skate, figures, grind)
           rail.gd              (rail / ledge réglable)
           input_setup.gd       (contrôles clavier + manette)
 data/     (phase 3 : npcs.json, places.json…)
 ```
+
+## Phase 2 — le quartier
+
+`scenes/lauriers.tscn` est maintenant la scène lancée par défaut. Le quartier est construit par le code
+(`scripts/quartier.gd`) : pour déplacer un immeuble, une rampe ou un rail, on change un chiffre et on relance.
+
+- Niveau fictif inspiré d'un grand ensemble marseillais de 2008-2013 : on garde volumes, couleurs et usages, pas le plan exact.
+- Au nord, la terrasse et la grande barre blanche ; à l'ouest la barre rose et la tour gris-beige (perron, marches, rampe) ;
+  à l'est la tour ocre sur son socle ; au sud le boulevard et le lycée en façade (mur à bandes turquoise, parvis à gradins,
+  halle vitrée, charpentes bleues).
+- Les façades sont dessinées par `shaders/facade.gdshader`, sans image.
+- Vérification automatique : `.tools/verify_lauriers.gd` (hauteurs de sol, escaliers, rampes).
