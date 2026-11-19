@@ -377,6 +377,13 @@ func _poser_paquets() -> void:
 		m.set_shader_parameter("couleur", pq[1])
 		m.set_shader_parameter("grain", 0.4)
 		mi.material_override = m
+		if cle.begins_with("verriere_vitre"):
+			var verre := StandardMaterial3D.new()
+			verre.albedo_color = Color(0.80, 0.92, 0.98, 0.22)
+			verre.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			verre.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			mi.material_override = verre
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		mi.name = "Laveran_" + cle
 		add_child(mi)
 

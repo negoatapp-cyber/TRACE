@@ -82,5 +82,21 @@ func run() -> void:
 		check(incline > 0.3, "roue arrière : Loums bascule avec le scooter (%.0f°)" % rad_to_deg(incline))
 		sc.cabre = 0.0
 		c._descendre()
+	# 4. Le conteneur de peinture derrière la grande barre : F remplit les bombes et le pot.
+	var g = level.get_node("Graffiti")
+	var cont: Node3D = null
+	for n in root.get_tree().get_nodes_in_group("conteneur"):
+		if str(n.name).contains("Conteneur") or n.has_method("get"):
+			cont = n
+			break
+	check(cont != null, "le conteneur de peinture est là, derrière la grande barre")
+	if cont:
+		p.global_position = cont.global_position + cont.global_transform.basis.x * 2.2 + Vector3.UP * 0.5
+		p.velocity = Vector3.ZERO
+		g.reserve = [0.0, 0.0, 0.0, 0.0]
+		g.pot = 0.0
+		await frames(10)
+		Input.action_press("fouiller"); await frames(3); Input.action_release("fouiller"); await frames(3)
+		check(g.reserve[0] > 0.9 and g.pot > 0.9, "F au conteneur : bombes et pot remplis")
 	print("RESULT failures=", failures)
 	quit(failures)
