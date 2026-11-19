@@ -13,6 +13,7 @@ const DEPART := Vector2(57, -45)  # rue de Marathon, au pied des Cyprès
 
 const STYLES := {
 	"barre_lauriers": [Color(0.93, 0.90, 0.80), true, 0.45, 2.8, 3.4, Color(0.86, 0.70, 0.36)],
+	"barre_renovee": [Color(0.86, 0.83, 0.74), true, 0.30, 2.8, 3.4, Color(0.80, 0.77, 0.68)],
 	"barre_blanche": [Color(0.90, 0.88, 0.83), true, 0.45, 2.8, 3.4],
 	"barre_rose": [Color(0.84, 0.60, 0.56), true, 0.40, 2.8, 3.4],
 	"tour_grise": [Color(0.70, 0.66, 0.58), false, 0.55, 2.8, 3.4],
@@ -35,12 +36,17 @@ const ZONES := {
 	"parking": Color(0.33, 0.33, 0.35),
 	"jardin": Color(0.42, 0.50, 0.30),
 	"chantier": Color(0.66, 0.58, 0.46),
+	"friche": Color(0.60, 0.55, 0.42),
 }
+
+## "avant" = le quartier de 2008-2013, "apres" = aujourd'hui. Touche T pour passer de l'un à l'autre.
+static var epoque := "avant"
 
 var gx := PackedFloat32Array()
 var gz := PackedFloat32Array()
 var alt := []  # alt[j][i], j = ligne (z), i = colonne (x)
 var _mats := {}
+var _rng := RandomNumberGenerator.new()
 
 
 func _ready() -> void:
@@ -54,17 +60,26 @@ func _ready() -> void:
 		if l == "" or l.begins_with("#"):
 			continue
 		var c := l.split("|")
+		if c[c.size() - 1].begins_with("@"):
+			if c[c.size() - 1].substr(1) != epoque:
+				continue
+			c.remove_at(c.size() - 1)
 		match c[0]:
 			"B": batiments.append(c)
 			"R": voies.append(c)
 			"M": murs.append(c)
 			"Z": zones.append(c)
 			"A": _lire_altitudes(c)
+	_rng.seed = 13013
 	_terrain()
 	for c in zones:
 		_zone(c[1], _pts(c[3]))
 		if c[1] == "skatepark":
 			_skatepark(_pts(c[3]))
+		elif c[1] == "parking":
+			_voitures(_pts(c[3]))
+		elif c[1] == "friche":
+			_friche(_pts(c[3]))
 	for c in voies:
 		_voie(c[1], _pts(c[3]))
 	for c in murs:
@@ -73,9 +88,29 @@ func _ready() -> void:
 		_batiment(c[1], float(c[2]), c[3], _pts(c[4]))
 	_horizon()
 	_limites()
+	_etiquette()
 	var joueur := get_node_or_null("../Player") as Node3D
 	if joueur:
 		joueur.position = Vector3(DEPART.x, h(DEPART.x, DEPART.y) + 0.1, DEPART.y)
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_T:
+		epoque = "apres" if epoque == "avant" else "avant"
+		get_tree().reload_current_scene()
+
+
+func _etiquette() -> void:
+	var couche := CanvasLayer.new()
+	var texte := Label.new()
+	texte.text = ("Époque : 2008-2013" if epoque == "avant" else "Époque : aujourd'hui") + "   ·   T pour changer"
+	texte.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	texte.position = Vector2(16, -44)
+	texte.add_theme_font_size_override("font_size", 18)
+	texte.add_theme_color_override("font_outline_color", Color.BLACK)
+	texte.add_theme_constant_override("outline_size", 4)
+	couche.add_child(texte)
+	add_child(couche)
 
 
 # ───────────────────────── relief ─────────────────────────
@@ -336,6 +371,101 @@ func _skatepark(poly: PackedVector2Array) -> void:
 		rail.transform = Transform3D(Basis(x, z.cross(x), z), pa)
 		rail.name = "Module"
 		add_child(rail, true)
+
+
+## Boîte solide posée sur le sol, tournée de `angle` autour de la verticale.
+func _boite(nom: String, x: float, z: float, taille: Vector3, c: Color, angle := 0.0, enfonce := 0.0) -> StaticBody3D:
+	var body := StaticBody3D.new()
+	var cs := CollisionShape3D.new()
+	var sh := BoxShape3D.new()
+	sh.size = taille
+	cs.shape = sh
+	body.add_child(cs)
+	var mi := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = taille
+	mi.mesh = bm
+	mi.material_override = _mat(c)
+	body.add_child(mi)
+	body.name = nom
+	body.transform = Transform3D(Basis(Vector3.UP, angle), Vector3(x, h(x, z) + taille.y * 0.5 - enfonce, z))
+	add_child(body, true)
+	return body
+
+
+func _voiture(x: float, z: float, angle: float, c: Color, epave := false) -> void:
+	var v := _boite("Epave" if epave else "Voiture", x, z, Vector3(1.7, 0.74, 4.0), c, angle, -0.25 if not epave else 0.0)
+	var cab := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = Vector3(1.5, 0.56, 2.0)
+	cab.mesh = bm
+	cab.material_override = _mat(Color(0.10, 0.09, 0.08) if epave else Color(0.12, 0.15, 0.2))
+	cab.position = Vector3(0, 0.64, -0.2)
+	v.add_child(cab)
+
+
+## Remplit un parking de voitures d'époque (formes simples, aucune marque).
+func _voitures(poly: PackedVector2Array) -> void:
+	var teintes := [Color(0.75, 0.75, 0.72), Color(0.2, 0.22, 0.26), Color(0.55, 0.12, 0.12), Color(0.16, 0.2, 0.36), Color(0.82, 0.8, 0.74), Color(0.3, 0.38, 0.32), Color(0.5, 0.5, 0.52)]
+	var mn := poly[0]
+	var mx := poly[0]
+	for p in poly:
+		mn = mn.min(p)
+		mx = mx.max(p)
+	# Les voitures s'alignent sur le plus long côté du parking.
+	var best := 0.0
+	var dir := Vector2.RIGHT
+	for k in poly.size() - 1:
+		if poly[k].distance_to(poly[k + 1]) > best:
+			best = poly[k].distance_to(poly[k + 1])
+			dir = (poly[k + 1] - poly[k]).normalized()
+	var angle := atan2(-dir.y, dir.x) + PI * 0.5
+	var z := mn.y + 3.0
+	while z < mx.y:
+		var x := mn.x + 2.0
+		while x < mx.x:
+			var p := Vector2(x, z)
+			if _rng.randf() < 0.6 and Geometry2D.is_point_in_polygon(p, poly) and Geometry2D.is_point_in_polygon(p + dir * 2.2, poly) and Geometry2D.is_point_in_polygon(p - dir * 2.2, poly):
+				_voiture(x, z, angle + (PI if _rng.randf() < 0.3 else 0.0), teintes[_rng.randi() % teintes.size()])
+			x += 3.0
+		z += 6.5
+
+
+## Terrain vague : arbres, enrochements, édicules, épaves brûlées.
+func _friche(poly: PackedVector2Array) -> void:
+	var mn := poly[0]
+	var mx := poly[0]
+	for p in poly:
+		mn = mn.min(p)
+		mx = mx.max(p)
+	var poses := 0
+	var essais := 0
+	while poses < 46 and essais < 2000:
+		essais += 1
+		var p := Vector2(_rng.randf_range(mn.x, mx.x), _rng.randf_range(mn.y, mx.y))
+		if not Geometry2D.is_point_in_polygon(p, poly):
+			continue
+		poses += 1
+		var y := h(p.x, p.y)
+		if poses <= 4:
+			_voiture(p.x, p.y, _rng.randf() * TAU, Color(0.13, 0.11, 0.10), true)
+		elif poses <= 7:
+			_boite("Edicule", p.x, p.y, Vector3(3.0, 2.2, 3.0), Color(0.78, 0.72, 0.60), _rng.randf() * TAU, 0.3)
+		elif poses <= 22:
+			var r := _rng.randf_range(0.4, 0.9)
+			_boite("Rocher", p.x, p.y, Vector3(r * 1.4, r, r * 1.1), Color(0.62, 0.60, 0.56), _rng.randf() * TAU, 0.15)
+		else:
+			var haut := _rng.randf_range(4.5, 8.0)
+			_boite("Tronc", p.x, p.y, Vector3(0.3, haut * 0.6, 0.3), Color(0.30, 0.25, 0.20))
+			var f := MeshInstance3D.new()
+			var s := SphereMesh.new()
+			s.radius = haut * 0.38
+			s.height = haut * 0.6
+			f.mesh = s
+			f.material_override = _mat(Color(0.28, 0.42, 0.22))
+			f.position = Vector3(p.x, y + haut * 0.78, p.y)
+			f.name = "Feuillage"
+			add_child(f, true)
 
 
 func _mur(pts: PackedVector2Array) -> void:
