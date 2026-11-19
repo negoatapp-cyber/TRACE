@@ -27,6 +27,9 @@ var cible_avant: Marker3D      ## pied avant (droit si goofy)
 var cible_arriere: Marker3D    ## pied arrière : c'est lui qui pousse
 var _poids := 0.0              ## 0 = à pied, 1 = sur la planche
 var _main_droite := -1
+var pose: PoseProcedurale      ## postures calculées (attente debout, planche, ollie, chute…)
+var etat := ""                 ## ce que fait le corps : debout, marche, planche, chute, grimpe, bombe…
+var _t := 0.0
 
 
 func _ready() -> void:
@@ -148,6 +151,11 @@ func _preparer_ik() -> void:
 		ik.set_pole_node(i, ik.get_path_to(jambes[i][2]))
 	ik.influence = 0.0
 	_main_droite = squelette.find_bone("mixamorig_RightHand")
+	# Les postures calculées passent avant l'IK : les pieds restent posés sur la planche.
+	pose = PoseProcedurale.new()
+	squelette.add_child(pose)
+	squelette.move_child(pose, ik.get_index())
+	squelette.skeleton_updated.connect(_apres_squelette)
 
 
 ## Où est le pied arrière pendant une poussée (repère de la planche).
@@ -171,28 +179,122 @@ func _pied_qui_pousse(t: float) -> Vector3:
 func _process(delta: float) -> void:
 	if modele == null or _joueur == null:
 		return
+	_t += delta
 	_posture(delta)
+	etat = _etat()
+	if pose:
+		_composer(delta)
 	if anim == null:
 		return
-	var etat := "attente"
+	var clip_etat := "attente"
 	var v := Vector2(_joueur.velocity.x, _joueur.velocity.z).length()
-	if _joueur.mode == Player.Mode.SKATE:
-		etat = "attente"            # le haut du corps respire ; les jambes sont tenues par l'IK
-	elif not _joueur.is_on_floor() and _clips.has("saut"):
-		etat = "saut"
-	elif v > 4.5:
-		etat = "course"
-	elif v > 0.3:
-		etat = "marche"
-	var clip: StringName = _clips.get(etat, &"")
+	if etat == "marche" or etat == "course" or etat == "saut":
+		clip_etat = etat
+	var clip: StringName = _clips.get(clip_etat, _clips.get("attente", &""))
 	if clip == &"":
 		return
 	if anim.current_animation != clip:
 		anim.play(clip, 0.2)
-	if etat == "marche" or etat == "course":
-		anim.speed_scale = clampf(v / (6.2 if etat == "course" else 3.2), 0.6, 1.4)
+	if clip_etat == "marche" or clip_etat == "course":
+		anim.speed_scale = clampf(v / (6.2 if clip_etat == "course" else 3.2), 0.6, 1.4)
 	else:
 		anim.speed_scale = 1.0
+
+
+## Ce que fait le corps en ce moment.
+func _etat() -> String:
+	var v := Vector2(_joueur.velocity.x, _joueur.velocity.z).length()
+	if _joueur.mode == Player.Mode.SKATE:
+		return "planche"
+	if not _joueur.is_on_floor() and _clips.has("saut"):
+		return "saut"
+	if v > 4.5:
+		return "course"
+	if v > 0.3:
+		return "marche"
+	return "debout"
+
+
+## Mètres → unités du squelette.
+func _u(m: float) -> float:
+	return m / maxf(modele.scale.x, 0.001)
+
+
+## Fabrique la posture voulue selon l'état, puis y glisse en douceur.
+func _composer(delta: float) -> void:
+	var c := {
+		"haut": 0.0, "bas": 0.0,
+		"bassin": Vector3.ZERO, "bassin_rot": Vector3.ZERO,
+		"buste": Vector3.ZERO, "tete": Vector3.ZERO, "souffle": 0.0,
+		"bg": [Vector3(0.12, -1, 0.0), Vector3(0.08, -1, 0.32)],
+		"bd": [Vector3(-0.12, -1, 0.0), Vector3(-0.08, -1, 0.32)],
+		"jg": [Vector3(0.02, -1, 0.0), Vector3(0.02, -1, -0.02)],
+		"jd": [Vector3(-0.02, -1, 0.0), Vector3(-0.02, -1, -0.02)],
+	}
+	match etat:
+		"debout":
+			_debout(c)
+		"planche":
+			_sur_planche(c)
+	# Les poids passent de 0 à 1 en 0,2 s (fondu avec la marche).
+	pose.poids_haut = move_toward(pose.poids_haut, c.haut, delta / 0.2)
+	pose.poids_bas = move_toward(pose.poids_bas, c.bas, delta / 0.2)
+	var k := 1.0 - exp(-14.0 * delta)
+	pose.bassin = pose.bassin.lerp(c.bassin, k)
+	pose.bassin_rot = pose.bassin_rot.lerp(c.bassin_rot, k)
+	pose.buste = pose.buste.lerp(c.buste, k)
+	pose.tete = pose.tete.lerp(c.tete, k)
+	pose.respiration = lerpf(pose.respiration, c.souffle, k)
+	for i in 2:
+		pose.bras_g[i] = pose.bras_g[i].lerp(c.bg[i], k)
+		pose.bras_d[i] = pose.bras_d[i].lerp(c.bd[i], k)
+		pose.jambe_g[i] = pose.jambe_g[i].lerp(c.jg[i], k)
+		pose.jambe_d[i] = pose.jambe_d[i].lerp(c.jd[i], k)
+
+
+## Attente : debout, bras le long du corps, coudes à peine pliés, poids sur les deux pieds,
+## le buste qui respire, le regard qui se promène un peu.
+func _debout(c: Dictionary) -> void:
+	c.haut = 1.0
+	c.bas = 1.0
+	c.souffle = 0.025
+	c.tete = Vector3(0.04, sin(_t * 0.37) * 0.25 + sin(_t * 0.11) * 0.1, 0.0)
+	c.bassin_rot = Vector3(0, 0, sin(_t * 0.5) * 0.015)
+	var balance := sin(_t * 0.9) * 0.02
+	c.bg = [Vector3(0.12, -1, balance), Vector3(0.08, -1, 0.32 + balance)]
+	c.bd = [Vector3(-0.12, -1, -balance), Vector3(-0.08, -1, 0.32 - balance)]
+
+
+## Sur la planche : le haut du corps tient l'équilibre, bras un peu écartés,
+## buste tourné vers le nose, genoux pliés (le bassin descend, l'IK garde les pieds sur les vis).
+func _sur_planche(c: Dictionary) -> void:
+	var skate: SkateController = _joueur.skate
+	var nez := -1.0 if goofy else 1.0   # côté du nose dans le repère du squelette (sa droite = -X)
+	c.haut = 1.0
+	c.souffle = 0.012
+	var torsion := 0.42 * nez
+	var penche := 0.16
+	var accroupi := 0.11
+	var ecart := 0.55
+	var pousse := skate.push_phase >= 0.0 and not skate.in_air
+	if pousse:
+		var ph := skate.push_phase
+		torsion = 0.25 * nez
+		penche = 0.32
+		accroupi = 0.13 + sin(ph * PI) * 0.04
+		ecart = 0.35
+	c.buste = Vector3(penche, torsion, -skate.lean * 0.12)
+	c.bassin = Vector3(0, -_u(accroupi), 0)
+	c.tete = Vector3(-0.1, nez * 1.05 - torsion, 0)
+	var balance := sin(_t * 1.3) * 0.05 + skate.lean * 0.25
+	var yaw := Basis(Vector3.UP, torsion)
+	c.bg = [yaw * Vector3(ecart, -0.8, 0.05 + balance), yaw * Vector3(ecart * 0.9, -0.55, 0.35)]
+	c.bd = [yaw * Vector3(-ecart, -0.8, 0.05 - balance), yaw * Vector3(-ecart * 0.9, -0.55, 0.35)]
+
+
+## Le squelette vient d'être posé (animations + postures + IK) : la planche suit la main.
+func _apres_squelette() -> void:
+	_porter_planche(_joueur != null and _joueur.mode == Player.Mode.WALK)
 
 
 ## Sur la planche : de profil, pieds sur les vis, genoux fléchis, penché dans les virages.
@@ -213,7 +315,6 @@ func _posture(delta: float) -> void:
 	if cible_avant:
 		cible_avant.position = PIED_AVANT
 		cible_arriere.position = _pied_qui_pousse(skate.push_phase) if pousse else PIED_ARRIERE
-	_porter_planche(not sur_planche)
 
 
 func _porter_planche(a_pied: bool) -> void:
