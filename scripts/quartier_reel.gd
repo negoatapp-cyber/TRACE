@@ -31,7 +31,7 @@ const VOIES := {
 const ZONES := {
 	"terrain": Color(0.30, 0.50, 0.30),
 	"bitume": Color(0.36, 0.36, 0.40),
-	"skatepark": Color(0.74, 0.73, 0.70),
+	"skatepark": Color(0.76, 0.46, 0.46),
 	"parking": Color(0.33, 0.33, 0.35),
 	"jardin": Color(0.42, 0.50, 0.30),
 	"chantier": Color(0.66, 0.58, 0.46),
@@ -63,6 +63,8 @@ func _ready() -> void:
 	_terrain()
 	for c in zones:
 		_zone(c[1], _pts(c[3]))
+		if c[1] == "skatepark":
+			_skatepark(_pts(c[3]))
 	for c in voies:
 		_voie(c[1], _pts(c[3]))
 	for c in murs:
@@ -266,6 +268,74 @@ func _zone(type: String, poly: PackedVector2Array) -> void:
 		x += pas
 	if not vide:
 		_decor("Zone_" + type, st.commit(), _mat(c))
+
+
+## Le skatepark en béton rose au pied de la barre (il existe aujourd'hui, pas en 2008-2013).
+## Première approximation : un talus incliné sur tout le tour, une bosse au centre, un rail, un muret.
+func _skatepark(poly: PackedVector2Array) -> void:
+	if poly[0].distance_to(poly[poly.size() - 1]) < 0.01:
+		poly.remove_at(poly.size() - 1)
+	var centre := Vector2.ZERO
+	for p in poly:
+		centre += p
+	centre /= poly.size()
+	var rose := _mat(Color(0.80, 0.50, 0.50))
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var faces := PackedVector3Array()
+	var haut := 1.1
+	var large := 3.2
+	for k in poly.size():
+		var a := poly[k]
+		var b := poly[(k + 1) % poly.size()]
+		var d := (b - a).normalized()
+		var n := Vector2(-d.y, d.x)
+		if n.dot(centre - (a + b) * 0.5) < 0.0:
+			n = -n
+		var ai := a + n * large
+		var bi := b + n * large
+		var at := Vector3(a.x, h(a.x, a.y) + haut, a.y)
+		var bt := Vector3(b.x, h(b.x, b.y) + haut, b.y)
+		var a0 := Vector3(a.x, h(a.x, a.y) - 0.5, a.y)
+		var b0 := Vector3(b.x, h(b.x, b.y) - 0.5, b.y)
+		var a1 := Vector3(ai.x, h(ai.x, ai.y) + 0.03, ai.y)
+		var b1 := Vector3(bi.x, h(bi.x, bi.y) + 0.03, bi.y)
+		var pente := Vector3(n.x * haut, large, n.y * haut).normalized()
+		_tri(st, faces, at, bt, b1, pente)
+		_tri(st, faces, at, b1, a1, pente)
+		var dehors := Vector3(-n.x, 0, -n.y)
+		_tri(st, faces, a0, b0, bt, dehors)
+		_tri(st, faces, a0, bt, at, dehors)
+	# Bosse centrale à quatre pans.
+	var c3 := Vector3(centre.x, h(centre.x, centre.y) + 0.75, centre.y)
+	var r := 4.0
+	var coins := []
+	for q in [Vector2(-r, -r), Vector2(r, -r), Vector2(r, r), Vector2(-r, r)]:
+		var p: Vector2 = centre + q
+		coins.append(Vector3(p.x, h(p.x, p.y) + 0.03, p.y))
+	for k in 4:
+		var e0: Vector3 = coins[k]
+		var e1: Vector3 = coins[(k + 1) % 4]
+		var nn := (e1 - e0).cross(c3 - e0).normalized()
+		if nn.y < 0.0:
+			nn = -nn
+		_tri(st, faces, e0, e1, c3, nn)
+	_corps("Skatepark", st.commit(), rose, faces)
+	for spec in [[Vector2(-9, 6), Vector2(-3, 8), 0.4, 0.07, Color(0.35, 0.36, 0.38)], [Vector2(5, -9), Vector2(10, -8), 0.45, 0.45, Color(0.80, 0.50, 0.50)]]:
+		var a: Vector2 = centre + spec[0]
+		var b: Vector2 = centre + spec[1]
+		var rail := Rail.new()
+		var pa := Vector3(a.x, h(a.x, a.y), a.y)
+		var pb := Vector3(b.x, h(b.x, b.y), b.y)
+		var x := (pb - pa).normalized()
+		var z := x.cross(Vector3.UP).normalized()
+		rail.length = pa.distance_to(pb)
+		rail.height = spec[2]
+		rail.thickness = spec[3]
+		rail.color = spec[4]
+		rail.transform = Transform3D(Basis(x, z.cross(x), z), pa)
+		rail.name = "Module"
+		add_child(rail, true)
 
 
 func _mur(pts: PackedVector2Array) -> void:
