@@ -291,7 +291,7 @@ func _etat() -> String:
 		return _joueur.transition
 	if _joueur._mantling:
 		return "grimpe"
-	if _joueur.suspendu:
+	if _joueur.suspendu or _joueur.gouttiere != null:
 		return "suspendu"
 	if _joueur.mode == Player.Mode.WALK and (_tenue_bombe() > 0.0 or _trace_en_cours() != null):
 		return "bombe"
@@ -464,7 +464,7 @@ func _grimpe(c: Dictionary) -> void:
 	c.bas = 1.0
 	c.fondu = 0.06
 	c.vif = 30.0
-	var pendu: bool = _joueur.suspendu
+	var pendu: bool = _joueur.suspendu or _joueur.gouttiere != null
 	var t: float = 0.0 if pendu else _joueur._m_t
 	var ry: float = _joueur.visual.rotation.y
 	var avant := Vector3(-sin(ry), 0.0, -cos(ry))

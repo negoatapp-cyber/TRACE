@@ -82,6 +82,31 @@ func run() -> void:
 		if p.is_on_floor():
 			break
 	check(not p.suspendu and p.is_on_floor(), "lâche et retombe (y %.1f)" % p.global_position.y)
+	# La gouttière (descente d'eau) d'un angle : on s'y agrippe, on monte, on passe sur le toit.
+	var meilleure: Node3D = null
+	for m in root.get_tree().get_nodes_in_group("gouttiere"):
+		var hauteur: float = float(m.get_meta("haut")) - m.global_position.y
+		if hauteur > 10.0 and hauteur < 20.0:
+			meilleure = m
+			break
+	check(meilleure != null, "une gouttière à grimper")
+	if meilleure:
+		var dehors: Vector3 = meilleure.get_meta("dehors")
+		p.global_position = meilleure.global_position + dehors * 0.6 + Vector3.UP * 0.1
+		p.velocity = Vector3.ZERO
+		await frames(10)
+		Input.action_press("jump"); await frames(2); Input.action_release("jump")
+		await frames(3)
+		check(p.gouttiere == meilleure, "agrippé à la gouttière")
+		Input.action_press("move_forward")
+		for i in 900:
+			await physics_frame
+			if p.gouttiere == null and not p._mantling:
+				break
+		Input.action_release("move_forward")
+		await frames(10)
+		var toit: float = meilleure.get_meta("haut")
+		check(p.global_position.y > toit - 0.3, "en haut de la gouttière, sur le toit (Loums %.1f m, toit %.1f)" % [p.global_position.y, toit])
 	_fin()
 func _fin() -> void:
 	print("RESULT failures=", failures)

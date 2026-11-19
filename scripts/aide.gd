@@ -58,6 +58,8 @@ func _process(delta: float) -> void:
 func contexte() -> String:
 	if graffiti and graffiti.get("_trace") != null:
 		return "trace"
+	if joueur.gouttiere != null:
+		return "gouttiere"
 	if joueur.suspendu:
 		return "suspendu"
 	if joueur.mode == Player.Mode.SKATE:
@@ -73,6 +75,8 @@ static func lignes(c: String) -> Array:
 	match c:
 		"trace":
 			return [["Clic", "peindre (maintenir)"], ["G", "poser le tag"], ["Échap", "laisser tomber"]]
+		"gouttiere":
+			return [["Z  S", "monter, descendre (en haut : passer sur le toit)"], ["Espace", "lâcher"]]
 		"suspendu":
 			return [["Espace", "se hisser, ou bondir au rebord du dessus"], ["Q  D", "se décaler"], ["S", "lâcher"]]
 		"skate":
@@ -81,7 +85,7 @@ static func lignes(c: String) -> Array:
 			return [["F", "fouiller : bombes pleines"], ["E", "planche"]]
 		"mur":
 			return [["G", "tag à la main (appui bref)"], ["G", "flop, pièce (maintenir)"], ["C", "changer de bombe"]]
-	return [["ZQSD", "marcher"], ["Maj", "courir"], ["Espace", "sauter, grimper (maintenir : s'accrocher)"], ["Maj + Espace", "course murale, face à un mur"], ["E", "monter sur la planche"]]
+	return [["ZQSD", "marcher"], ["Maj", "courir"], ["Espace", "sauter ; vers un mur : grimper, s'accrocher"], ["E", "monter sur la planche"]]
 
 
 func _remplir(l: Array) -> void:

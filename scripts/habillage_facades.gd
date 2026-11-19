@@ -69,6 +69,14 @@ func _batiment(nom: String, hauteur: float, style: String, poly: PackedVector2Ar
 	corps.add_to_group("prise")
 	add_child(corps)
 	var niveaux := int(floor((hauteur - RDC - 0.6) / etage))
+	if style in AVEC_BALCONS:
+		niveaux = int(floor((hauteur - RDC - 2.4) / etage)) + 1   # un balcon au dernier étage aussi
+	# Entre le garde-corps du dernier balcon et le haut de l'acrotère, la grimpe bondit de 3,1 m au plus :
+	# au-delà, une corniche fait l'étape intermédiaire.
+	var corniche := -1.0
+	var haut_balcon := RDC + (niveaux - 1) * etage + GARDE_CORPS
+	if style in AVEC_BALCONS and hauteur + 0.75 - haut_balcon > 2.9:
+		corniche = moy + haut_balcon + (hauteur + 0.75 - haut_balcon) * 0.5
 	var u := 0.0
 	for k in poly.size():
 		var a := poly[k]
@@ -81,7 +89,9 @@ func _batiment(nom: String, hauteur: float, style: String, poly: PackedVector2Ar
 		if style in AVEC_BALCONS and long >= 15.0:  # pas de balcons sur les pignons
 			_balcons(corps, a, d, n, u, long, moy, niveaux, etage, travee, garde)
 		elif style in AVEC_DALLES:
-			_dalles(a, b, d, n, long, moy, niveaux, etage, mur.darkened(0.08))
+			_dalles(corps, a, b, d, n, long, moy, niveaux, etage, mur.darkened(0.08))
+		if corniche > 0.0 and long >= 2.0:
+			_rebord_mince(corps, a, b, d, n, long, corniche, mur.darkened(0.1))
 		if hauteur >= 8.0:
 			_acrotere(corps, a, b, d, n, long, toit, mur.darkened(0.1))
 		u += long
@@ -122,9 +132,9 @@ func _balcons(corps: StaticBody3D, a: Vector2, d: Vector2, n: Vector2, u0: float
 			if k < PRISES_BASSES or colonne:
 				var cs := CollisionShape3D.new()
 				var sh := BoxShape3D.new()
-				sh.size = Vector3(larg, GARDE_CORPS + 0.06, BALCON_PROFOND)
+				sh.size = Vector3(larg, GARDE_CORPS + 0.16, BALCON_PROFOND)
 				cs.shape = sh
-				cs.transform = Transform3D(base, o + base.z * (BALCON_PROFOND * 0.5) + Vector3.UP * (GARDE_CORPS * 0.5 - 0.13))
+				cs.transform = Transform3D(base, o + base.z * (BALCON_PROFOND * 0.5) + Vector3.UP * (GARDE_CORPS * 0.5 - 0.08))
 				corps.add_child(cs)
 				n_prises += 1
 
@@ -140,12 +150,37 @@ func _linge(o: Vector3, base: Basis, larg: float) -> void:
 
 
 ## Dalles d'étage apparentes sur les tours : un bandeau qui dépasse de 20 cm à chaque niveau.
-func _dalles(a: Vector2, b: Vector2, d: Vector2, n: Vector2, long: float, moy: float, niveaux: int, etage: float, c: Color) -> void:
+## Ce sont aussi des prises : on s'y suspend et on bondit d'étage en étage (mécanique de n°1).
+func _dalles(corps: StaticBody3D, a: Vector2, b: Vector2, d: Vector2, n: Vector2, long: float, moy: float, niveaux: int, etage: float, c: Color) -> void:
+	for k in niveaux + 1:
+		_rebord_mince(corps, a, b, d, n, long, moy + RDC + k * etage, c, k < niveaux)
+
+
+## Un rebord fin le long d'un mur (dalle d'étage, corniche) : visible, et prise de grimpe.
+func _rebord_mince(corps: StaticBody3D, a: Vector2, b: Vector2, d: Vector2, n: Vector2, long: float, y: float, c: Color, bloc_dessus := true) -> void:
 	var base := _base(d, n)
 	var m := (a + b) * 0.5
-	for k in niveaux + 1:
-		var y := moy + RDC + k * etage
-		_ajouter("dalle_tour", _cube, c, Transform3D(_ech(base, Vector3(long + 0.4, 0.18, 0.4)), Vector3(m.x, y, m.y)))
+	var t := Transform3D(_ech(base, Vector3(long + 0.4, 0.18, 0.4)), Vector3(m.x, y, m.y))
+	_ajouter("dalle_tour", _cube, c, t)
+	# Collision : de 13 cm derrière le mur à 14 cm devant. Assez pour s'y suspendre et pour que
+	# le bond trouve le rebord suivant, trop peu pour se hisser et tenir debout dessus.
+	var cs := CollisionShape3D.new()
+	var sh := BoxShape3D.new()
+	sh.size = Vector3(long + 0.4, 0.18, 0.27)
+	cs.shape = sh
+	cs.transform = Transform3D(base, t.origin + base.z * 0.005)
+	corps.add_child(cs)
+	n_prises += 1
+	# Bloc caché derrière la façade, au-dessus du rebord : sans lui, « se hisser » croirait
+	# trouver la place de tenir debout (l'intérieur est vide) et passerait à travers le mur.
+	# Il commence 18 cm derrière le mur pour ne pas fausser la recherche du rebord suivant.
+	if bloc_dessus:
+		var bloc := CollisionShape3D.new()
+		var bs := BoxShape3D.new()
+		bs.size = Vector3(maxf(long - 0.6, 0.5), 1.4, 0.42)
+		bloc.shape = bs
+		bloc.transform = Transform3D(base, t.origin - base.z * 0.39 + Vector3.UP * 1.09)
+		corps.add_child(bloc)
 
 
 ## Acrotère : le muret qui borde le toit. On peut s'y percher ; il empêche de tomber par mégarde.
@@ -179,6 +214,13 @@ func _descentes(poly: PackedVector2Array, moy: float, toit: float) -> void:
 		var q := p + out * 0.18
 		var bas := h(q.x, q.y)
 		_ajouter("descente", _cube, Color(0.55, 0.56, 0.58), Transform3D(Basis().scaled(Vector3(0.12, toit - bas, 0.12)), Vector3(q.x, (toit + bas) * 0.5, q.y)))
+		# Repère pour la grimpe à la gouttière (n°1, player_controller.gd) : bas, haut, côté dehors.
+		var m := Marker3D.new()
+		m.position = Vector3(q.x, bas, q.y)
+		m.set_meta("haut", toit)
+		m.set_meta("dehors", Vector3(out.x, 0.0, out.y))
+		m.add_to_group("gouttiere")
+		add_child(m)
 
 
 ## Édicules d'ascenseur sur les toits (un tous les ~40 m), avec antennes râteau.

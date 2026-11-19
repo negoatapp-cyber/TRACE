@@ -23,6 +23,14 @@ func run() -> void:
 	p.global_position = Vector3(57, q.h(57, -45) + 0.2, -45)
 	await frames(20)
 	check(noms() == ["saut", "courir", "planche", "reset"], "à pied, loin de tout : %s" % str(noms()))
+	# au pied de l'échafaudage, face au premier plateau bleu : GRIMPER
+	var toits = level.find_child("AccesToits", true, false)
+	if toits:
+		var a: Array = toits.acces[0]
+		p.global_position = a[1] + Vector3.UP * 0.1
+		p.visual.rotation.y = atan2((a[3] as Vector3).x, (a[3] as Vector3).z)
+		await frames(15)
+		check("grimper" in noms(), "face à un rebord : GRIMPER à la place de SAUT %s" % str(noms()))
 	p.global_position = Vector3(-24.2, q.h(-24.2, -100) + 0.2, -100); p.velocity = Vector3.ZERO
 	p.visual.rotation.y = PI * 0.5
 	await frames(30)

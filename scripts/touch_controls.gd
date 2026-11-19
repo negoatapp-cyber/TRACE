@@ -56,6 +56,9 @@ const BOUTONS := {
 	"hisser": ["MONTER", "jump", false],
 	"lacher": ["LÂCHER", ":lacher", false],
 	"roue": ["ROUE AR.", "jump", true],
+	"frein": ["FREIN À MAIN", "jump", true],
+	"grimper": ["GRIMPER", "jump", true],
+	"lacher_g": ["LÂCHER", "jump", false],
 	"descendre": ["DESCENDRE", "monter", false],
 	"reset": ["DÉPART", "reset", false],
 }
@@ -79,7 +82,11 @@ func _choisir_boutons() -> void:
 		liste = [["poser", "A"], ["arret", "B"]]
 	elif cond and cond.get("actuel") != null:
 		ctx = "conduite"
-		liste = [["roue", "A"], ["descendre", "C"]]
+		var scooter: bool = str((cond.get("actuel") as Node).get("type")) == "scooter"
+		liste = [["roue" if scooter else "frein", "A"], ["descendre", "C"]]
+	elif j and j.get("gouttiere") != null:
+		ctx = "gouttiere"
+		liste = [["lacher_g", "A"]]
 	elif j and j.get("suspendu"):
 		ctx = "suspendu"
 		liste = [["hisser", "A"], ["lacher", "B"]]
@@ -93,7 +100,9 @@ func _choisir_boutons() -> void:
 			liste.append(["reprendre", "D"])
 	else:
 		_menu_graff = false
-		liste = [["saut", "A"], ["courir", "B"], ["planche", "C"]]
+		# face à un rebord qu'il peut attraper, SAUT devient GRIMPER
+		var grimpe: bool = j != null and j.has_method("peut_grimper") and j.call("peut_grimper")
+		liste = [["grimper" if grimpe else "saut", "A"], ["courir", "B"], ["planche", "C"]]
 		if g and g.call("peut_graffer"):
 			liste.append(["graff", "G"])
 		if g and g.call("_conteneur_proche") != null:

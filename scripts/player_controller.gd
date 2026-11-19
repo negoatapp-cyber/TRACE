@@ -9,7 +9,7 @@ enum Mode { WALK, SKATE }
 @export var walk_speed := 3.2
 @export var run_speed := 6.2        ## en maintenant Maj
 @export var walk_accel := 25.0
-@export var mantle_reach := 2.3     ## hauteur max qu'on attrape depuis les pieds (m)
+@export var mantle_reach := 2.6     ## hauteur max qu'on attrape depuis les pieds (m)
 @export var jump_velocity := 4.2
 @export var mouse_sensitivity := 0.003
 @export var stick_camera_speed := 2.5
@@ -31,11 +31,13 @@ var suspendu := false
 var accroches := 0                  ## nombre de fois où il s'est accroché (tests, carnet)
 var _rebord := Vector3.ZERO         ## point du bord sous les mains
 var _rebord_n := Vector3.ZERO       ## normale du mur, vers Loums
+var gouttiere: Node3D = null       ## la descente d'eau à laquelle il grimpe (Getting Up)
+const GOUTTIERE_VITESSE := 1.6
 var _bond_t := -1.0                 ## bond vers le rebord du dessus en cours (0 → 1), -1 sinon
 var _bond_de := Vector3.ZERO
 var _bond_vers := Vector3.ZERO
 const BOND_MAX := 3.1               ## un étage de balcon en balcon (2,8 m) et un peu de marge
-const ACCROCHE_MAX := 3.0           ## hauteur max du bord au-dessus des pieds (au moment où on l'attrape)
+const ACCROCHE_MAX := 3.3           ## hauteur max du bord au-dessus des pieds (au moment où on l'attrape)
 const SOUS_LES_MAINS := 2.05        ## des pieds aux mains, bras tendus
 var _m_t := 0.0
 var _m_dur := 0.4
@@ -122,6 +124,9 @@ func _physics_process(delta: float) -> void:
 	if suspendu:
 		_suspendu_step(delta)
 		return
+	if gouttiere:
+		_gouttiere_step(delta)
+		return
 
 	match mode:
 		Mode.WALK:
@@ -185,14 +190,15 @@ func _walk(delta: float) -> void:
 	if not is_on_floor():
 		velocity.y -= _gravity * delta
 		# En l'air, saut maintenu face à un rebord : on s'y accroche.
-		if Input.is_action_pressed("jump") and velocity.y < 2.0 and (_try_mantle() or _try_accrocher()):
+		var vers_le_mur := move_input_world().length() > 0.3 or Input.is_action_pressed("jump")
+		if vers_le_mur and velocity.y < 2.0 and (_try_mantle() or _try_accrocher() or _try_gouttiere()):
 			return
 	elif Input.is_action_just_pressed("jump"):
-		if _try_mantle():
+		if _try_gouttiere() or _try_mantle():
 			return
 		velocity.y = jump_velocity
 		# Course murale (Sleeping Dogs) : en courant droit sur un mur, on prend appui dessus et on monte plus haut.
-		if Input.is_action_pressed("push") and Vector2(velocity.x, velocity.z).length() > 4.0 and _mur_proche(2.4):
+		if Vector2(velocity.x, velocity.z).length() > 2.0 and _mur_proche(2.4):
 			velocity.y = jump_velocity * 1.55
 			skate.last_event = "Course murale"
 	var target := dir * (run_speed if Input.is_action_pressed("push") else walk_speed)
@@ -247,7 +253,12 @@ func _try_mantle() -> bool:
 func _bord_devant(depuis: Vector3, fwd: Vector3, bas: float, haut: float) -> Dictionary:
 	var space := get_world_3d().direct_space_state
 	var mur := {}
-	for hgt in [bas, (bas + haut) * 0.5, haut - 0.2]:
+	var hauteurs: Array = []
+	var hh := bas
+	while hh <= haut - 0.15:
+		hauteurs.append(hh)
+		hh += 0.35
+	for hgt in hauteurs:
 		var q := PhysicsRayQueryParameters3D.create(depuis + Vector3.UP * hgt, depuis + Vector3.UP * hgt + fwd * 0.9)
 		q.exclude = [get_rid()]
 		mur = space.intersect_ray(q)
@@ -266,6 +277,80 @@ func _bord_devant(depuis: Vector3, fwd: Vector3, bas: float, haut: float) -> Dic
 	if d.is_empty() or d.normal.y < 0.7:
 		return {}
 	return {"haut": d.position.y, "point": Vector3(mur.position.x, d.position.y, mur.position.z), "n": n}
+
+
+## Une descente d'eau à portée de main (au pied, ou en sautant) : il s'y agrippe.
+func gouttiere_proche() -> Node3D:
+	var meilleure: Node3D = null
+	var d := 0.9
+	for g in get_tree().get_nodes_in_group("gouttiere"):
+		var m := g as Node3D
+		var e := Vector2(m.global_position.x - global_position.x, m.global_position.z - global_position.z).length()
+		var haut: float = m.get_meta("haut", 0.0)
+		if e < d and global_position.y > m.global_position.y - 0.5 and global_position.y < haut - 1.0:
+			d = e
+			meilleure = m
+	return meilleure
+
+
+func _try_gouttiere() -> bool:
+	var g := gouttiere_proche()
+	if g == null:
+		return false
+	gouttiere = g
+	velocity = Vector3.ZERO
+	var dehors: Vector3 = g.get_meta("dehors", Vector3.FORWARD)
+	visual.rotation.y = atan2(dehors.x, dehors.z)
+	skate.last_event = "Gouttière"
+	climbs += 1
+	return true
+
+
+## Sur la gouttière : haut / bas pour monter et descendre, Espace pour lâcher ;
+## en haut, il passe par-dessus le muret et se retrouve sur le toit.
+func _gouttiere_step(delta: float) -> void:
+	var g := gouttiere
+	var dehors: Vector3 = g.get_meta("dehors", Vector3.FORWARD)
+	var haut: float = g.get_meta("haut", 0.0)
+	var input := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+	var y := global_position.y - input.y * GOUTTIERE_VITESSE * delta
+	var y_max := haut - SOUS_LES_MAINS + 0.6
+	global_position = Vector3(g.global_position.x, clampf(y, g.global_position.y, y_max), g.global_position.z) + dehors * 0.32
+	velocity = Vector3.ZERO
+	_rebord = Vector3(g.global_position.x, global_position.y + SOUS_LES_MAINS - 0.1, g.global_position.z)
+	_rebord_n = dehors
+	if Input.is_action_just_pressed("jump"):
+		gouttiere = null
+		global_position += dehors * 0.2
+		skate.last_event = "Lâche"
+		return
+	if y >= y_max and input.y < -0.3:
+		# en haut : par-dessus le muret, sur le toit (on passe dans le coin, côté intérieur)
+		gouttiere = null
+		_mantling = true
+		_m_t = 0.0
+		_m_dur = 0.8
+		_m_from = global_position
+		_m_to = Vector3(g.global_position.x, haut + 0.05, g.global_position.z) - dehors * 0.9
+		skate.last_event = "Grimpe"
+		return
+	if y <= g.global_position.y + 0.01 and input.y > 0.3:
+		gouttiere = null   # en bas : il repose le pied au sol
+
+
+## Un rebord à attraper devant lui (muret, balcon, plateau, palier, toit) : pour l'aide à l'écran.
+func peut_grimper() -> bool:
+	if mode != Mode.WALK or not is_on_floor():
+		return false
+	if gouttiere_proche() != null:
+		return true
+	var ry := visual.rotation.y
+	var fwd := Vector3(-sin(ry), 0.0, -cos(ry))
+	for recul in [0.0, 0.6]:
+		var b := _bord_devant(global_position - fwd * recul, fwd, 0.35, 4.6)
+		if not b.is_empty() and b.haut - global_position.y > 0.35:
+			return true
+	return false
 
 
 func _mur_proche(dist: float) -> bool:
@@ -487,6 +572,7 @@ func _respawn() -> void:
 	skate.grinding = false
 	_mantling = false
 	suspendu = false
+	gouttiere = null
 	_bond_t = -1.0
 	skate.speed = 0.0
 	_set_mode(Mode.WALK)
