@@ -13,7 +13,9 @@ const LETTRAGE := "res://assets/graffitis/"
 const LARGEUR := {"tag": 0.9, "flop": 2.2, "piece": 3.8}   ## largeur sur le mur (m)
 const NB_TAGS := 4
 const PORTEE := 2.2
-const PALIERS := [["tag", 0.8], ["flop", 3.0], ["piece", 3.8]]
+## Le tag se trace à la main (appui bref sur G). Maintenir G : flop, puis pièce.
+const PALIERS := [["flop", 1.0], ["piece", 3.8]]
+const APPUI_BREF := 0.35
 const COULEURS := [Color(0.92, 0.15, 0.45), Color(0.12, 0.12, 0.14), Color(0.95, 0.95, 0.92), Color(0.15, 0.55, 0.95), Color(0.98, 0.82, 0.10), Color(0.25, 0.75, 0.35), Color(0.80, 0.15, 0.15), Color(0.55, 0.30, 0.80)]
 
 @export var blaze := "LOUMS"
@@ -43,6 +45,12 @@ var _apercu_cle := ""
 var _reprise := -1             ## indice d'une pièce inachevée qu'on reprend
 const PIECE_DEBUT := 3.8       ## au-delà, on commence une pièce
 const PIECE_PAS := 0.8         ## durée de chaque étape de la pièce
+var _trace: TraceTag           ## tag en cours de tracé à la main
+var _trace_g := {}
+var _camera_trace: Camera3D
+var _attendre_relache := false
+var _message := ""
+var _message_t := 0.0
 
 
 func _ready() -> void:
@@ -54,6 +62,16 @@ func _ready() -> void:
 func _physics_process(delta: float) -> void:
 	if _joueur == null:
 		return
+	_message_t = maxf(0.0, _message_t - delta)
+	if _trace:
+		_texte.text = "TRACE TON TAG   ·   clic gauche maintenu pour peindre\nG ou Entrée : poser   ·   Échap : annuler"
+		_barre.visible = false
+		return
+	if _attendre_relache:
+		if Input.is_action_pressed("graff"):
+			_afficher(false)
+			return
+		_attendre_relache = false
 	if Input.is_action_just_pressed("graff_color"):
 		bombe = (bombe + 1) % ceinture.size()
 	couleur = ceinture[bombe]
@@ -76,7 +94,9 @@ func _physics_process(delta: float) -> void:
 		if _etape() >= 5 and tenue >= PIECE_DEBUT + 5 * PIECE_PAS + 0.3:
 			_poser()
 	elif tenue > 0.0:
-		if peut or not _cible.is_empty():
+		if tenue < APPUI_BREF and peut and _reprise < 0:
+			_commencer_trace()
+		elif peut or not _cible.is_empty():
 			_poser()
 		tenue = 0.0
 		_reprise = -1
@@ -146,6 +166,82 @@ func _mur_devant() -> Dictionary:
 	return hit
 
 
+## Appui bref sur G : la caméra se met face au mur, le tag de Loums apparaît en fantôme,
+## et le joueur le repasse à la souris.
+func _commencer_trace() -> void:
+	tenue = 0.0
+	var v := randi() % NB_TAGS
+	var img := Image.load_from_file(ProjectSettings.globalize_path(LETTRAGE + "tag_%d.png" % (v + 1)))
+	if img == null:
+		return
+	var g := _nouveau("tag")
+	g["v"] = v
+	g["a"] = 0.0
+	_trace_g = g
+	_trace = TraceTag.new()
+	_trace.name = "TraceTag"
+	add_child(_trace)
+	_trace.preparer(img, COULEURS[couleur], LARGEUR.tag)
+	_placer(_trace, g)
+	var n := Vector3(g.nx, 0, g.nz)
+	var droite := (-n).cross(Vector3.UP).normalized()
+	var centre := _trace.global_position
+	# Loums se met un peu à gauche du tag, face au mur, le bras vers la peinture.
+	var sol := Vector3(g.x, float(g.y), g.z)
+	_joueur.global_position = sol + n * 0.7 - droite * 0.95
+	_joueur.velocity = Vector3.ZERO
+	_joueur.visual.rotation.y = atan2(n.x, n.z)
+	_joueur.set_physics_process(false)
+	_joueur.set_process_unhandled_input(false)
+	_camera_trace = Camera3D.new()
+	_camera_trace.fov = 55.0
+	add_child(_camera_trace)
+	_camera_trace.global_position = centre + n * 1.15 + droite * 0.2 + Vector3.UP * 0.05
+	_camera_trace.look_at(centre, Vector3.UP)
+	_camera_trace.make_current()
+	_trace.camera = _camera_trace
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	_trace.fini.connect(_finir_trace)
+	_trace.annule.connect(_sortir_trace)
+
+
+func _finir_trace(img: Image, q: Dictionary) -> void:
+	if q.couverture < 0.05:
+		_sortir_trace()
+		return
+	reserve[bombe] = maxf(0.0, reserve[bombe] - COUT.tag * clampf(_trace.depose / 900.0, 0.3, 3.0))
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path("user://traces"))
+	var chemin := "user://traces/tag_%d_%d.png" % [Time.get_unix_time_from_system(), randi() % 100000]
+	img.save_png(ProjectSettings.globalize_path(chemin))
+	var g := _trace_g.duplicate()
+	g["img"] = chemin
+	g["q"] = snappedf(q.note, 0.01)
+	poses.append(g)
+	_dessiner(g, poses.size() - 1)
+	_sauver()
+	_message = "Tag %s   ·   %d %% du trait couvert%s" % [q.mot, int(q.couverture * 100), ("   ·   %d coulure%s" % [q.coulures, "s" if q.coulures > 1 else ""]) if q.coulures > 0 else ""]
+	_message_t = 3.5
+	_sortir_trace()
+
+
+func _sortir_trace() -> void:
+	if _trace:
+		_trace.queue_free()
+		_trace = null
+	if _camera_trace:
+		_camera_trace.clear_current(true)
+		_camera_trace.queue_free()
+		_camera_trace = null
+	var cam := _joueur.get_node_or_null("CameraPivot/SpringArm3D/Camera3D") as Camera3D
+	if cam:
+		cam.make_current()
+	_joueur.set_physics_process(true)
+	_joueur.set_process_unhandled_input(true)
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	_attendre_relache = true
+	tenue = 0.0
+
+
 func _nouveau(type: String) -> Dictionary:
 	var n: Vector3 = _cible.normal
 	n.y = 0.0
@@ -192,7 +288,7 @@ func _poser() -> void:
 
 func _texture(nom: String) -> Texture2D:
 	if not _textures.has(nom):
-		var chemin := ProjectSettings.globalize_path(LETTRAGE + nom + ".png")
+		var chemin := ProjectSettings.globalize_path(nom if nom.begins_with("user://") else LETTRAGE + nom + ".png")
 		var tex: Texture2D = null
 		if FileAccess.file_exists(chemin):
 			var img := Image.load_from_file(chemin)
@@ -232,7 +328,7 @@ func _dessiner_lettrage(g: Dictionary) -> Node3D:
 	var etape: int = int(g.get("e", 99))   # étapes visibles (aperçu pendant qu'on peint)
 	match g.t:
 		"tag":
-			couches = [["tag_%d" % (int(g.get("v", 0)) % NB_TAGS + 1), c]]
+			couches = [[g.img if g.has("img") else "tag_%d" % (int(g.get("v", 0)) % NB_TAGS + 1), c]]
 		"flop":
 			couches = [["flop_surcontour", autre], ["flop_contour", contour], ["flop_fond", c], ["flop_lights", lumiere]]
 		"piece":
@@ -415,19 +511,21 @@ func _afficher(peut: bool) -> void:
 	_barre.visible = tenue > 0.0
 	_pastille.visible = peut
 	_barre.value = tenue
-	if tenue > 0.0:
+	if _message_t > 0.0 and tenue <= 0.0:
+		_texte.text = _message
+	elif tenue > 0.0:
 		var p := _palier()
 		var noms := {"": "…", "tag": "TAG", "flop": "FLOP", "piece": "PIÈCE"}
 		var etapes := ["esquisse", "fond", "contour", "lights", "surcontour", "signature"]
 		if p == "piece":
 			_texte.text = "PIÈCE : %s   (relâche pour t'arrêter, reviens la finir)" % etapes[_etape()]
 		else:
-			_texte.text = "%s   (relâche pour poser)" % noms[p]
+			_texte.text = "%s   (relâche pour poser)" % noms[p] if p != "" else "maintiens pour un flop · relâche vite pour tracer un tag"
 	elif _conteneur_proche():
 		_texte.text = "F : fouiller le conteneur"
 	elif peut and reserve[bombe] < COUT["tag"]:
 		_texte.text = "Bombe vide   ·   C : changer   ·   conteneur derrière la grande barre"
 	elif peut:
-		_texte.text = "G : graffiti   ·   C : bombe   ·   %d tags, %d flops, %d pièces" % [compte.tag, compte.flop, compte.piece]
+		_texte.text = "G bref : tag à la main   ·   G maintenu : flop, pièce   ·   C : bombe   ·   %d tags, %d flops, %d pièces" % [compte.tag, compte.flop, compte.piece]
 	else:
 		_texte.text = ""
