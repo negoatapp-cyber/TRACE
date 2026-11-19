@@ -160,10 +160,20 @@ func run() -> void:
 		var avant: int = g.poses.size()
 		g.commande_tactile(type)
 		check(g._trace != null, "mode simple, %s : ça commence" % type)
+		var perso = p.get_node("Visual/Personnage")
+		var dos_cache := false
 		for i in 900:
 			await physics_frame
+			if perso.perche_dos and not perso.perche_dos.visible:
+				dos_cache = true
 			if g._trace == null:
 				break
+		if perso.perche_dos:
+			await frames(3)
+			if type == "perche" or type == "rouleau":
+				check(dos_cache and perso.perche_dos.visible, "%s : la perche quitte le dos pendant, y revient après" % type)
+			else:
+				check(not dos_cache, "%s : la perche reste dans le dos" % type)
 		var fait: Dictionary = g.poses[g.poses.size() - 1] if g.poses.size() > avant else {}
 		print("   notes ", fait.get("notes"), " message ", g._message)
 		check(not fait.is_empty() and fait.t == type and (fait.has("img") or fait.get("fini", false)), "mode simple, %s : posé tout seul (note %.2f)" % [type, float(fait.get("q", 0))])

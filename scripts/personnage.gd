@@ -75,6 +75,76 @@ func _ready() -> void:
 		var n := get_parent().get_node_or_null(nom)
 		if n:
 			n.visible = false
+	_separer_perche()
+
+
+## La perche dans le dos fait partie du modèle Meshy (un seul maillage). On la découpe à part :
+## les triangles dans un cylindre qui va de la hanche à au-dessus de l'épaule (repère du .glb)
+## forment un second maillage, caché quand Loums la prend en main.
+const PERCHE_BAS := Vector3(0.012, 0.956, -0.092)
+const PERCHE_HAUT := Vector3(0.27, 1.68, -0.17)
+const PERCHE_RAYON := 0.042
+var perche_dos: MeshInstance3D
+
+
+func _separer_perche() -> void:
+	var mis := modele.find_children("*", "MeshInstance3D", true, false)
+	if mis.is_empty():
+		return
+	var mi := mis[0] as MeshInstance3D
+	var src := mi.mesh as ArrayMesh
+	if src == null:
+		return
+	var axe := PERCHE_HAUT - PERCHE_BAS
+	var long := axe.length()
+	axe /= long
+	var corps := ArrayMesh.new()
+	var perche := ArrayMesh.new()
+	var retires := 0
+	for si in src.get_surface_count():
+		var a := src.surface_get_arrays(si)
+		var pos: PackedVector3Array = a[Mesh.ARRAY_VERTEX]
+		var idx: PackedInt32Array = a[Mesh.ARRAY_INDEX] if a[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
+		if idx.is_empty():
+			idx.resize(pos.size())
+			for i in pos.size():
+				idx[i] = i
+		var dedans := PackedByteArray()
+		dedans.resize(pos.size())
+		for i in pos.size():
+			var d := pos[i] - PERCHE_BAS
+			var t := d.dot(axe)
+			dedans[i] = 1 if t > -0.02 and t < long + 0.02 and (d - axe * t).length() < PERCHE_RAYON else 0
+		var garde := PackedInt32Array()
+		var ote := PackedInt32Array()
+		for k in range(0, idx.size(), 3):
+			if dedans[idx[k]] == 1 and dedans[idx[k + 1]] == 1 and dedans[idx[k + 2]] == 1:
+				ote.append_array([idx[k], idx[k + 1], idx[k + 2]])
+			else:
+				garde.append_array([idx[k], idx[k + 1], idx[k + 2]])
+		retires += ote.size() / 3
+		var mat := src.surface_get_material(si)
+		var a1 := a.duplicate()
+		a1[Mesh.ARRAY_INDEX] = garde
+		corps.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, a1)
+		corps.surface_set_material(corps.get_surface_count() - 1, mat)
+		if not ote.is_empty():
+			var a2 := a.duplicate()
+			a2[Mesh.ARRAY_INDEX] = ote
+			perche.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, a2)
+			perche.surface_set_material(perche.get_surface_count() - 1, mat)
+	if retires == 0:
+		return
+	mi.mesh = corps
+	perche_dos = MeshInstance3D.new()
+	perche_dos.name = "PercheDos"
+	perche_dos.mesh = perche
+	perche_dos.skin = mi.skin
+	mi.get_parent().add_child(perche_dos)
+	perche_dos.transform = mi.transform
+	perche_dos.skeleton = perche_dos.get_path_to(mi.get_node(mi.skeleton)) if mi.skeleton != NodePath() else NodePath()
+	if mi.material_override:
+		perche_dos.material_override = mi.material_override
 
 
 ## Pose les pieds au sol et ramène le personnage à TAILLE mètres.
@@ -635,6 +705,9 @@ var _mat_rouleau: StandardMaterial3D
 
 func _outils() -> void:
 	var outil := _type_outil()
+	if perche_dos:
+		var en_main := outil != "" and _trace_en_cours() != null and float(_trace_en_cours().get("age")) > 0.35
+		perche_dos.visible = not en_main
 	if outil == "":
 		if _manche:
 			_manche.visible = false
