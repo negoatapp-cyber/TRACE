@@ -23,6 +23,9 @@
 !.tools/verify_habitants.gd
 !.tools/verify_temps.gd
 !.tools/capture_animations.gd
+!.tools/verify_mission.gd
+!.tools/verify_son.gd
+!.tools/son_generer.py
 
 # Fichiers locaux à ne jamais publier (dépôt public)
 *.mp4

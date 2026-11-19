@@ -52,6 +52,20 @@ var _nom: Label
 var _texte: Label
 var _f9 := false
 
+## La carte (en bas à droite) : plan des rues et des bâtiments, Loums au centre, l'objectif en magenta.
+const CARTE_TAILLE := 150.0        ## côté de la carte (px)
+const CARTE_PORTEE := 90.0         ## rayon visible autour de Loums (m)
+const CARTE_PX_PAR_M := 0.8        ## finesse du fond de plan
+const COULEUR_ROUTE := Color(0.78, 0.76, 0.84)
+const COULEUR_BATI := Color(0.32, 0.27, 0.42)
+const MAGENTA := Color(0.92, 0.15, 0.45)
+var _carte: Control
+var _fond: ImageTexture
+var _fond_x0 := 0.0
+var _fond_z0 := 0.0
+var _fond_ppm := CARTE_PX_PAR_M
+var _fond_essaye := false
+
 
 func _ready() -> void:
 	layer = 6
@@ -65,7 +79,9 @@ func _process(delta: float) -> void:
 	_vivre_dialogue(delta)
 	if not _scene_prete():
 		_boite_objectif.visible = false
+		_carte.visible = false
 		return
+	_vivre_carte()
 	match etat:
 		"attente":
 			_t += delta
@@ -291,6 +307,22 @@ func _interface() -> void:
 	_boite_dialogue.visible = false
 	add_child(_boite_dialogue)
 
+	# La carte : en bas à droite, au-dessus des jauges de bombes.
+	_carte = Control.new()
+	_carte.anchor_left = 1.0
+	_carte.anchor_right = 1.0
+	_carte.anchor_top = 1.0
+	_carte.anchor_bottom = 1.0
+	_carte.offset_left = -(CARTE_TAILLE + 12.0)
+	_carte.offset_right = -12.0
+	_carte.offset_top = -(CARTE_TAILLE + 112.0)
+	_carte.offset_bottom = -112.0
+	_carte.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_carte.clip_contents = true
+	_carte.visible = false
+	_carte.draw.connect(_dessiner_carte)
+	add_child(_carte)
+
 
 ## Sur téléphone, les boutons DEMAIN / DÉPART occupent le coin haut droit : on décale les cartes à leur gauche.
 ## (ajout n°1, intégration)
@@ -324,3 +356,151 @@ func _panneau(haut: float) -> PanelContainer:
 	sb.content_margin_bottom = 8
 	p.add_theme_stylebox_override("panel", sb)
 	return p
+
+
+# ───────────────────────── la carte ─────────────────────────
+
+func _vivre_carte() -> void:
+	if not _fond_essaye:
+		_fond_essaye = true
+		_baker_fond()
+	_carte.visible = _fond != null and _graffiti.get("_trace") == null   # masquée pendant qu'on trace
+	if _carte.visible:
+		_carte.queue_redraw()
+
+
+## Le fond de plan est dessiné une seule fois, à partir des toits (bâtiments) et des sols de voie du décor.
+func _baker_fond() -> void:
+	var bat := _triangles("batiment")
+	if bat.is_empty():
+		return
+	var routes := _triangles("sol_voie")
+	var mn := Vector2(INF, INF)
+	var mx := Vector2(-INF, -INF)
+	for p in bat:
+		mn = mn.min(p)
+		mx = mx.max(p)
+	mn -= Vector2(40.0, 40.0)
+	mx += Vector2(40.0, 40.0)
+	var etendue := mx - mn
+	var ppm := minf(CARTE_PX_PAR_M, 1024.0 / maxf(etendue.x, etendue.y))
+	var img := Image.create(maxi(8, int(etendue.x * ppm)), maxi(8, int(etendue.y * ppm)), false, Image.FORMAT_RGBA8)
+	for lot in [[routes, COULEUR_ROUTE], [bat, COULEUR_BATI]]:
+		var pts: PackedVector2Array = lot[0]
+		var i := 0
+		while i + 2 < pts.size():
+			_remplir_triangle(img, (pts[i] - mn) * ppm, (pts[i + 1] - mn) * ppm, (pts[i + 2] - mn) * ppm, lot[1])
+			i += 3
+	_fond = ImageTexture.create_from_image(img)
+	_fond_x0 = mn.x
+	_fond_z0 = mn.y
+	_fond_ppm = ppm
+
+
+## Les triangles (vus d'en haut, x/z du monde) des éléments d'un groupe du décor.
+## Si le maillage n'est pas lisible (certains exports), on retombe sur sa boîte englobante.
+func _triangles(groupe: String) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	for n in get_tree().get_nodes_in_group(groupe):
+		var meshs: Array = []
+		if n is MeshInstance3D:
+			meshs = [n]
+		else:
+			meshs = n.find_children("*", "MeshInstance3D", true, false)
+		for mi in meshs:
+			var m: MeshInstance3D = mi
+			if m.mesh == null:
+				continue
+			var xf := m.global_transform
+			var faces := m.mesh.get_faces()
+			var ajoute := 0
+			var i := 0
+			while i + 2 < faces.size():
+				var a := xf * faces[i]
+				var b := xf * faces[i + 1]
+				var c := xf * faces[i + 2]
+				var nrm := (b - a).cross(c - a)
+				if nrm.length() > 0.0001 and absf(nrm.y) > 0.8 * nrm.length():
+					out.append(Vector2(a.x, a.z))
+					out.append(Vector2(b.x, b.z))
+					out.append(Vector2(c.x, c.z))
+					ajoute += 1
+				i += 3
+			if ajoute == 0:
+				var bb: AABB = xf * m.get_aabb()
+				var p0 := Vector2(bb.position.x, bb.position.z)
+				var p1 := Vector2(bb.end.x, bb.position.z)
+				var p2 := Vector2(bb.end.x, bb.end.z)
+				var p3 := Vector2(bb.position.x, bb.end.z)
+				out.append_array(PackedVector2Array([p0, p1, p2, p0, p2, p3]))
+	return out
+
+
+## Remplit un triangle ligne par ligne (rapide : un fill_rect par ligne).
+func _remplir_triangle(img: Image, a: Vector2, b: Vector2, c: Vector2, col: Color) -> void:
+	var w := img.get_width()
+	var y0 := maxi(0, int(ceil(minf(a.y, minf(b.y, c.y)))))
+	var y1 := mini(img.get_height() - 1, int(floor(maxf(a.y, maxf(b.y, c.y)))))
+	var pts := [a, b, c]
+	for y in range(y0, y1 + 1):
+		var xs: Array = []
+		for k in 3:
+			var p: Vector2 = pts[k]
+			var q: Vector2 = pts[(k + 1) % 3]
+			if (p.y <= y and q.y > y) or (q.y <= y and p.y > y):
+				xs.append(p.x + (y - p.y) / (q.y - p.y) * (q.x - p.x))
+		if xs.size() >= 2:
+			var x0 := clampi(int(floor(minf(xs[0], xs[1]))), 0, w - 1)
+			var x1 := clampi(int(ceil(maxf(xs[0], xs[1]))), 0, w - 1)
+			if x1 >= x0:
+				img.fill_rect(Rect2i(x0, y, x1 - x0 + 1, 1), col)
+
+
+func _dessiner_carte() -> void:
+	var taille := _carte.size
+	var c := taille * 0.5
+	_carte.draw_rect(Rect2(Vector2.ZERO, taille), Color(PAPIER, 0.92))
+	var cam := get_viewport().get_camera_3d()
+	if cam == null or _joueur == null or _fond == null:
+		return
+	# La carte tourne avec la caméra : le haut de la carte, c'est devant soi.
+	var bas := cam.global_transform.basis
+	var r := Vector2(bas.x.x, bas.x.z).normalized()
+	var f := Vector2(-bas.z.x, -bas.z.z).normalized()
+	var pj := Vector2(_joueur.global_position.x, _joueur.global_position.z)
+	var s := (CARTE_TAILLE * 0.5) / CARTE_PORTEE
+	var o := Vector2(_fond_x0, _fond_z0) - pj
+	var origine := c + Vector2(o.dot(r), -o.dot(f)) * s
+	var k := s / _fond_ppm
+	_carte.draw_set_transform_matrix(Transform2D(Vector2(r.x, -f.x) * k, Vector2(r.y, -f.y) * k, origine))
+	_carte.draw_texture_rect(_fond, Rect2(Vector2.ZERO, Vector2(_fond.get_width(), _fond.get_height())), false)
+	_carte.draw_set_transform_matrix(Transform2D.IDENTITY)
+	# L'objectif : le snack, à l'aller comme au retour.
+	var snack := _snack()
+	if snack != null and (etat == "peinture" or etat == "retour"):
+		var d := Vector2(snack.global_position.x, snack.global_position.z) - pj
+		var p := Vector2(d.dot(r), -d.dot(f)) * s
+		var lim := CARTE_TAILLE * 0.5 - 12.0
+		var dehors := absf(p.x) > lim or absf(p.y) > lim
+		if dehors:
+			p *= lim / maxf(absf(p.x), absf(p.y))
+		var q := c + p
+		if dehors:
+			var dir := p.normalized()
+			var perp := Vector2(-dir.y, dir.x)
+			var fleche := PackedVector2Array([q + dir * 9.0, q - dir * 5.0 + perp * 7.0, q - dir * 5.0 - perp * 7.0])
+			_carte.draw_colored_polygon(fleche, MAGENTA)
+			_carte.draw_polyline(PackedVector2Array([fleche[0], fleche[1], fleche[2], fleche[0]]), ENCRE, 2.0)
+		else:
+			var pouls := 7.0 + 2.0 * sin(Time.get_ticks_msec() * 0.006)
+			_carte.draw_circle(q, pouls, MAGENTA)
+			_carte.draw_arc(q, pouls, 0.0, TAU, 20, ENCRE, 2.5)
+		var police := ThemeDB.fallback_font
+		var texte := "SNACK  %d m" % int(d.length())
+		_carte.draw_string_outline(police, Vector2(6.0, taille.y - 7.0), texte, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, 5, PAPIER)
+		_carte.draw_string(police, Vector2(6.0, taille.y - 7.0), texte, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, ENCRE)
+	# Loums, au centre, tourné vers le haut.
+	var tri := PackedVector2Array([c + Vector2(0.0, -9.0), c + Vector2(-6.0, 6.0), c + Vector2(6.0, 6.0)])
+	_carte.draw_colored_polygon(tri, JAUNE)
+	_carte.draw_polyline(PackedVector2Array([tri[0], tri[1], tri[2], tri[0]]), ENCRE, 2.0)
+	_carte.draw_rect(Rect2(Vector2(1.5, 1.5), taille - Vector2(3.0, 3.0)), ENCRE, false, 3.0)
