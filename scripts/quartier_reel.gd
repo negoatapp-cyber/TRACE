@@ -12,6 +12,7 @@ const ALT_REF := 90.0
 const DEPART := Vector2(57, -45)  # rue de Marathon, au pied des Cyprès
 
 const STYLES := {
+	"barre_lauriers": [Color(0.93, 0.90, 0.80), true, 0.45, 2.8, 3.4, Color(0.86, 0.70, 0.36)],
 	"barre_blanche": [Color(0.90, 0.88, 0.83), true, 0.45, 2.8, 3.4],
 	"barre_rose": [Color(0.84, 0.60, 0.56), true, 0.40, 2.8, 3.4],
 	"tour_grise": [Color(0.70, 0.66, 0.58), false, 0.55, 2.8, 3.4],
@@ -198,7 +199,7 @@ func _batiment(nom: String, hauteur: float, style: String, poly: PackedVector2Ar
 	var sm := ShaderMaterial.new()
 	sm.shader = FACADE
 	sm.set_shader_parameter("mur", s[0])
-	sm.set_shader_parameter("garde_corps", (s[0] as Color).darkened(0.12))
+	sm.set_shader_parameter("garde_corps", s[5] if s.size() > 5 else (s[0] as Color).darkened(0.12))
 	sm.set_shader_parameter("hauteur", hauteur)
 	sm.set_shader_parameter("loggias", 1.0 if s[1] else 0.0)
 	sm.set_shader_parameter("vie", s[2])

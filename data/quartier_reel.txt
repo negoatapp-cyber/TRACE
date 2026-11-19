@@ -10,12 +10,8 @@
 # Z|type|nom|contour                 (zone : terrain, parking, skatepark…)
 # A|x0|z0|pas|colonnes|altitudes…    (grille d'altitudes, ligne par ligne du nord au sud)
 
-# ── Les Lauriers : la grande barre, en cinq tronçons, du sud au nord
-B|Lauriers 1|30|barre_blanche|-25,-90 -37,-91 -38,-61 -27,-61 -25,-90
-B|Lauriers 2|30|barre_blanche|-35,-123 -37,-94 -25,-93 -24,-122 -35,-123
-B|Lauriers 3|30|barre_blanche|-36,-157 -47,-153 -35,-123 -24,-127 -36,-157
-B|Lauriers 4|30|barre_blanche|-69,-247 -80,-243 -60,-189 -49,-193 -69,-247
-B|Lauriers 5|30|barre_blanche|-69,-247 -67,-293 -79,-293 -81,-248 -69,-247
+# ── Les Lauriers : la grande barre courbe, d'un seul tenant (état d'origine, d'après la photo de Louma : 14 niveaux)
+B|Grande barre des Lauriers|40|barre_lauriers|-26.0,-60.8 -25.0,-92.8 -24.0,-125.0 -35.9,-157.1 -48.9,-193.1 -68.5,-246.0 -67.0,-292.8 -79.0,-293.2 -80.5,-244.0 -60.1,-188.9 -47.1,-152.9 -36.0,-123.0 -37.0,-93.2 -38.0,-61.2
 # ── Les Cyprès, le long de la rue de Marathon
 B|Les Cyprès|45|tour_grise|33,-31 45,-30 49,-94 37,-95 33,-31
 # ── Les Genêts, au sud de la rue de Marathon
