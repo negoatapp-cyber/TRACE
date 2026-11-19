@@ -477,21 +477,15 @@ func _friche(poly: PackedVector2Array) -> void:
 
 
 func _mur(pts: PackedVector2Array) -> void:
-	for k in pts.size() - 1:
-		var a := pts[k]
-		var b := pts[k + 1]
-		var d := b - a
-		if d.length() < 0.5:
-			continue
-		var ya := h(a.x, a.y)
-		var yb := h(b.x, b.y)
-		var x := Vector3(d.x, yb - ya, d.y).normalized()
+	for t in _troncons(pts, 8.0):
+		var a: Vector3 = t[0]
+		var b: Vector3 = t[1]
+		var x := (b - a).normalized()
 		var z := x.cross(Vector3.UP).normalized()
-		var y := z.cross(x)
+		var taille := Vector3(a.distance_to(b) + 0.05, 1.6, 0.3)
 		var body := StaticBody3D.new()
 		var cs := CollisionShape3D.new()
 		var sh := BoxShape3D.new()
-		var taille := Vector3(Vector3(d.x, yb - ya, d.y).length(), 1.4, 0.3)
 		sh.size = taille
 		cs.shape = sh
 		body.add_child(cs)
@@ -502,7 +496,7 @@ func _mur(pts: PackedVector2Array) -> void:
 		mi.material_override = _mat(Color(0.74, 0.72, 0.67))
 		body.add_child(mi)
 		body.name = "Mur"
-		body.transform = Transform3D(Basis(x, y, z), Vector3((a.x + b.x) * 0.5, (ya + yb) * 0.5 + 0.5, (a.y + b.y) * 0.5))
+		body.transform = Transform3D(Basis(x, z.cross(x), z), (a + b) * 0.5 + Vector3(0, 0.5, 0))
 		add_child(body, true)
 
 

@@ -9,6 +9,7 @@ export_presets.cfg
 !.tools/verify_phase1.gd
 !.tools/verify_quartier.gd
 !.tools/verify_graffiti.gd
+!.tools/verify_grimpe.gd
 
 # Fichiers locaux à ne jamais publier (dépôt public)
 *.mp4
