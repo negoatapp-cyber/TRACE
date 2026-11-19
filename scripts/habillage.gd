@@ -56,6 +56,7 @@ func _ready() -> void:
 	_pied_des_cypres()
 	_mobilier(voies, batiments, zones)
 	_habiller_voitures()
+	_facades(batiments)
 	_vieux_murs(batiments)
 
 
@@ -424,6 +425,17 @@ func _entree_tour(pied: Vector2, angle: float) -> void:
 	racine.add_child(armoire)
 	_reserver(Vector2(o.x, o.z) + Vector2(dehors.x, dehors.z) * 1.0, 6.5)
 	_reserver(pied, 4.0)
+
+
+# ───────────────────────── façades en relief et toits ─────────────────────────
+
+func _facades(batiments: Array) -> void:
+	var f := Node3D.new()
+	f.set_script(load("res://scripts/habillage_facades.gd"))
+	f.name = "Facades"
+	f.set("habillage", self)
+	add_child(f)
+	f.call("construire", batiments)
 
 
 # ───────────────────────── vieux graffitis, affiches, effacements ─────────────────────────

@@ -245,6 +245,8 @@ func _etat() -> String:
 		return _joueur.transition
 	if _joueur._mantling:
 		return "grimpe"
+	if _joueur.suspendu:
+		return "suspendu"
 	if _joueur.mode == Player.Mode.WALK and (_tenue_bombe() > 0.0 or _trace_en_cours() != null):
 		return "bombe"
 	if _joueur.mode == Player.Mode.SKATE:
@@ -281,7 +283,7 @@ func _composer(delta: float) -> void:
 			_sur_planche(c)
 		"chute":
 			_chute(c)
-		"grimpe":
+		"grimpe", "suspendu":
 			_grimpe(c)
 		"bombe":
 			_geste_bombe(c)
@@ -414,10 +416,11 @@ func _grimpe(c: Dictionary) -> void:
 	c.bas = 1.0
 	c.fondu = 0.06
 	c.vif = 30.0
-	var t: float = _joueur._m_t
+	var pendu: bool = _joueur.suspendu
+	var t: float = 0.0 if pendu else _joueur._m_t
 	var ry: float = _joueur.visual.rotation.y
 	var avant := Vector3(-sin(ry), 0.0, -cos(ry))
-	var rebord: Vector3 = _joueur._m_to - avant * 0.12
+	var rebord: Vector3 = _joueur._rebord if pendu else _joueur._m_to - avant * 0.12
 	var inv := squelette.global_transform.affine_inverse()
 	for cote in ["Left", "Right"]:
 		var epaule := pose.origine_repos(cote + "Arm")
@@ -432,6 +435,13 @@ func _grimpe(c: Dictionary) -> void:
 			c.bd = bras
 	c.buste = Vector3(0.15 + 0.35 * t, 0, 0)
 	c.tete = Vector3(-0.3 * (1.0 - t), 0, 0)
+	if pendu:
+		# suspendu : jambes qui pendent, un peu fléchies, le buste contre le mur
+		c.buste = Vector3(0.05, 0, 0)
+		c.tete = Vector3(-0.35, 0, 0)
+		c.jg = [Vector3(0.06, -1, 0.12), Vector3(0.04, -1, -0.2)]
+		c.jd = [Vector3(-0.06, -1, 0.05), Vector3(-0.04, -1, -0.25)]
+		return
 	# un genou monte pour prendre appui
 	c.jg = [Vector3(0.05, -0.55, 0.8), Vector3(0.03, -1, 0.05)]
 	c.jd = [Vector3(-0.03, -1, -0.15), Vector3(-0.02, -1, -0.25)]

@@ -18,6 +18,7 @@ uniform float travee = 3.4;
 uniform float rdc = 3.2;
 uniform float loggias = 0.0;
 uniform float vie = 0.35;
+uniform vec3 persienne : source_color = vec3(0.62, 0.55, 0.46);
 // Bandes de couleur (Cyprès) : angles peints sur `bande_largeur` m, murs courts (< `pignon_max` m) entièrement peints.
 uniform vec3 bande : source_color = vec3(0.84, 0.46, 0.28);
 uniform float bande_largeur = 0.0;
@@ -77,6 +78,7 @@ void fragment() {
 				} else {
 					col = mc * 0.42;
 					if (f.x > 0.25 && f.x < 0.75) col = vitre;
+					if (f.x > 0.25 && f.x < 0.75 && h21(cell * 2.3 + 1.0) > 0.8) col = persienne * (0.9 + 0.1 * step(0.5, fract(f.y * 18.0)));
 					if (r > 0.82 && f.y > 0.7) col = mix(vec3(0.8, 0.5, 0.2), vec3(0.3, 0.55, 0.4), r2);
 				}
 			} else {
@@ -88,6 +90,8 @@ void fragment() {
 					rough = 0.25;
 					if (r < vie && f.y > 0.3 + 0.5 * r2) col = mix(vec3(0.75, 0.72, 0.65), vec3(0.5, 0.3, 0.25), r2);
 					if (abs(f.x - 0.5) < 0.012) col = mc * 0.9;
+					// Persiennes fermées, au hasard d'un logement à l'autre (lames horizontales).
+					if (h21(cell * 2.3 + 1.0) > 0.78) col = persienne * (0.9 + 0.1 * step(0.5, fract(f.y * 18.0)));
 				}
 			}
 		} else {

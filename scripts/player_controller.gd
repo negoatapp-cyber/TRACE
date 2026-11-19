@@ -25,6 +25,18 @@ var mode: Mode = Mode.WALK
 var spawn_position := Vector3.ZERO
 var climbs := 0                     ## nombre de rétablissements (pour le carnet de session)
 var _mantling := false
+## Suspendu à un rebord trop haut pour se hisser d'un coup (balcon, muret de toit, prise) :
+## on s'y accroche en sautant (Espace maintenu), on se décale (Q/D), on monte (Espace), on lâche (S).
+var suspendu := false
+var accroches := 0                  ## nombre de fois où il s'est accroché (tests, carnet)
+var _rebord := Vector3.ZERO         ## point du bord sous les mains
+var _rebord_n := Vector3.ZERO       ## normale du mur, vers Loums
+var _bond_t := -1.0                 ## bond vers le rebord du dessus en cours (0 → 1), -1 sinon
+var _bond_de := Vector3.ZERO
+var _bond_vers := Vector3.ZERO
+const BOND_MAX := 3.1               ## un étage de balcon en balcon (2,8 m) et un peu de marge
+const ACCROCHE_MAX := 3.0           ## hauteur max du bord au-dessus des pieds (au moment où on l'attrape)
+const SOUS_LES_MAINS := 2.05        ## des pieds aux mains, bras tendus
 var _m_t := 0.0
 var _m_dur := 0.4
 var _m_from := Vector3.ZERO
@@ -107,6 +119,9 @@ func _physics_process(delta: float) -> void:
 	if _mantling:
 		_mantle_step(delta)
 		return
+	if suspendu:
+		_suspendu_step(delta)
+		return
 
 	match mode:
 		Mode.WALK:
@@ -170,12 +185,16 @@ func _walk(delta: float) -> void:
 	if not is_on_floor():
 		velocity.y -= _gravity * delta
 		# En l'air, saut maintenu face à un rebord : on s'y accroche.
-		if Input.is_action_pressed("jump") and velocity.y < 2.0 and _try_mantle():
+		if Input.is_action_pressed("jump") and velocity.y < 2.0 and (_try_mantle() or _try_accrocher()):
 			return
 	elif Input.is_action_just_pressed("jump"):
 		if _try_mantle():
 			return
 		velocity.y = jump_velocity
+		# Course murale (Sleeping Dogs) : en courant droit sur un mur, on prend appui dessus et on monte plus haut.
+		if Input.is_action_pressed("push") and Vector2(velocity.x, velocity.z).length() > 4.0 and _mur_proche(2.4):
+			velocity.y = jump_velocity * 1.55
+			skate.last_event = "Course murale"
 	var target := dir * (run_speed if Input.is_action_pressed("push") else walk_speed)
 	velocity.x = move_toward(velocity.x, target.x, walk_accel * delta)
 	velocity.z = move_toward(velocity.z, target.z, walk_accel * delta)
@@ -222,6 +241,121 @@ func _try_mantle() -> bool:
 	climbs += 1
 	skate.last_event = "Grimpe"
 	return true
+
+
+## Le dessus d'un bord devant soi, cherché de haut en bas : {} s'il n'y en a pas.
+func _bord_devant(depuis: Vector3, fwd: Vector3, bas: float, haut: float) -> Dictionary:
+	var space := get_world_3d().direct_space_state
+	var mur := {}
+	for hgt in [bas, (bas + haut) * 0.5, haut - 0.2]:
+		var q := PhysicsRayQueryParameters3D.create(depuis + Vector3.UP * hgt, depuis + Vector3.UP * hgt + fwd * 0.9)
+		q.exclude = [get_rid()]
+		mur = space.intersect_ray(q)
+		if not mur.is_empty() and absf(mur.normal.y) < 0.4:
+			break
+		mur = {}
+	if mur.is_empty():
+		return {}
+	var n: Vector3 = mur.normal
+	n.y = 0.0
+	n = n.normalized()
+	var dessus: Vector3 = mur.position - n * 0.12
+	var q2 := PhysicsRayQueryParameters3D.create(Vector3(dessus.x, depuis.y + haut + 0.3, dessus.z), Vector3(dessus.x, depuis.y + bas - 0.2, dessus.z))
+	q2.exclude = [get_rid()]
+	var d := space.intersect_ray(q2)
+	if d.is_empty() or d.normal.y < 0.7:
+		return {}
+	return {"haut": d.position.y, "point": Vector3(mur.position.x, d.position.y, mur.position.z), "n": n}
+
+
+func _mur_proche(dist: float) -> bool:
+	var ry := visual.rotation.y
+	var fwd := Vector3(-sin(ry), 0.0, -cos(ry))
+	var q := PhysicsRayQueryParameters3D.create(global_position + Vector3.UP * 1.0, global_position + Vector3.UP * 1.0 + fwd * dist)
+	q.exclude = [get_rid()]
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	return not hit.is_empty() and absf(hit.normal.y) < 0.4
+
+
+## En l'air, Espace maintenu, face à un bord trop haut pour se hisser : on s'y accroche.
+func _try_accrocher() -> bool:
+	var ry := visual.rotation.y
+	var fwd := Vector3(-sin(ry), 0.0, -cos(ry))
+	# aussi un peu en arrière : sous un balcon en surplomb, on attrape son bord avant
+	var b := {}
+	for recul in [0.0, 0.6, 1.2]:
+		b = _bord_devant(global_position - fwd * recul, fwd, mantle_reach * 0.6, ACCROCHE_MAX)
+		if not b.is_empty():
+			break
+	if b.is_empty():
+		return false
+	var rise: float = b.haut - global_position.y
+	if rise <= mantle_reach - 0.1 or rise > ACCROCHE_MAX:
+		return false
+	_accrocher(b.point, b.n)
+	return true
+
+
+func _accrocher(point: Vector3, n: Vector3) -> void:
+	suspendu = true
+	_rebord = point
+	_rebord_n = n
+	velocity = Vector3.ZERO
+	visual.rotation.y = atan2(n.x, n.z)
+	global_position = point + n * 0.32 - Vector3.UP * SOUS_LES_MAINS
+	accroches += 1
+	skate.last_event = "Accroché"
+
+
+## Suspendu : Q/D se décalent le long du bord (s'il continue), Espace hisse, S lâche.
+func _suspendu_step(delta: float) -> void:
+	velocity = Vector3.ZERO
+	if _bond_t >= 0.0:
+		_bond_t = minf(_bond_t + delta / 0.45, 1.0)
+		var k := _bond_t * _bond_t * (3.0 - 2.0 * _bond_t)
+		global_position = _bond_de.lerp(_bond_vers, k) + _rebord_n * sin(_bond_t * PI) * 0.15
+		if _bond_t >= 1.0:
+			_bond_t = -1.0
+		return
+	var input := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+	if Input.is_action_just_pressed("jump"):
+		# se hisser : il faut la place de tenir debout là-haut
+		var space := get_world_3d().direct_space_state
+		var haut := _rebord - _rebord_n * 0.35
+		var q := PhysicsRayQueryParameters3D.create(haut + Vector3.UP * 0.15, haut + Vector3.UP * 1.8)
+		q.exclude = [get_rid()]
+		if space.intersect_ray(q).is_empty():
+			suspendu = false
+			_mantling = true
+			_m_t = 0.0
+			_m_dur = 0.75
+			_m_from = global_position
+			_m_to = haut + Vector3.UP * 0.05
+			climbs += 1
+			skate.last_event = "Grimpe"
+			return
+		# pas la place de se hisser : un rebord plus haut ? on bondit pour l'attraper (Getting Up)
+		var b := _bord_devant(global_position, -_rebord_n, SOUS_LES_MAINS + 0.5, SOUS_LES_MAINS + BOND_MAX)
+		if not b.is_empty() and b.haut - _rebord.y > 0.4:
+			_rebord = b.point
+			_bond_de = global_position
+			_bond_vers = b.point + _rebord_n * 0.32 - Vector3.UP * SOUS_LES_MAINS
+			_bond_t = 0.0
+			climbs += 1
+			skate.last_event = "Bond"
+			return
+	if input.y > 0.6:
+		suspendu = false   # on lâche
+		global_position += _rebord_n * 0.15
+		skate.last_event = "Lâche"
+		return
+	if absf(input.x) > 0.2:
+		var long := Vector3.UP.cross(_rebord_n).normalized()   # vers la droite de Loums, face au mur
+		var pas := long * signf(input.x) * 1.1 * delta
+		var b := _bord_devant(global_position + pas + _rebord_n * 0.0, -_rebord_n, SOUS_LES_MAINS - 0.5, SOUS_LES_MAINS + 0.35)
+		if not b.is_empty() and absf(b.haut - _rebord.y) < 0.2:
+			_rebord = b.point
+			global_position = b.point + _rebord_n * 0.32 - Vector3.UP * SOUS_LES_MAINS
 
 
 func _mantle_step(delta: float) -> void:
@@ -352,6 +486,8 @@ func _respawn() -> void:
 	velocity = Vector3.ZERO
 	skate.grinding = false
 	_mantling = false
+	suspendu = false
+	_bond_t = -1.0
 	skate.speed = 0.0
 	_set_mode(Mode.WALK)
 
