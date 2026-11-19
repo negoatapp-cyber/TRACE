@@ -204,7 +204,7 @@ func _trouver_animations(n: Node) -> AnimationPlayer:
 
 func _ranger_clips() -> void:
 	var mots := {
-		"attente": ["idle", "stand", "breath"],
+		"attente": ["idle", "inactif", "stand", "breath"],
 		"marche": ["walk"],
 		"course": ["running", "run", "jog", "sprint"],
 		"saut": ["jump"],

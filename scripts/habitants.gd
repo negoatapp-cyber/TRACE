@@ -242,6 +242,38 @@ func creer_personnage(nom: String, taille := 1.75) -> Node3D:
 	return racine
 
 
+## Les modèles Meshy ont les mêmes noms d'os (Mixamo), mais pas les mêmes poses de repos : un clip emprunté à
+## Loums tord le corps d'un autre personnage. On ne l'utilise que pour la 2e tenue de Loums (même corps).
+const CLIPS_PRETES := ["Axe_Breathe_and_Look_Around", "Casual_Walk"]
+static var _clips_loums := {}
+
+
+static func emprunter_clips(ap: AnimationPlayer) -> void:
+	if ap == null:
+		return
+	if _clips_loums.is_empty():
+		var f := "res://assets/personnages/loums.glb"
+		if not ResourceLoader.exists(f):
+			return
+		var ps := load(f) as PackedScene
+		if ps == null:
+			return
+		var m := ps.instantiate()
+		var l := m.find_children("*", "AnimationPlayer", true, false)
+		if not l.is_empty():
+			var src := l[0] as AnimationPlayer
+			for nom in CLIPS_PRETES:
+				if src.has_animation(nom):
+					_clips_loums[nom] = src.get_animation(nom).duplicate()
+		m.free()
+	var lib := ap.get_animation_library("")
+	if lib == null:
+		return
+	for nom in _clips_loums:
+		if not ap.has_animation(nom):
+			lib.add_animation(nom, _clips_loums[nom])
+
+
 func _trouver_anim(n: Node) -> AnimationPlayer:
 	var l := n.find_children("*", "AnimationPlayer", true, false)
 	return l[0] as AnimationPlayer if not l.is_empty() else null
@@ -255,7 +287,7 @@ func _ranger_clips(ap: AnimationPlayer) -> Dictionary:
 		var b := String(nom).to_lower()
 		if not c.has("marche") and (b.contains("walk") or b.contains("marche")):
 			c["marche"] = nom
-		elif not c.has("attente") and (b.contains("idle") or b.contains("attente") or b.contains("stand") or b.contains("breath")):
+		elif not c.has("attente") and (b.contains("idle") or b.contains("inactif") or b.contains("attente") or b.contains("stand")):
 			c["attente"] = nom
 	for k in ["marche", "attente"]:
 		if c.has(k):
@@ -362,12 +394,19 @@ func _physics_process(delta: float) -> void:
 		var vit := Vector2(h.velocity.x, h.velocity.z).length()
 		if h.anim:
 			var clip: String = h.clips.get("marche" if vit > 0.3 else "attente", "")
-			if clip != "" and h.anim.current_animation != clip:
+			if clip == "" and vit <= 0.3:
+				# pas de clip d'attente : il se fige en début de pas (mieux que la pose en A du squelette)
+				clip = h.clips.get("marche", "")
+				if clip != "" and (h.anim.current_animation != clip or h.anim.speed_scale != 0.0):
+					h.anim.play(clip, 0.3)
+					h.anim.seek(0.0, true)
+					h.anim.speed_scale = 0.0
+			elif clip != "" and h.anim.current_animation != clip:
 				h.anim.play(clip, 0.25)
-			elif clip == "" and h.anim.is_playing():
-				h.anim.stop()   # pas de clip d'attente : il reste debout, immobile
 			if vit > 0.3:
 				h.anim.speed_scale = clampf(vit / 1.2, 0.6, 1.6)
+			elif h.clips.has("attente"):
+				h.anim.speed_scale = 1.0
 		else:
 			h._pas += vit * delta * 4.0
 			h.corps.position.y = absf(sin(h._pas)) * 0.04

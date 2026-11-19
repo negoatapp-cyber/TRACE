@@ -16,6 +16,11 @@ const TOON := preload("res://shaders/bd_toon.gdshader")
 const AVEC_BALCONS := ["barre_lauriers", "barre_renovee", "barre_blanche", "barre_rose", "cypres_barre", "genets_blanc"]
 ## Styles « tour » : dalles d'étage apparentes.
 const AVEC_DALLES := ["cypres_tour", "tour_ocre", "tour_grise"]
+## Usure des façades en 2013 (shader `usure`) : les cités sont tachées, écaillées, noircies au pied.
+const USURE := {"marathon_rouge": 0.95, "impasse_beige": 0.9, "barre_lauriers": 0.7, "cypres_barre": 0.6,
+	"cypres_tour": 0.5, "genets_blanc": 0.6, "tour_ocre": 0.5, "barre_rose": 0.6, "barre_blanche": 0.6, "clair": 0.35}
+## Petits immeubles dont le toit porte des conduits de cheminée, des paraboles et des râteaux (image cible).
+const TOITS_ENCOMBRES := ["marathon_rouge", "impasse_beige", "cypres_barre", "genets_blanc", "barre_rose", "barre_blanche"]
 const RDC := 3.2              # hauteur du rez-de-chaussée (même valeur que facade.gdshader)
 const BALCON_PROFOND := 1.1   # saillie d'un balcon (m)
 const GARDE_CORPS := 1.0      # hauteur du garde-corps
@@ -68,6 +73,10 @@ func _batiment(nom: String, hauteur: float, style: String, poly: PackedVector2Ar
 	corps.name = "Prises_" + nom.validate_node_name()
 	corps.add_to_group("prise")
 	add_child(corps)
+	if USURE.has(style):
+		_repeindre(nom, {"usure": USURE[style]})
+	if style in TOITS_ENCOMBRES:
+		_cheminees(poly, toit, mur)
 	var niveaux := int(floor((hauteur - RDC - 0.6) / etage))
 	if style in AVEC_BALCONS:
 		niveaux = int(floor((hauteur - RDC - 2.4) / etage)) + 1   # un balcon au dernier étage aussi
@@ -75,6 +84,14 @@ func _batiment(nom: String, hauteur: float, style: String, poly: PackedVector2Ar
 	# au-delà, une corniche fait l'étape intermédiaire.
 	var corniche := -1.0
 	var haut_balcon := RDC + (niveaux - 1) * etage + GARDE_CORPS
+	if style == "barre_lauriers":
+		haut_balcon = RDC + (niveaux - 1) * etage
+		_repeindre_barre(nom)
+		_peau_barre(nom, poly, moy, hauteur, niveaux, etage, travee, mur, garde)
+	elif style == "cypres_tour":
+		# photos 2013-2014 : l'orange est une bande verticale en creux au milieu des grandes faces
+		_repeindre(nom, {"bande_largeur": 0.0, "bande_centre": BANDE_TOUR, "bande_axe": Vector2(0.0, 1.0)})
+		_ailettes_tour(poly, moy, hauteur, mur)
 	if style in AVEC_BALCONS and hauteur + 0.75 - haut_balcon > 2.9:
 		corniche = moy + haut_balcon + (hauteur + 0.75 - haut_balcon) * 0.5
 	var u := 0.0
@@ -86,17 +103,23 @@ func _batiment(nom: String, hauteur: float, style: String, poly: PackedVector2Ar
 			continue
 		var d := (b - a) / long
 		var n := _normale_dehors(a, b, poly)
-		if style in AVEC_BALCONS and long >= 15.0:  # pas de balcons sur les pignons
+		if style == "barre_lauriers":
+			# 2013 : façade plate, loggias en creux (shader) ; seuls les nez de dalle dépassent un peu,
+			# assez pour s'y accrocher et monter d'étage en étage.
+			if long >= 15.0:
+				for kk in niveaux:
+					_rebord_mince(corps, a, b, d, n, long, moy + RDC + kk * etage, mur.darkened(0.05), kk < niveaux - 1, true, PEAU)
+		elif style in AVEC_BALCONS and long >= 15.0:  # pas de balcons sur les pignons
 			_balcons(corps, a, d, n, u, long, moy, niveaux, etage, travee, garde)
 		elif style in AVEC_DALLES:
 			_dalles(corps, a, b, d, n, long, moy, niveaux, etage, mur.darkened(0.08))
 		if corniche > 0.0 and long >= 2.0:
 			_rebord_mince(corps, a, b, d, n, long, corniche, mur.darkened(0.1))
 		if hauteur >= 8.0:
-			_acrotere(corps, a, b, d, n, long, toit, mur.darkened(0.1))
+			_acrotere(corps, a, b, d, n, long, toit, mur.darkened(0.1), PEAU if style == "barre_lauriers" else 0.0)
 		u += long
 	if hauteur >= 8.0:
-		_descentes(poly, moy, toit)
+		_descentes(_decale(poly, PEAU) if style == "barre_lauriers" else poly, moy, toit)
 	if hauteur >= 15.0:
 		_edicules(corps, poly, toit, mur.darkened(0.06))
 
@@ -156,11 +179,274 @@ func _dalles(corps: StaticBody3D, a: Vector2, b: Vector2, d: Vector2, n: Vector2
 		_rebord_mince(corps, a, b, d, n, long, moy + RDC + k * etage, c, k < niveaux)
 
 
+## La grande barre des Lauriers telle qu'en juin 2014 (Street View, rue Raymonde Martin) :
+## crème, plate, une colonne de loggias en creux pour deux colonnes de doubles fenêtres.
+## Toit d'immeuble des années 60 : une file de conduits de ventilation coiffés, deux râteaux, des paraboles au bord.
+func _cheminees(poly: PackedVector2Array, toit: float, mur: Color) -> void:
+	var i_long := 0
+	for i in poly.size():
+		if poly[i].distance_to(poly[(i + 1) % poly.size()]) > poly[i_long].distance_to(poly[(i_long + 1) % poly.size()]):
+			i_long = i
+	var a := poly[i_long]
+	var b := poly[(i_long + 1) % poly.size()]
+	var long := a.distance_to(b)
+	if long < 8.0:
+		return
+	var d := (b - a) / long
+	var dedans := -_normale_dehors(a, b, poly)
+	# profondeur du bâtiment, mesurée vers l'intérieur
+	var prof := 4.0
+	while prof < 30.0 and Geometry2D.is_point_in_polygon(a + d * long * 0.5 + dedans * (prof + 1.0), poly):
+		prof += 1.0
+	var base := Basis(Vector3(d.x, 0, d.y), Vector3.UP, Vector3(dedans.x, 0, dedans.y)).orthonormalized()
+	var t := 3.0
+	var k := 0
+	while t < long - 2.5:
+		var p := a + d * t + dedans * (prof * 0.5 + (0.9 if k % 2 == 0 else -0.9))
+		if Geometry2D.is_point_in_polygon(p, poly):
+			var hc := _rng.randf_range(1.0, 1.6)
+			var o := Vector3(p.x, toit + hc * 0.5, p.y)
+			_ajouter("cheminee", _cube, mur.darkened(0.12), Transform3D(_ech(base, Vector3(0.75, hc, 0.55)), o))
+			_ajouter("cheminee_chapeau", _cube, Color(0.42, 0.42, 0.44), Transform3D(_ech(base, Vector3(0.95, 0.1, 0.75)), o + Vector3.UP * (hc * 0.5 + 0.18)))
+			for s2 in [-1.0, 1.0]:
+				_ajouter("cheminee_pied", _cube, Color(0.42, 0.42, 0.44), Transform3D(_ech(base, Vector3(0.06, 0.18, 0.06)), o + Vector3.UP * (hc * 0.5 + 0.06) + base.x * s2 * 0.3))
+		t += _rng.randf_range(4.0, 6.0)
+		k += 1
+	# râteaux de télé
+	for f in [0.3, 0.72]:
+		var p: Vector2 = a + d * long * f + dedans * prof * 0.5
+		var m := Vector3(p.x, toit, p.y)
+		_ajouter("antenne", _cube, Color(0.45, 0.46, 0.48), Transform3D(Basis().scaled(Vector3(0.05, 2.6, 0.05)), m + Vector3.UP * 1.3))
+		var rot := Basis(Vector3.UP, _rng.randf() * TAU)
+		for i in 3:
+			_ajouter("antenne", _cube, Color(0.45, 0.46, 0.48), Transform3D(_ech(rot, Vector3(1.2 - i * 0.25, 0.04, 0.04)), m + Vector3.UP * (1.8 + i * 0.35)))
+	# paraboles au bord du toit, tournées vers le sud-est
+	for f in [0.15, 0.55, 0.85]:
+		if _rng.randf() < 0.3:
+			continue
+		var p: Vector2 = a + d * long * f + dedans * 0.6
+		var pb := Basis(Vector3.UP, deg_to_rad(150)) * Basis(Vector3.RIGHT, deg_to_rad(70))
+		_ajouter("parabole", _disque, Color(0.88, 0.88, 0.86), Transform3D(_ech(pb, Vector3(0.9, 0.05, 0.9)), Vector3(p.x, toit + 1.0, p.y)))
+		_ajouter("antenne", _cube, Color(0.45, 0.46, 0.48), Transform3D(Basis().scaled(Vector3(0.05, 1.0, 0.05)), Vector3(p.x, toit + 0.5, p.y)))
+
+
+const PEAU := 0.7          # épaisseur de la façade rapportée de la grande barre (profondeur des loggias)
+const RYTHME_BARRE := 3     # une colonne de loggias toutes les 3 travées (même valeur que _repeindre_barre)
+
+## LA GRANDE BARRE (Street View juin 2014) : une vraie façade épaisse posée devant le volume du relevé,
+## percée de vraies loggias en creux (0,7 m) — une colonne toutes les trois travées, du premier étage au dernier.
+## Le fond des loggias est le mur du relevé (porte-fenêtre peinte) ; devant, à chaque étage, la dalle et
+## un garde-corps plein, parfois du linge ou une parabole. Les pignons sont pleins.
+func _peau_barre(nom: String, poly: PackedVector2Array, moy: float, hauteur: float, niveaux: int, etage: float, travee: float, mur: Color, garde: Color) -> void:
+	var facade: Material = null
+	for bat in get_tree().get_nodes_in_group("batiment"):
+		if bat.name == nom:
+			for e in bat.get_children():
+				if e is MeshInstance3D and e.material_override is ShaderMaterial:
+					facade = e.material_override
+	var ext := _decale(poly, PEAU)
+	var toit := moy + hauteur
+	var y_bas := INF
+	for p in ext:
+		y_bas = minf(y_bas, h(p.x, p.y))
+	y_bas -= 1.5
+	var y_t0 := moy + RDC - 0.05
+	var y_t1 := toit - 0.5
+	var sf := SurfaceTool.new()   # faces avant : le shader de façade (fenêtres, volets)
+	sf.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var sc := SurfaceTool.new()   # tranches et dessus : enduit uni
+	sc.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var col := StaticBody3D.new()
+	col.name = "Peau_" + nom.validate_node_name()
+	add_child(col)
+	var u := 0.0
+	var nb_loggias := 0
+	for k in poly.size():
+		var a := poly[k]
+		var b := poly[(k + 1) % poly.size()]
+		var long := a.distance_to(b)
+		if long < 0.01:
+			continue
+		var a2 := ext[k]
+		var b2 := ext[(k + 1) % poly.size()]
+		var d := (b - a) / long
+		var n := _normale_dehors(a, b, poly)
+		var n3 := Vector3(n.x, 0, n.y)
+		var trous := []
+		if long >= 15.0:
+			for c in range(int(floor(u / travee)), int(floor((u + long) / travee)) + 1):
+				if posmod(c, RYTHME_BARRE) != 0:
+					continue
+				var t0 := (c + 0.05) * travee - u
+				var t1 := (c + 0.95) * travee - u
+				if t0 > 0.8 and t1 < long - 0.8:
+					trous.append([t0, t1])
+		var avant := func(t: float, y: float) -> Vector3:
+			var q := a2.lerp(b2, t / long)
+			return Vector3(q.x, y, q.y)
+		var arriere := func(t: float, y: float) -> Vector3:
+			var q := a.lerp(b, t / long)
+			return Vector3(q.x, y, q.y)
+		var face := func(t0: float, t1: float, y0: float, y1: float) -> void:
+			_quad(sf, avant.call(t0, y0), avant.call(t1, y0), avant.call(t1, y1), avant.call(t0, y1), n3,
+				[Vector2(u + t0, y0 - moy), Vector2(u + t1, y0 - moy), Vector2(u + t1, y1 - moy), Vector2(u + t0, y1 - moy)])
+		var bloc := func(t0: float, t1: float, y0: float, y1: float) -> void:
+			var cs := CollisionShape3D.new()
+			var sh := BoxShape3D.new()
+			sh.size = Vector3(t1 - t0, y1 - y0, PEAU)
+			cs.shape = sh
+			var q := a.lerp(b, (t0 + t1) * 0.5 / long) + n * (PEAU * 0.5)
+			cs.transform = Transform3D(_base(d, n), Vector3(q.x, (y0 + y1) * 0.5, q.y))
+			col.add_child(cs)
+		# parties pleines entre les colonnes de loggias
+		var bornes := [0.0]
+		for tr in trous:
+			bornes.append(tr[0])
+			bornes.append(tr[1])
+		bornes.append(long)
+		for i in range(0, bornes.size(), 2):
+			face.call(bornes[i], bornes[i + 1], y_bas, toit)
+			bloc.call(bornes[i], bornes[i + 1], y_bas, toit)
+		# dessus de la façade rapportée
+		_quad(sc, arriere.call(0.0, toit), arriere.call(long, toit), avant.call(long, toit), avant.call(0.0, toit), Vector3.UP, [])
+		var base := _base(d, n)
+		for tr in trous:
+			var t0: float = tr[0]
+			var t1: float = tr[1]
+			face.call(t0, t1, y_bas, y_t0)
+			face.call(t0, t1, y_t1, toit)
+			bloc.call(t0, t1, y_bas, y_t0)
+			bloc.call(t0, t1, y_t1, toit)
+			# tranches de la loggia
+			_quad(sc, arriere.call(t0, y_t0), avant.call(t0, y_t0), avant.call(t0, y_t1), arriere.call(t0, y_t1), Vector3(d.x, 0, d.y), [])
+			_quad(sc, avant.call(t1, y_t0), arriere.call(t1, y_t0), arriere.call(t1, y_t1), avant.call(t1, y_t1), -Vector3(d.x, 0, d.y), [])
+			_quad(sc, arriere.call(t0, y_t1), avant.call(t0, y_t1), avant.call(t1, y_t1), arriere.call(t1, y_t1), Vector3.DOWN, [])
+			var larg := t1 - t0
+			var q: Vector2 = a.lerp(b, (t0 + t1) * 0.5 / long)
+			for kk in niveaux:
+				var y := moy + RDC + kk * etage
+				var o := Vector3(q.x, y, q.y)
+				_ajouter("loggia_dalle", _cube, mur.darkened(0.12), Transform3D(_ech(base, Vector3(larg, 0.2, PEAU)), o + base.z * (PEAU * 0.5) - Vector3.UP * 0.1))
+				_ajouter("loggia_plafond", _cube, mur.darkened(0.35), Transform3D(_ech(base, Vector3(larg, 0.04, PEAU)), o + base.z * (PEAU * 0.5) + Vector3.UP * (etage - 0.24)))
+				_ajouter("loggia_garde", _cube, garde, Transform3D(_ech(base, Vector3(larg, 1.0, 0.08)), o + base.z * (PEAU - 0.12) + Vector3.UP * 0.5))
+				var r := _rng.randf()
+				if r < 0.10:
+					var pb := Basis(Vector3.UP, deg_to_rad(150)) * Basis(Vector3.RIGHT, deg_to_rad(70))
+					_ajouter("parabole", _disque, Color(0.88, 0.88, 0.86), Transform3D(_ech(pb, Vector3(0.7, 0.05, 0.7)), o + base.z * (PEAU + 0.12) + base.x * (larg * 0.3) + Vector3.UP * 1.25))
+				elif r < 0.32:
+					# serviette ou drap sur le garde-corps
+					var cle := "serviette_%d" % (int(r * 100.0) % 4)
+					_ajouter(cle, _cube, [Color(0.85, 0.30, 0.28), Color(0.25, 0.45, 0.78), Color(0.95, 0.92, 0.86), Color(0.95, 0.75, 0.25)][int(r * 100.0) % 4], Transform3D(_ech(base, Vector3(larg * _rng.randf_range(0.25, 0.6), 0.75, 0.03)), o + base.z * (PEAU - 0.06) + base.x * _rng.randf_range(-0.6, 0.6) + Vector3.UP * 0.7))
+				elif r < 0.40:
+					# store de toile baissé
+					_ajouter("loggia_store", _cube, Color(0.80, 0.52, 0.30), Transform3D(_ech(base, Vector3(larg * 0.94, etage * 0.55, 0.03)), o + base.z * (PEAU - 0.05) + Vector3.UP * (etage * 0.68)))
+			nb_loggias += 1
+		u += long
+	var mf := MeshInstance3D.new()
+	sf.generate_tangents()
+	mf.mesh = sf.commit()
+	mf.material_override = facade
+	mf.name = "Facade_rapportee"
+	add_child(mf)
+	var mc := MeshInstance3D.new()
+	mc.mesh = sc.commit()
+	var m := ShaderMaterial.new()
+	m.shader = TOON
+	m.set_shader_parameter("couleur", mur.darkened(0.06))
+	m.set_shader_parameter("grain", 0.5)
+	mc.material_override = m
+	mc.name = "Facade_rapportee_tranches"
+	add_child(mc)
+	print("Grande barre : façade épaisse, %d colonnes de loggias en creux" % nb_loggias)
+
+
+## Deux triangles d'un quadrilatère, tournés vers `nrm` ; uv = 4 coordonnées (UV2 = position sur le mur).
+func _quad(st: SurfaceTool, p0: Vector3, p1: Vector3, p2: Vector3, p3: Vector3, nrm: Vector3, uv: Array) -> void:
+	var pts := [p0, p1, p2, p3]
+	var uvs: Array = uv if uv.size() == 4 else [Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO]
+	var long := 0.0
+	if uv.size() == 4:
+		long = absf((uv[1] as Vector2).x - (uv[0] as Vector2).x)
+	for tri in [[0, 1, 2], [0, 2, 3]]:
+		var ordre: Array = tri
+		if ((pts[ordre[2]] as Vector3) - pts[ordre[0]]).cross((pts[ordre[1]] as Vector3) - pts[ordre[0]]).dot(nrm) < 0.0:
+			ordre = [ordre[0], ordre[2], ordre[1]]
+		for i in ordre:
+			st.set_normal(nrm)
+			st.set_uv(uvs[i])
+			st.set_uv2(Vector2(-1.0, -1.0))
+			st.add_vertex(pts[i])
+
+
+## Le contour décalé de `e` m vers l'extérieur, coins en onglet.
+func _decale(poly: PackedVector2Array, e: float) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	var nb := poly.size()
+	for k in nb:
+		var p := poly[k]
+		var avant := poly[(k - 1 + nb) % nb]
+		var apres := poly[(k + 1) % nb]
+		var n1 := _normale_dehors(avant, p, poly)
+		var n2 := _normale_dehors(p, apres, poly)
+		var mi := (n1 + n2).normalized()
+		out.append(p + mi * e / maxf(mi.dot(n1), 0.35))
+	return out
+
+
+const BANDE_TOUR := 4.6   # largeur de la bande orange de la tour Cyprès B (m)
+
+## Les deux joues de la bande orange : de fins voiles de béton qui dépassent, d'un bout à l'autre de la hauteur,
+## et creusent la bande dans la façade.
+func _ailettes_tour(poly: PackedVector2Array, moy: float, hauteur: float, mur: Color) -> void:
+	for k in poly.size():
+		var a := poly[k]
+		var b := poly[(k + 1) % poly.size()]
+		var long := a.distance_to(b)
+		if long < 10.0:
+			continue
+		var n := _normale_dehors(a, b, poly)
+		if absf(n.y) < 0.7:
+			continue
+		var d := (b - a) / long
+		var base := _base(d, n)
+		var m := (a + b) * 0.5
+		for s in [-1.0, 1.0]:
+			var p: Vector2 = m + d * s * (BANDE_TOUR * 0.5 + 0.2)
+			var bas := h(p.x, p.y) - 0.5
+			var haut := moy + hauteur + 0.4
+			_ajouter("ailette", _cube, mur.darkened(0.03), Transform3D(_ech(base, Vector3(0.4, haut - bas, 0.55)), Vector3(p.x, (haut + bas) * 0.5, p.y) + base.z * 0.27))
+
+
+func _repeindre(nom: String, params: Dictionary) -> void:
+	for bat in get_tree().get_nodes_in_group("batiment"):
+		if bat.name != nom:
+			continue
+		for e in bat.get_children():
+			if e is MeshInstance3D and e.material_override is ShaderMaterial:
+				for cle in params:
+					(e.material_override as ShaderMaterial).set_shader_parameter(cle, params[cle])
+
+
+func _repeindre_barre(nom: String) -> void:
+	for bat in get_tree().get_nodes_in_group("batiment"):
+		if bat.name != nom:
+			continue
+		for e in bat.get_children():
+			if e is MeshInstance3D and e.material_override is ShaderMaterial:
+				var m: ShaderMaterial = e.material_override
+				m.set_shader_parameter("rythme", 3.0)
+				m.set_shader_parameter("mur", Color(0.90, 0.86, 0.75))
+				m.set_shader_parameter("garde_corps", Color(0.84, 0.80, 0.70))
+				m.set_shader_parameter("vie", 0.6)
+
+
 ## Un rebord fin le long d'un mur (dalle d'étage, corniche) : visible, et prise de grimpe.
-func _rebord_mince(corps: StaticBody3D, a: Vector2, b: Vector2, d: Vector2, n: Vector2, long: float, y: float, c: Color, bloc_dessus := true) -> void:
+func _rebord_mince(corps: StaticBody3D, a: Vector2, b: Vector2, d: Vector2, n: Vector2, long: float, y: float, c: Color, bloc_dessus := true, discret := false, devant := 0.0) -> void:
 	var base := _base(d, n)
-	var m := (a + b) * 0.5
+	var m := (a + b) * 0.5 + n * devant
 	var t := Transform3D(_ech(base, Vector3(long + 0.4, 0.18, 0.4)), Vector3(m.x, y, m.y))
+	if discret:
+		t = Transform3D(_ech(base, Vector3(long, 0.12, 0.26)), Vector3(m.x, y, m.y))
 	_ajouter("dalle_tour", _cube, c, t)
 	# Collision : de 13 cm derrière le mur à 14 cm devant. Assez pour s'y suspendre et pour que
 	# le bond trouve le rebord suivant, trop peu pour se hisser et tenir debout dessus.
@@ -184,9 +470,9 @@ func _rebord_mince(corps: StaticBody3D, a: Vector2, b: Vector2, d: Vector2, n: V
 
 
 ## Acrotère : le muret qui borde le toit. On peut s'y percher ; il empêche de tomber par mégarde.
-func _acrotere(corps: StaticBody3D, a: Vector2, b: Vector2, d: Vector2, n: Vector2, long: float, toit: float, c: Color) -> void:
+func _acrotere(corps: StaticBody3D, a: Vector2, b: Vector2, d: Vector2, n: Vector2, long: float, toit: float, c: Color, devant := 0.0) -> void:
 	var base := _base(d, n)
-	var m := (a + b) * 0.5 - n * 0.1
+	var m := (a + b) * 0.5 - n * 0.1 + n * devant
 	var t := Transform3D(_ech(base, Vector3(long + 0.2, 0.75, 0.22)), Vector3(m.x, toit + 0.375, m.y))
 	_ajouter("acrotere", _cube, c, t)
 	var cs := CollisionShape3D.new()
@@ -321,7 +607,9 @@ func _poser_paquets() -> void:
 		m.set_shader_parameter("grain", 0.5)
 		mi.material_override = m
 		mi.name = "Facades_" + cle
-		if cle.begins_with("linge") or cle == "antenne" or cle == "parabole":
+		# Seuls les volumes du toit portent une ombre : les balcons et nez de dalle, eux, dessinaient au sol
+		# un damier d'ombres (vu sur mobile, 19.11) alors que l'immeuble lui-même projette déjà la sienne.
+		if not (cle.begins_with("edicule") or cle == "acrotere"):
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(mi)
 

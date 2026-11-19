@@ -7,6 +7,7 @@ extends Node3D
 ## Créé au lancement par style_bd.gd : aucune scène à modifier.
 
 const Q := preload("res://scripts/quartier_reel.gd")
+const MARQUE := preload("res://scripts/marque_murale.gd")
 const MOB_GRIS := Color(0.30, 0.34, 0.33)
 const MOB_BETON := Color(0.80, 0.77, 0.71)
 
@@ -78,6 +79,10 @@ func _ready() -> void:
 	lv.call("construire", batiments, voies, ly.get("portes_monde"), Q.epoque)
 	_mur_paix()
 	_horizon()
+	# le ciel peint et la lumière de chaque heure (scripts/ciel.gd)
+	var ciel: Node = preload("res://scripts/ciel.gd").new()
+	ciel.name = "Ciel"
+	add_child(ciel)
 	_vieux_murs(batiments)
 
 
@@ -604,7 +609,7 @@ func _mur_paix() -> void:
 	var x_d := PAIX_AXE + 5.2
 	var pas := 6.0
 	var z := zf + 0.3
-	while z < PAIX_BAS - 10.0:
+	while z < Z_GYMNASE - 1.0:
 		var ys := sol(x_d, z + pas * 0.5)
 		var haut_mur := lerpf(hm, 0.8, clampf((z - zf) / 60.0, 0.0, 1.0))
 		var seg := _boite_y("Soutenement_beton", Vector3(x_d + 0.3, ys - 0.2, z + pas * 0.5), Vector3(0.6, haut_mur + 0.2, pas + 0.02), _mat(Color(0.78, 0.74, 0.68)))
@@ -635,7 +640,7 @@ func _mur_paix() -> void:
 		z += pas
 	_fresque("fresque_impasse", Vector3(x_d - 0.02, yr + 1.9, zf + 7.0), Vector3(0, 0, 1), Vector3(-1, 0, 0), 11.0)
 	# lampadaires boules à mât orangé, sur le trottoir de droite
-	for zl in [zf + 6.0, zf + 26.0, zf + 46.0, zf + 66.0]:
+	for zl in [zf + 6.0, zf + 24.0, zf + 40.0]:
 		_lampadaire_boule(Vector2(x_d - 0.7, zl))
 	# — gauche : potelets blancs et muret rouge bas, comme au pied des barres —
 	var zp := zf + 22.0
@@ -660,6 +665,179 @@ func _mur_paix() -> void:
 		_pin(q)
 	# vieux mur sali de gauche à droite : quelques coulures au pied
 	_reserver(Vector2(-11.4, zf + 3.0), 2.4)
+	_gymnase()
+	_debouche_impasse()
+
+
+# ───────────── le débouché de l'impasse sur la rue de Marathon (image cible de Louma, Street View juil. 2013) ─────────────
+# C'est peut-être là que le jeu commence : on y met tout le réel qu'on peut — les vrais tags du quartier,
+# la carcasse brûlée, les pneus, les parpaings, les herbes, le mur du gymnase à fenêtres grillagées.
+
+const Z_GYMNASE := 56.0
+const Z_GYMNASE_FIN := 91.0
+const X_GYMNASE := -4.6        # face ouest du gymnase, sur le trottoir de droite
+
+## Le gymnase à droite de l'impasse : socle gris, bandeau d'enduit clair (où l'on tague), un ruban de fenêtres
+## à barreaux blancs, puis le grand mur en blocs de pierre jusqu'au toit à bord arrondi.
+func _gymnase() -> void:
+	var x0 := X_GYMNASE
+	var x1 := 7.0
+	var z0 := Z_GYMNASE
+	var z1 := Z_GYMNASE_FIN
+	var ybas := minf(sol(x0, z0), sol(x0, z1)) - 0.5
+	var yhaut := maxf(sol(x0, z0), sol(x0, z1)) + 8.0
+	var m_bloc := ShaderMaterial.new()
+	m_bloc.shader = PIERRE
+	m_bloc.set_shader_parameter("pierre_a", Color(0.84, 0.74, 0.58))
+	m_bloc.set_shader_parameter("pierre_b", Color(0.80, 0.70, 0.55))
+	m_bloc.set_shader_parameter("pierre_c", Color(0.86, 0.78, 0.64))
+	m_bloc.set_shader_parameter("joint", Color(0.66, 0.58, 0.48))
+	m_bloc.set_shader_parameter("assise", 0.5)
+	var corps := _boite_y("Gymnase", Vector3((x0 + x1) * 0.5, ybas, (z0 + z1) * 0.5), Vector3(x1 - x0, yhaut - ybas, z1 - z0), m_bloc)
+	corps.add_to_group("mur")
+	_emprises.append(PackedVector2Array([Vector2(x0 - 0.5, z0), Vector2(x1, z0), Vector2(x1, z1), Vector2(x0 - 0.5, z1)]))
+	# bord de toit arrondi (un demi-cylindre couché le long de la façade)
+	var bord := CylinderMesh.new()
+	bord.top_radius = 0.45
+	bord.bottom_radius = 0.45
+	bord.height = z1 - z0
+	bord.radial_segments = 10
+	_maillage("Gymnase_bord_toit", self, bord, Color(0.80, 0.70, 0.55), Vector3(x0 + 0.3, yhaut - 0.1, (z0 + z1) * 0.5), Basis(Vector3.RIGHT, PI * 0.5))
+	# bandes de la façade ouest, qui suivent la pente de la rue
+	var bars := SurfaceTool.new()
+	bars.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var cube := BoxMesh.new()
+	var pas := 1.5
+	var z := z0
+	while z < z1 - 0.01:
+		var zm := minf(z + pas, z1)
+		var y0 := sol(x0 - 0.3, (z + zm) * 0.5)
+		var l := zm - z
+		var c := (z + zm) * 0.5
+		_bloc_mince(Vector3(x0 - 0.04, y0 - 0.3, c), Vector3(0.1, 0.95, l + 0.01), Color(0.56, 0.55, 0.53))          # socle crépi gris
+		_bloc_mince(Vector3(x0 - 0.03, y0 + 0.65, c), Vector3(0.08, 1.95, l + 0.01), Color(0.88, 0.86, 0.80))        # enduit clair
+		_bloc_mince(Vector3(x0 - 0.05, y0 + 2.6, c), Vector3(0.14, 0.12, l + 0.01), Color(0.80, 0.78, 0.72))         # appui
+		_bloc_mince(Vector3(x0 - 0.02, y0 + 2.72, c), Vector3(0.06, 1.25, l + 0.01), Color(0.16, 0.20, 0.30))        # vitrage sombre
+		_bloc_mince(Vector3(x0 - 0.06, y0 + 3.97, c), Vector3(0.16, 0.14, l + 0.01), Color(0.80, 0.78, 0.72))        # linteau
+		# barreaux blancs, montant tous les 1,5 m
+		var nb := int(l / 0.16)
+		for k in nb + 1:
+			var zk := z + k * l / maxf(nb, 1)
+			var ep := 0.09 if k == 0 else 0.035
+			bars.append_from(cube, 0, Transform3D(Basis.from_scale(Vector3(0.04, 1.25, ep)), Vector3(x0 - 0.12, y0 + 3.35, zk)))
+		for yy in [2.78, 3.35, 3.9]:
+			bars.append_from(cube, 0, Transform3D(Basis.from_scale(Vector3(0.04, 0.035, l)), Vector3(x0 - 0.12, y0 + yy, c)))
+		z = zm
+	var mb := MeshInstance3D.new()
+	mb.mesh = bars.commit()
+	mb.material_override = _mat(Color(0.93, 0.93, 0.90))
+	mb.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mb.name = "Gymnase_barreaux"
+	add_child(mb)
+	# coffret électrique et descente d'eau
+	var ye := sol(x0 - 0.3, z0 + 22.0)
+	_boite_y("Coffret_EDF", Vector3(x0 - 0.25, ye, z0 + 22.0), Vector3(0.4, 1.25, 0.75), _mat(Color(0.86, 0.84, 0.76)))
+	_bloc_mince(Vector3(x0 - 0.1, ye - 0.2, z1 - 0.4), Vector3(0.14, yhaut - ye, 0.14), Color(0.62, 0.62, 0.62))
+	# « BOUFTOU » au marqueur noir sur l'enduit clair (le vrai tag, juillet 2013)
+	_tag_reel("vrai_bouftou", Vector3(x0 - 0.1, sol(x0, z0 + 15.0) + 1.65, z0 + 15.0), Vector3(0, 0, -1), Vector3(-1, 0, 0), 1.4, Color(0.10, 0.09, 0.10))
+	# affiches arrachées au coin
+	_tag_reel("affiche_02", Vector3(x0 - 0.1, sol(x0, z1 - 1.5) + 1.7, z1 - 1.5), Vector3(0, 0, -1), Vector3(-1, 0, 0), 0.8, Color.WHITE)
+
+
+## Une plaque fine posée contre un mur, sans collision (bandeaux, appuis, vitrages).
+func _bloc_mince(centre_bas: Vector3, taille: Vector3, c: Color) -> void:
+	var mi := MeshInstance3D.new()
+	mi.mesh = _bm(taille.x, taille.y, taille.z)
+	mi.material_override = _mat(c)
+	mi.position = centre_bas + Vector3.UP * taille.y * 0.5
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mi)
+
+
+## Un vrai tag du quartier (photo Street View 2013, détouré) posé sur un mur : centre, sens de lecture, normale.
+func _tag_reel(nom: String, centre: Vector3, le_long: Vector3, dehors: Vector3, largeur: float, teinte: Color) -> void:
+	var tex := _texture(nom)
+	if tex == null:
+		return
+	MARQUE.poser(self, tex, centre + dehors * 0.03, le_long, dehors, largeur, teinte, 70.0, 1, "Tag_" + nom)
+
+
+func _debouche_impasse() -> void:
+	# — POUTOULAND, sur le pignon sud de la barre du débouché : un panneau d'enduit repeint plus clair,
+	#   au-dessus du soubassement rouge, et le tag au marqueur noir —
+	var zg := 89.0
+	var yg := sol(-22.7, zg + 0.3)
+	_bloc_mince(Vector3(-22.4, yg + 1.05, zg + 0.04), Vector3(6.2, 1.7, 0.08), Color(0.90, 0.86, 0.76))
+	_tag_reel("vrai_poutouland", Vector3(-22.2, yg + 1.85, zg + 0.09), Vector3(1, 0, 0), Vector3(0, 0, 1), 4.6, Color(0.08, 0.08, 0.09))
+	# — le pignon est de l'immeuble de la rue de Marathon : le mur des blazes (« Anss » Kintchou, D.Bedo, HMD,
+	#   Kiké, le Nounz, MAB MAD, IZI…) et MALBO.K sur le muret rouge devant —
+	var xp := -30.0
+	var zp := 69.0
+	var yp := sol(xp + 0.4, zp)
+	_tag_reel("vrai_mur_kintchou", Vector3(xp + 0.02, yp + 1.65, zp), Vector3(0, 0, -1), Vector3(1, 0, 0), 5.2, Color(0.10, 0.09, 0.11))
+	var mu := _boite("Muret_malbo", xp + 2.2, zp + 0.5, Vector3(0.35, 0.95, 6.0), ROUGE_MURET)
+	mu.add_to_group("muret")
+	_tag_reel("vrai_malbok", Vector3(xp + 2.4, yp + 0.5, zp + 0.8), Vector3(0, 0, -1), Vector3(1, 0, 0), 1.6, Color(0.12, 0.08, 0.08))
+	_reserver(Vector2(xp + 2.2, zp + 0.5), 3.2)
+	# — la carcasse brûlée contre le gymnase, ses pneus, des parpaings et des herbes —
+	_epave(Vector2(X_GYMNASE - 1.35, 80.0), PI + 0.06)
+	for k in 3:
+		var pn := _pneu(Vector2(X_GYMNASE - 0.9 + (k % 2) * 0.15, 85.8 + (k / 2) * 0.1))
+		pn.position.y += k * 0.24
+	for q in [Vector2(-6.2, 86.9), Vector2(-5.6, 87.6), Vector2(-7.0, 75.2), Vector2(-12.9, 84.0), Vector2(-5.4, 70.0)]:
+		var pa := _boite("Parpaing", q.x, q.y, Vector3(0.5, 0.2, 0.2), Color(0.70, 0.69, 0.66), _rng.randf() * TAU)
+		pa.add_to_group("mobilier")
+	for k in 26:
+		var zz := _rng.randf_range(58.0, 92.0)
+		var xx: float = [X_GYMNASE - 0.25, -16.7, -14.6][k % 3]
+		_herbe(Vector2(xx + _rng.randf_range(-0.15, 0.15), zz))
+	# papiers et détritus au pied du mur
+	for k in 10:
+		var q := Vector2(X_GYMNASE - _rng.randf_range(0.2, 1.4), _rng.randf_range(72.0, 90.0))
+		_bloc_mince(Vector3(q.x, sol(q.x, q.y) + 0.005, q.y), Vector3(_rng.randf_range(0.15, 0.35), 0.01, _rng.randf_range(0.1, 0.25)), [Color(0.92, 0.91, 0.88), Color(0.80, 0.30, 0.25), Color(0.30, 0.45, 0.75)][k % 3])
+
+
+## Une voiture brûlée, rouillée orange et noire, sans roues, posée sur ses jantes.
+func _epave(p: Vector2, angle: float) -> void:
+	var corps := _boite("Epave", p.x, p.y, Vector3(1.7, 1.2, 3.9), Color(0.6, 0.6, 0.6), angle, 0.18)
+	corps.add_to_group("mobilier")
+	var m := _vetir(corps, "voiture_citadine", Vector3(0, -0.78, 0))
+	if m == null:
+		return
+	var teintes := [Color(0.62, 0.32, 0.16), Color(0.46, 0.22, 0.12), Color(0.14, 0.11, 0.10), Color(0.72, 0.42, 0.20)]
+	var i := 0
+	for n in m.find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		for k in mi.mesh.get_surface_count():
+			var b := StandardMaterial3D.new()
+			b.albedo_color = teintes[i % teintes.size()]
+			mi.set_surface_override_material(k, b)
+			i += 1
+
+
+func _pneu(p: Vector2) -> Node3D:
+	var t := TorusMesh.new()
+	t.inner_radius = 0.2
+	t.outer_radius = 0.34
+	var b := _boite("Pneu", p.x, p.y, Vector3(0.66, 0.24, 0.66), Color(0.1, 0.1, 0.1))
+	for e in b.get_children():
+		if e is MeshInstance3D:
+			(e as MeshInstance3D).mesh = t
+	b.add_to_group("mobilier")
+	return b
+
+
+## Une touffe d'herbe sèche entre le trottoir et le mur.
+func _herbe(p: Vector2) -> void:
+	var y := sol(p.x, p.y)
+	for k in 4:
+		var mi := MeshInstance3D.new()
+		mi.mesh = _bm(0.04, _rng.randf_range(0.25, 0.6), 0.04)
+		mi.material_override = _mat([Color(0.52, 0.58, 0.28), Color(0.66, 0.62, 0.34), Color(0.42, 0.50, 0.26)][k % 3])
+		var hh: float = (mi.mesh as BoxMesh).size.y
+		mi.transform = Transform3D(Basis(Vector3(_rng.randf_range(-1, 1), 0, _rng.randf_range(-1, 1)).normalized(), _rng.randf_range(0.15, 0.45)), Vector3(p.x + _rng.randf_range(-0.12, 0.12), y + hh * 0.5, p.y + _rng.randf_range(-0.12, 0.12)))
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(mi)
 
 
 func _voiture_impasse(p: Vector2, angle: float, c: Color) -> void:
@@ -714,17 +892,7 @@ func _fresque(nom: String, centre: Vector3, le_long: Vector3, dehors: Vector3, l
 	var tex := _texture(nom)
 	if tex == null:
 		return
-	var dec := Decal.new()
-	dec.texture_albedo = tex
-	var ratio := float(tex.get_height()) / float(tex.get_width())
-	dec.size = Vector3(largeur, 1.0, largeur * ratio)
-	dec.normal_fade = 0.4
-	dec.distance_fade_enabled = true
-	dec.distance_fade_begin = 110.0
-	dec.distance_fade_length = 20.0
-	dec.transform = Transform3D(Basis(le_long, dehors, le_long.cross(dehors)), centre + dehors * 0.15)
-	dec.name = "Fresque_" + nom
-	add_child(dec, true)
+	MARQUE.poser(self, tex, centre + dehors * 0.05, le_long, dehors, largeur, Color.WHITE, 110.0, 0, "Fresque_" + nom)
 
 
 func _lampadaire_boule(p: Vector2) -> void:
@@ -851,7 +1019,11 @@ func _vieux_murs(batiments: Array) -> void:
 			var a := poly[k]
 			var b := poly[(k + 1) % poly.size()]
 			var dehors := _normale_dehors(a, b, poly)
-			n += _couvrir_mur(a, b, dehors, densite)
+			# murs des vrais tags (Poutouland, le mur des blazes) : on n'y ajoute rien d'inventé
+			if (c[1] == "Immeuble impasse sud" and dehors.y > 0.7) or (style == "marathon_rouge" and absf(a.x + 30.0) < 1.0 and absf(b.x + 30.0) < 1.0):
+				continue
+			# la grande barre porte une façade épaisse (habillage_facades.gd) : les tags vont sur sa face avant
+			n += _couvrir_mur(a, b, dehors, densite, 0.7 if style == "barre_lauriers" else 0.0)
 	for m in _murs_releves:
 		for k in m.size() - 1:
 			var d: Vector2 = (m[k + 1] - m[k]).normalized()
@@ -918,23 +1090,9 @@ func _decalque(p: Vector2, le_long: Vector2, dehors: Vector2) -> void:
 	var tex := _texture(nom)
 	if tex == null:
 		return
-	var dec := Decal.new()
-	dec.texture_albedo = tex
-	dec.modulate = couleur
-	var ratio := float(tex.get_height()) / float(tex.get_width())
-	dec.size = Vector3(largeur, 0.9, largeur * ratio)
-	dec.normal_fade = 0.4
-	dec.distance_fade_enabled = true
-	dec.distance_fade_begin = 55.0
-	dec.distance_fade_length = 15.0
-	dec.sorting_offset = ordre
-	# Le décalque projette selon son axe -Y : on l'oriente vers le mur.
 	var x := Vector3(le_long.x, 0, le_long.y)
 	var y := Vector3(dehors.x, 0, dehors.y)
-	var z := x.cross(y)
-	dec.transform = Transform3D(Basis(x, y, z), Vector3(p.x, h(p.x, p.y) + haut, p.y) + y * 0.1)
-	dec.name = "Vieux_" + nom.get_slice("_", 0)
-	add_child(dec, true)
+	MARQUE.poser(self, tex, Vector3(p.x, h(p.x, p.y) + haut, p.y), x, y, largeur, couleur, 55.0, ordre, "Vieux_" + nom.get_slice("_", 0))
 
 
 ## Points régulièrement espacés le long d'une ligne : [position, direction].

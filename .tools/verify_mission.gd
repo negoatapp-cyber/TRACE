@@ -35,7 +35,7 @@ func run() -> void:
 	check(M.etat == "mur", "au snack : peinture reçue, objectif le mur (%s)" % M.etat)
 	check(g.reserve[0] > 0.9, "les bombes sont pleines")
 	# tag sur la façade est de la barre (près du conteneur : terrain vague)
-	p.global_position = Vector3(-24.2, q.h(-24.2, -100) + 0.2, -100); p.velocity = Vector3.ZERO
+	p.global_position = Vector3(-23.4, q.h(-23.4, -100) + 0.2, -100); p.velocity = Vector3.ZERO
 	p.visual.rotation.y = PI * 0.5
 	for i in 120:
 		await physics_frame

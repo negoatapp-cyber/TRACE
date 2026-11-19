@@ -242,38 +242,49 @@ func _facade_laveran(lycee: PackedVector2Array, bd: PackedVector2Array, portes: 
 		var m := a + d * tt + n * (off * 0.75 + 0.4)
 		var bz := base * Basis(Vector3.BACK, s * atan2(2.2, 3.0))
 		_ajouter("tube_blanc" if tt > t_verriere else "tube", BLANC_TUBE if tt > t_verriere else BLEU_TUBE, Transform3D(bz * Basis.from_scale(Vector3(3.7, 0.09, 0.09)), Vector3(m.x, toit + 2.1, m.y)))
-	# 3. devant la verrière (construite par habillage_lycee.gd) : grille grise à barreaux, portail ouvert,
-	#    bande jaune et noire au sol, barrières en U et potelets (Street View mai 2011)
+	# 3. LE GRAND PORTAIL (Street View juillet 2013, 23 bd Lavéran) : une haute grille grise à barreaux sur toute
+	#    l'ouverture, deux grands battants ouverts vers l'intérieur, rabattus contre les murets de la rampe qui
+	#    descend droit dans le hall vitré (rampe : habillage_lycee.gd).
 	var pv := a + d * t_verriere
 	var yv := h(pv.x, pv.y)
-	var gris := Color(0.56, 0.58, 0.60)
+	var gris := Color(0.60, 0.62, 0.63)
+	var demi_porte := 3.35
+	var haut_grille := 2.6
 	for s in [-1.0, 1.0]:
-		for k in 2:
-			var pg: Vector2 = a + d * (t_verriere + s * (2.4 + k * 1.1 + 0.55)) + n * off
-			var yg := h(pg.x, pg.y)
-			_boite_v("grille_entree", gris, base, Vector3(1.1, 0.06, 0.06), Vector3(pg.x, yg + 2.1, pg.y))
-			for b in 7:
-				_ajouter("grille_entree", gris, Transform3D(base * Basis.from_scale(Vector3(0.04, 2.1, 0.04)), Vector3(pg.x, yg + 1.05, pg.y) + base.x * (-0.5 + b * 0.16)))
-			_boite_v("grille_entree_col", gris, base, Vector3(1.1, 2.1, 0.06), Vector3(pg.x, yg + 1.05, pg.y))
-		var pp: Vector2 = a + d * (t_verriere + s * 2.4) + n * off
-		_boite_v("grille_pilier", gris.darkened(0.15), base, Vector3(0.22, 2.4, 0.22), Vector3(pp.x, h(pp.x, pp.y) + 1.2, pp.y))
-		# battant de portail ouvert, rabattu contre la grille
-		var pb: Vector2 = a + d * (t_verriere + s * 3.6) + n * (off - 0.25)
-		for b in 8:
-			_ajouter("grille_entree", gris, Transform3D(base * Basis.from_scale(Vector3(0.04, 2.0, 0.04)), Vector3(pb.x, h(pb.x, pb.y) + 1.0, pb.y) + base.x * (-0.6 + b * 0.17)))
-	# bande de sécurité jaune et noire au pied du portail
-	for k in 12:
-		var ps: Vector2 = a + d * (t_verriere - 2.4 + k * 0.4 + 0.2) + n * (off + 0.2)
-		_ajouter("bande_jaune" if k % 2 == 0 else "bande_noire", Color(0.92, 0.78, 0.12) if k % 2 == 0 else Color(0.12, 0.12, 0.12), Transform3D(base * Basis.from_scale(Vector3(0.4, 0.02, 0.35)), Vector3(ps.x, h(ps.x, ps.y) + 0.02, ps.y)))
-	# barrières en U et potelet sur le trottoir
-	for s in [-1.0, 1.0]:
-		var pu: Vector2 = a + d * (t_verriere + s * 1.0) + n * (off + 2.4)
+		# grille fixe entre le portail et le mur carrelé
+		var t0: float = t_verriere + s * demi_porte
+		var t1: float = t_verriere + s * 4.8
+		var pm: Vector2 = a + d * ((t0 + t1) * 0.5) + n * off
+		var yg := h(pm.x, pm.y)
+		var lgf := absf(t1 - t0)
+		_collision(base, Vector3(lgf, haut_grille, 0.08), Vector3(pm.x, yg + haut_grille * 0.5, pm.y))
+		for yy in [0.12, haut_grille - 0.1]:
+			_ajouter("grille_entree", gris, Transform3D(base * Basis.from_scale(Vector3(lgf, 0.07, 0.07)), Vector3(pm.x, yg + yy, pm.y)))
+		for b2 in int(lgf / 0.13):
+			_ajouter("grille_entree", gris, Transform3D(base * Basis.from_scale(Vector3(0.035, haut_grille, 0.035)), Vector3(pm.x, yg + haut_grille * 0.5, pm.y) + base.x * (-lgf * 0.5 + (b2 + 0.5) * 0.13)))
+		# gros poteaux carrés du portail
+		var pp: Vector2 = a + d * t0 + n * off
+		_boite_v("grille_pilier", gris.darkened(0.2), base, Vector3(0.24, haut_grille + 0.3, 0.24), Vector3(pp.x, h(pp.x, pp.y) + (haut_grille + 0.3) * 0.5, pp.y))
+		# battant ouvert : il pivote sur le poteau et se rabat vers l'intérieur, le long du muret de la rampe
+		var larg_b := 3.1
+		var pb: Vector2 = a + d * (t0 - s * 0.22) + n * (off - larg_b * 0.5 - 0.1)
+		var yb := h(pp.x, pp.y)
+		var bb := Basis(Vector3(n.x, 0, n.y), Vector3.UP, Vector3(-d.x, 0, -d.y)).orthonormalized()
+		for yy in [0.15, 1.3, haut_grille - 0.1]:
+			_ajouter("grille_entree", gris, Transform3D(bb * Basis.from_scale(Vector3(larg_b, 0.07, 0.07)), Vector3(pb.x, yb + yy, pb.y)))
+		for b2 in int(larg_b / 0.13):
+			_ajouter("grille_entree", gris, Transform3D(bb * Basis.from_scale(Vector3(0.035, haut_grille, 0.035)), Vector3(pb.x, yb + haut_grille * 0.5, pb.y) + bb.x * (-larg_b * 0.5 + (b2 + 0.5) * 0.13)))
+		# barrières en U, au bord du trottoir, de part et d'autre de l'entrée (pas devant)
+		var pu: Vector2 = a + d * (t_verriere + s * 5.6) + n * (off + 2.4)
 		var yu := h(pu.x, pu.y)
 		for e in [-0.5, 0.5]:
 			_boite_v("barriere_u", Color(0.36, 0.37, 0.40), base, Vector3(0.07, 1.0, 0.07), Vector3(pu.x, yu + 0.5, pu.y) + base.x * e)
 		_ajouter("barriere_u", Color(0.36, 0.37, 0.40), Transform3D(base * Basis.from_scale(Vector3(1.0, 0.06, 0.06)), Vector3(pu.x, yu + 0.98, pu.y)))
-		_ajouter("barriere_u", Color(0.36, 0.37, 0.40), Transform3D(base * Basis.from_scale(Vector3(1.0, 0.05, 0.05)), Vector3(pu.x, yu + 0.55, pu.y)))
-	var pk := a + d * (t_verriere - 4.6) + n * (off + 2.4)
+	# bande de sécurité jaune et noire au pied du portail
+	for k in 17:
+		var ps: Vector2 = a + d * (t_verriere - 3.4 + k * 0.4 + 0.2) + n * (off + 0.2)
+		_ajouter("bande_jaune" if k % 2 == 0 else "bande_noire", Color(0.92, 0.78, 0.12) if k % 2 == 0 else Color(0.12, 0.12, 0.12), Transform3D(base * Basis.from_scale(Vector3(0.4, 0.02, 0.35)), Vector3(ps.x, h(ps.x, ps.y) + 0.02, ps.y)))
+	var pk := a + d * (t_verriere - 6.6) + n * (off + 2.4)
 	_boite_v("barriere_u", Color(0.36, 0.37, 0.40), base, Vector3(0.12, 1.0, 0.12), Vector3(pk.x, h(pk.x, pk.y) + 0.5, pk.y))
 	# 4. lettrage du lycée sur le pignon carrelé à gauche de la verrière
 	var pl := a + d * (t_verriere - 12.0) + n * 0.1
@@ -423,7 +434,12 @@ func _chantier(lycee: PackedVector2Array, bd: PackedVector2Array) -> void:
 				var bloc := cote + lat * 0.7
 				var c := Color(0.86, 0.85, 0.82) if n_pal % 3 != 1 else Color(0.84, 0.32, 0.26)
 				_boite_v("bloc_beton", c, bp, Vector3(2.0, 0.8, 0.6), Vector3(bloc.x, h(bloc.x, bloc.y) + 0.4, bloc.y))
-				if n_pal % 2 == 0:
+				# les vrais tags des palissades (Street View juillet 2013 et juin 2014) : AZE et ZEYO côte à côte,
+				# RINO et VLS 13 près de l'arrêt Laveran Diderot ; puis des signatures inventées
+				var vrais := {0: ["vrai_aze", 1.5], 1: ["vrai_zeyo", 2.0], 3: ["vrai_rino", 1.3], 4: ["vrai_vls13", 1.1]}
+				if vrais.has(n_pal):
+					_decalque(vrais[n_pal][0], Vector3(cote.x, yp + 1.15, cote.y) + bp.z * 0.05, bp.x, bp.z, vrais[n_pal][1], Color(0.07, 0.07, 0.08))
+				elif n_pal % 2 == 0:
 					_decalque("tag_%02d" % (n_pal % 14), Vector3(cote.x, yp + 1.1, cote.y) + bp.z * 0.05, bp.x, bp.z, 1.8, [Color(0.1, 0.1, 0.12), Color(0.2, 0.3, 0.7), Color(0.6, 0.15, 0.5)][n_pal % 3])
 				n_pal += 1
 			t += 3.5
@@ -437,17 +453,17 @@ func _decalque(nom: String, centre: Vector3, le_long: Vector3, dehors: Vector3, 
 	if not ResourceLoader.exists(chemin):
 		return
 	var tex := load(chemin) as Texture2D
-	var dec := Decal.new()
-	dec.texture_albedo = tex
-	dec.modulate = c
-	var ratio := float(tex.get_height()) / float(tex.get_width())
-	dec.size = Vector3(largeur, 0.8, largeur * ratio)
-	dec.normal_fade = 0.4
-	dec.distance_fade_enabled = true
-	dec.distance_fade_begin = 80.0
-	dec.distance_fade_length = 20.0
-	dec.transform = Transform3D(Basis(le_long.normalized(), dehors.normalized(), le_long.normalized().cross(dehors.normalized())), centre + dehors.normalized() * 0.1)
-	add_child(dec)
+	preload("res://scripts/marque_murale.gd").poser(self, tex, centre, le_long, dehors, largeur, c, 80.0, 0, "Marque_" + nom)
+
+
+## Une collision seule (grilles à barreaux : on voit à travers, on ne passe pas).
+func _collision(b: Basis, taille: Vector3, o: Vector3) -> void:
+	var cs := CollisionShape3D.new()
+	var sh := BoxShape3D.new()
+	sh.size = taille
+	cs.shape = sh
+	cs.transform = Transform3D(b.orthonormalized(), o)
+	_corps.add_child(cs)
 
 
 func _boite_v(cle: String, c: Color, b: Basis, taille: Vector3, o: Vector3) -> void:

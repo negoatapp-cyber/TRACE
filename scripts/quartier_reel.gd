@@ -23,7 +23,7 @@ const STYLES := {
 	"clair": [Color(0.82, 0.80, 0.75), false, 0.20, 3.2, 3.6],
 	"recent": [Color(0.92, 0.91, 0.88), true, 0.25, 2.8, 3.2],
 	# D'après les photos de Louma (2014, depuis les toits du lycée et des Lauriers) :
-	"cypres_tour": [Color(0.91, 0.85, 0.71), false, 0.45, 2.8, 3.0],
+	"cypres_tour": [Color(0.93, 0.88, 0.77), false, 0.45, 2.8, 3.0],
 	"cypres_barre": [Color(0.90, 0.82, 0.67), true, 0.40, 2.8, 3.2, Color(0.84, 0.76, 0.62)],
 	"genets_blanc": [Color(0.94, 0.93, 0.89), true, 0.40, 2.8, 3.2],
 	# Petites barres R+4 de la rue de Marathon et de l'avenue Saint-Paul (Street View 2013-2014) :
@@ -34,7 +34,7 @@ const STYLES := {
 }
 ## Bandes de couleur : [couleur, largeur des bandes d'angle (m), pignons pleins si mur plus court que (m), antenne]
 const BANDES := {
-	"cypres_tour": [Color(0.84, 0.46, 0.28), 2.6, 0.0, true],   # bandes orange aux angles, antenne
+	"cypres_tour": [Color(0.80, 0.36, 0.24), 0.0, 0.0, true],   # bande orange centrée, en creux (habillage_facades.gd), antenne
 	"cypres_barre": [Color(0.86, 0.50, 0.30), 0.0, 15.0, false], # pignons orange
 }
 ## Palette « Marseille délavée par le soleil » : couleurs claires et chaudes pour le décor ;
@@ -93,6 +93,9 @@ func _ready() -> void:
 			"A": _lire_altitudes(c)
 			_: divers.append(c)
 	_rng.seed = 13013
+	for c in voies:
+		if c[2] == "Boulevard Lavéran":
+			_lisser_boulevard(_pts(c[3]))
 	_terrain()
 	for c in zones:
 		_zone(c[1], _pts(c[3]))
@@ -169,16 +172,102 @@ func _lire_altitudes(c: PackedStringArray) -> void:
 		alt.append(row)
 
 
+## Le relief IGN (pas de 25 m) fait sur le boulevard Lavéran des bosses qui n'existent pas (un creux de 4 m vers
+## z −300, des ondulations devant le lycée). On affine la grille à 5 m, puis dans un couloir de ±15 m autour de
+## l'axe la hauteur ne dépend plus que de la distance parcourue le long du boulevard : profil en long lissé,
+## sans dévers. Entre 15 et 30 m, on raccorde doucement au relief d'origine.
+const COULOIR := 15.0
+const RACCORD := 15.0
+const PAS_FIN := 5.0
+
+
+func _lisser_boulevard(axe: PackedVector2Array) -> void:
+	if axe.size() < 2 or gx.size() < 4:
+		return
+	# 1. grille fine (mêmes triangles qu'avant, échantillonnés tous les 5 m)
+	var nx := PackedFloat32Array([gx[0]])
+	var x := gx[1]
+	while x < gx[gx.size() - 2] - 0.01:
+		nx.append(x)
+		x += PAS_FIN
+	nx.append(gx[gx.size() - 2])
+	nx.append(gx[gx.size() - 1])
+	var nz := PackedFloat32Array([gz[0]])
+	var z := gz[1]
+	while z < gz[gz.size() - 2] - 0.01:
+		nz.append(z)
+		z += PAS_FIN
+	nz.append(gz[gz.size() - 2])
+	nz.append(gz[gz.size() - 1])
+	var nalt := []
+	for zz in nz:
+		var row := PackedFloat32Array()
+		for xx in nx:
+			row.append(h(xx, zz))
+		nalt.append(row)
+	# 2. profil en long : hauteur d'origine sous l'axe tous les 5 m, puis moyenne glissante (2 passes de 120 m)
+	var cumul := PackedFloat32Array([0.0])
+	for k in range(1, axe.size()):
+		cumul.append(cumul[k - 1] + axe[k].distance_to(axe[k - 1]))
+	var longueur: float = cumul[cumul.size() - 1]
+	var n := int(longueur / PAS_FIN) + 1
+	var prof := PackedFloat32Array()
+	for k in n:
+		var q := _point_a(axe, cumul, k * PAS_FIN)
+		prof.append(h(q.x, q.y))
+	for passe in 2:
+		var lisse := PackedFloat32Array()
+		var demi := int(60.0 / PAS_FIN)
+		for k in n:
+			var somme := 0.0
+			var nb := 0
+			for m in range(maxi(0, k - demi), mini(n, k + demi + 1)):
+				somme += prof[m]
+				nb += 1
+			lisse.append(somme / nb)
+		prof = lisse
+	# 3. couloir : la hauteur suit le profil, raccord progressif au-delà de 15 m
+	for j in nz.size():
+		for i in nx.size():
+			var pt := Vector2(nx[i], nz[j])
+			var best := INF
+			var station := 0.0
+			for k in range(1, axe.size()):
+				var a := axe[k - 1]
+				var b := axe[k]
+				var ab := b - a
+				var t := clampf((pt - a).dot(ab) / maxf(ab.length_squared(), 0.001), 0.0, 1.0)
+				var d := pt.distance_to(a + ab * t)
+				if d < best:
+					best = d
+					station = cumul[k - 1] + ab.length() * t
+			if best >= COULOIR + RACCORD:
+				continue
+			var kf := clampf(station / PAS_FIN, 0.0, float(n - 1))
+			var k0 := int(floor(kf))
+			var k1 := mini(k0 + 1, n - 1)
+			var cible := lerpf(prof[k0], prof[k1], kf - k0)
+			var w := 1.0 if best <= COULOIR else 1.0 - smoothstep(COULOIR, COULOIR + RACCORD, best)
+			nalt[j][i] = lerpf(nalt[j][i], cible, w)
+	gx = nx
+	gz = nz
+	alt = nalt
+
+
+func _point_a(axe: PackedVector2Array, cumul: PackedFloat32Array, s: float) -> Vector2:
+	for k in range(1, axe.size()):
+		if s <= cumul[k] or k == axe.size() - 1:
+			var seg := cumul[k] - cumul[k - 1]
+			return axe[k - 1].lerp(axe[k], clampf((s - cumul[k - 1]) / maxf(seg, 0.001), 0.0, 1.0))
+	return axe[axe.size() - 1]
+
+
 ## Hauteur du sol au point (x, z) — identique aux triangles du terrain.
 func h(x: float, z: float) -> float:
 	x = clampf(x, gx[0], gx[gx.size() - 1] - 0.001)
 	z = clampf(z, gz[0], gz[gz.size() - 1] - 0.001)
-	var i := 0
-	while i < gx.size() - 2 and x >= gx[i + 1]:
-		i += 1
-	var j := 0
-	while j < gz.size() - 2 and z >= gz[j + 1]:
-		j += 1
+	var i := clampi(gx.bsearch(x, false) - 1, 0, gx.size() - 2)
+	var j := clampi(gz.bsearch(z, false) - 1, 0, gz.size() - 2)
 	var fx := (x - gx[i]) / (gx[i + 1] - gx[i])
 	var fz := (z - gz[j]) / (gz[j + 1] - gz[j])
 	var h00: float = alt[j][i]

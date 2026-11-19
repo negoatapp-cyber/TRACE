@@ -26,12 +26,22 @@ uniform vec3 persienne : source_color = vec3(0.62, 0.55, 0.46);
 uniform vec3 bande : source_color = vec3(0.84, 0.46, 0.28);
 uniform float bande_largeur = 0.0;
 uniform float pignon_max = 0.0;
+// Tour Cyprès B (photos 2013-2014) : l'orange n'est pas aux angles mais dans une bande verticale en creux,
+// au milieu des faces dont la normale suit `bande_axe`, sur `bande_centre` m de large.
+uniform float bande_centre = 0.0;
+uniform vec2 bande_axe = vec2(0.0, 1.0);
 // Petites barres de la rue de Marathon (Street View 2013-2014) : rez-de-chaussée peint en rouge brique
 // et colonnes de panneaux rouges entre les fenêtres, sur enduit beige.
 uniform vec3 soubassement : source_color = vec3(0.70, 0.30, 0.26);
 uniform float soubassement_on = 0.0;
 uniform vec3 panneaux : source_color = vec3(0.68, 0.30, 0.28);
 uniform float panneaux_part = 0.0;
+// Grande barre des Lauriers en 2013-2014 (Street View juin 2014) : façade plate, crème ; une colonne de loggias
+// en creux (sombres, linge, paraboles) toutes les `rythme` travées, les autres avec deux petites fenêtres.
+uniform float rythme = 0.0;
+// Usure des cités en 2013 (Street View, image cible de Louma) : enduit taché par plaques, coulures sous
+// les fenêtres, plâtre écaillé plus clair à bords francs, pied de mur noirci. 0 = façade propre.
+uniform float usure = 0.0;
 uniform vec3 encre : source_color = vec3(0.12, 0.09, 0.16);
 
 varying vec3 ln;
@@ -46,6 +56,26 @@ void vertex() {
 
 float h21(vec2 p) {
 	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+float bruit2(vec2 p) {
+	vec2 i = floor(p);
+	vec2 f = fract(p);
+	f = f * f * (3.0 - 2.0 * f);
+	return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), f.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+
+vec3 user(vec3 c, float u, float v) {
+	float plaques = bruit2(vec2(u / 7.0, v / 5.0)) * 0.65 + bruit2(vec2(u / 2.1, v / 1.7)) * 0.35;
+	c *= 1.0 - usure * 0.17 * smoothstep(0.50, 0.72, plaques);                       // salissures
+	float coulure = bruit2(vec2(u * 1.7, v * 0.06)) * smoothstep(0.0, 1.0, bruit2(vec2(u * 0.3, v * 0.2)));
+	c *= 1.0 - usure * 0.12 * smoothstep(0.55, 0.85, coulure);                       // coulures verticales
+	float ecaille = bruit2(vec2(u / 1.6, v / 1.2) + 31.0) * 0.7 + bruit2(vec2(u * 1.3, v * 1.1)) * 0.3;
+	float e = smoothstep(0.70, 0.72, ecaille) * usure;
+	c = mix(c, c * 0.80 + vec3(0.10, 0.10, 0.10), e * 0.85);                        // plâtre tombé, gris
+	c *= 1.0 - (smoothstep(0.69, 0.70, ecaille) - smoothstep(0.70, 0.71, ecaille)) * usure * 0.35;   // bord de l'écaille
+	c *= 1.0 - usure * 0.18 * (1.0 - smoothstep(0.0, 1.6, v));                       // pied de mur noirci
+	return c;
 }
 
 vec3 fenetre_allumee(vec2 cell) {
@@ -68,12 +98,31 @@ void fragment() {
 	} else {
 		float u = UV.x;
 		float v = UV.y;
+		if (usure > 0.0) {
+			mc = user(mc, u, v);
+			col = mc;
+		}
 		bool plein = false;  // bande pleine, sans fenêtres (angles et pignons des Cyprès)
 		if (UV2.y > 0.0) {
 			plein = min(UV2.x, UV2.y - UV2.x) < bande_largeur || UV2.y < pignon_max;
 		}
+		float creux = 0.0;   // ombre portée sur le bord de la bande en creux
+		if (bande_centre > 0.0 && UV2.y > 0.0 && length(ln.xz) > 0.1 && abs(dot(normalize(ln.xz), bande_axe)) > 0.7) {
+			float dx = UV2.x - UV2.y * 0.5;
+			if (abs(dx) < bande_centre * 0.5) {
+				plein = true;
+				if (dx < -bande_centre * 0.5 + 0.45) creux = 1.0;
+			}
+		}
 		if (plein) {
 			col = v < rdc ? bande * 0.85 : bande;
+			if (creux > 0.5) col *= 0.72;
+			if (encrer && abs(abs(UV2.x - UV2.y * 0.5) - bande_centre * 0.5) < 0.05 && bande_centre > 0.0) col = encre;
+			// petits jours de ventilation dans la bande, un par étage
+			if (bande_centre > 0.0 && v > rdc && v < hauteur - 0.5) {
+				vec2 fb = fract(vec2((UV2.x - UV2.y * 0.5) / 1.2 + 0.5, (v - rdc) / etage));
+				if (abs(UV2.x - UV2.y * 0.5) < 0.6 && fb.y > 0.45 && fb.y < 0.62) col = vitre * 1.4;
+			}
 		} else if (v < rdc) {
 			col = soubassement_on > 0.5 ? soubassement : mc * 0.82;
 			// grilles devant les fenêtres du rez-de-chaussée
@@ -87,7 +136,9 @@ void fragment() {
 			vec2 f = fract(g);
 			float r = h21(cell);
 			float r2 = h21(cell * 1.7 + 4.0);
-			if (loggias > 0.5) {
+			bool en_loggia = loggias > 0.5;
+			if (rythme > 0.5) en_loggia = mod(cell.x, rythme) < 0.5;
+			if (en_loggia) {
 				bool trait = encrer && ((f.x > 0.04 && f.x < 0.065) || (f.x > 0.935 && f.x < 0.96) || (f.y > 0.915 && f.y < 0.935) || (f.y > 0.37 && f.y < 0.39 && f.x > 0.05 && f.x < 0.95));
 				if (trait) {
 					col = encre;
@@ -106,6 +157,18 @@ void fragment() {
 					if (r > 0.82 && f.y > 0.7) col = mix(vec3(0.8, 0.5, 0.2), vec3(0.3, 0.55, 0.4), r2);
 				}
 			} else {
+				if (rythme > 0.5) {
+					// deux petites fenêtres côte à côte, volets roulants plus ou moins baissés
+					bool w1 = f.x > 0.12 && f.x < 0.42 && f.y > 0.32 && f.y < 0.78;
+					bool w2 = f.x > 0.58 && f.x < 0.88 && f.y > 0.32 && f.y < 0.78;
+					if (w1 || w2) {
+						col = vitre;
+						float store = 0.32 + 0.46 * h21(cell * 3.1 + (w1 ? 0.0 : 5.0));
+						if (f.y > 0.78 - (store - 0.32)) col = mc * 0.86;
+						if (encrer && (abs(f.y - 0.32) < 0.012 || abs(f.y - 0.78) < 0.012)) col = encre;
+					}
+					if (f.y < 0.03) col = mc * 0.93;   // trait de dalle
+				} else {
 				bool cadre = f.x > 0.20 && f.x < 0.80 && f.y > 0.28 && f.y < 0.82;
 				// colonnes de panneaux rouges (par travée) et fins bandeaux entre les étages
 				if (panneaux_part > 0.0) {
@@ -124,6 +187,7 @@ void fragment() {
 					if (h21(cell * 2.3 + 1.0) > 0.78) { col = persienne * (0.9 + 0.1 * step(0.5, fract(f.y * 18.0))); em *= 0.15 * step(0.5, fract(f.y * 18.0)); }
 				}
 			}
+				}
 		} else {
 			col = mc * 0.9;
 		}

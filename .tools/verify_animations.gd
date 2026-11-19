@@ -302,7 +302,7 @@ func grimpe() -> void:
 func bombe() -> void:
 	# au pied de la façade est de la barre, face au mur (comme verify_graffiti)
 	DirAccess.remove_absolute(ProjectSettings.globalize_path("user://graffitis.json"))
-	placer(-24.2, -100, PI * 0.5)
+	placer(-23.4, -100, PI * 0.5)
 	p.global_position.y += 0.1
 	await frames(40)
 	var g = level.get_node("Graffiti")

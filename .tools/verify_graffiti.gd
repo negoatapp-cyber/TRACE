@@ -48,7 +48,7 @@ func run() -> void:
 	var g = level.get_node("Graffiti")
 	g.expert = true   # ces vérifications tracent « à la main » (mode expert)
 	# au pied de la façade est de la barre, tourné vers elle (vers l'ouest)
-	p.global_position = Vector3(-24.2, q.h(-24.2, -100) + 0.2, -100); p.velocity = Vector3.ZERO
+	p.global_position = Vector3(-23.4, q.h(-23.4, -100) + 0.2, -100); p.velocity = Vector3.ZERO
 	p.visual.rotation.y = PI * 0.5
 	await frames(40)
 	check(not g._mur_devant().is_empty(), "un mur est détecté devant le personnage")

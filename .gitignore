@@ -50,3 +50,7 @@ trace/
 # fichiers à jeter (en attente de suppression sur le PC)
 _to_delete/
 _sauvegardes/
+
+# sons fabriqués par .tools/son_generer.py (n°3) : régénérés, pas suivis
+assets/sons/*.wav
+assets/sons/*.wav.import

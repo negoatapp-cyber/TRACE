@@ -137,11 +137,17 @@ func _eclairer() -> void:
 		return
 	var n := nuit()
 	var h := heure()
-	# soleil : se lève à l'est vers 7 h, au plus haut vers 13 h 30, se couche à l'ouest vers 20 h
-	var course := clampf((h - 7.0) / 13.0, 0.0, 1.0)
-	var hauteur := sin(course * PI) * 50.0 + 6.0
+	# soleil : vraie course à Marseille (latitude 43,3°), mi-septembre (déclinaison +2,7°), midi solaire 13 h 45
+	# (heure d'été). À 16 h 30 il est à ~35°, à 18 h 30 à ~12° : la lumière dorée de fin d'après-midi.
+	var course := clampf((h - 7.3) / 12.6, 0.0, 1.0)
+	var lat := deg_to_rad(43.3)
+	var dec := deg_to_rad(2.7)
+	var ha := deg_to_rad((h - 13.75) * 15.0)
+	var elev := rad_to_deg(asin(sin(lat) * sin(dec) + cos(lat) * cos(dec) * cos(ha)))
+	var azim := rad_to_deg(atan2(sin(ha), cos(ha) * sin(lat) - tan(dec) * cos(lat)))   # depuis le sud, + vers l'ouest
+	var hauteur := maxf(elev, 4.0)
 	if _soleil:
-		_soleil.rotation_degrees = Vector3(-hauteur, lerpf(-100.0, 80.0, course), 0.0)
+		_soleil.rotation_degrees = Vector3(-hauteur, -10.0 + azim, 0.0)
 		var orange := 1.0 - smoothstep(0.0, 0.25, sin(course * PI))   # lumière dorée en début et fin de journée
 		var c: Color = (_base.couleur as Color).lerp(Color(1.0, 0.72, 0.45), orange * 0.6)
 		_soleil.light_color = c.lerp(Color(0.55, 0.62, 0.85), n)   # la nuit : la lune, bleutée

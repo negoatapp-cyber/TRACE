@@ -61,6 +61,9 @@ B|Immeuble A|15|marathon_rouge|-115,51 -100,52 -97,14 -114,21 -115,51
 B|Immeuble|9|marathon_rouge|-60,76 -59,60 -32,63 -29,63 -30,77 -60,76
 # Barre R+4 perpendiculaire au grand mur de l'impasse « PAIX » (Street View 2014, précision de Louma) — ajoutée par n°2
 B|Immeuble impasse|15|impasse_beige|-28.5,14 -17.0,14 -17.0,54 -28.5,54 -28.5,14
+# Deuxième barre R+4 de l'impasse, au débouché sur la rue de Marathon (Street View juillet 2013, « 31 rue de Marathon ») :
+# rez-de-chaussée rouge, pignon sud « POUTOULAND » — ajoutée par n°2
+B|Immeuble impasse sud|15|marathon_rouge|-28.5,60 -17.0,60 -17.0,89 -28.5,89 -28.5,60
 B|Immeuble|9|recent|-133,-19 -103,-17 -104,-6 -107,-5 -133,-6 -133,-19|@apres
 B|Immeuble|9|recent|-150,-20 -135,-19 -136,-2 -150,-3 -150,-20|@apres
 # ── Au sud : commerces, mosquée, résidences

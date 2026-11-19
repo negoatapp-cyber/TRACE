@@ -28,6 +28,8 @@ const HALL_B := Vector2(108.0, 64.0)
 const HALL_LARGE := 12.0
 const HALL_PROF := 26.0
 const PROF_CDI := 7.0
+const RAMPE_LONG := 6.0     # du portail (sur le trottoir) à la baie de la verrière
+const RAMPE_LARGE := 6.4
 
 const C_SOL := Color(0.70, 0.69, 0.63)
 const C_PLAFOND := Color(0.93, 0.92, 0.88)
@@ -47,6 +49,7 @@ var _rng := RandomNumberGenerator.new()
 var hall := PackedVector2Array()
 var n_salles := 0
 var n_entrees := 0
+var hall_y := 0.0         # sol du hall : plus bas que le rez-de-chaussée, on y descend depuis le boulevard
 var portes_monde := []   # [position au sol (Vector2), vers l'intérieur (Vector2), plancher] pour les abords
 
 
@@ -119,6 +122,23 @@ func _lycee(nom: String, hauteur: float, poly: PackedVector2Array) -> void:
 		var inter := Geometry2D.intersect_polygons(poly, rect)
 		if not inter.is_empty():
 			hall = inter[0]
+	# Street View juillet 2013 : du trottoir, on passe le grand portail et on DESCEND tout droit dans le hall vitré.
+	# Le sol du hall est donc un mètre sous le trottoir (sans passer sous le terrain naturel du hall).
+	hall_y = niveaux[0] if niveaux.size() > 0 else moy
+	if hall.size() > 2 and niveaux.size() > 0:
+		var mh := (HALL_A + HALL_B) * 0.5
+		var dh := (HALL_B - HALL_A).normalized()
+		var inh := Vector2(-dh.y, dh.x)
+		if not Geometry2D.is_point_in_polygon(mh + inh * 2.0, poly):
+			inh = -inh
+		var y_rue := h(mh.x - inh.x * 6.0, mh.y - inh.y * 6.0)
+		var t_hall := -INF
+		for kx in 13:
+			for j in 27:
+				var q := mh + dh * (kx - 6.0) + inh * float(j)
+				if Geometry2D.is_point_in_polygon(q, hall):
+					t_hall = maxf(t_hall, h(q.x, q.y))
+		hall_y = clampf(y_rue - 1.0, t_hall + 0.05, niveaux[0])
 	_corps = StaticBody3D.new()
 	_corps.name = "Lycee_interieur_" + nom.validate_node_name()
 	add_child(_corps)
@@ -187,7 +207,7 @@ func _lycee(nom: String, hauteur: float, poly: PackedVector2Array) -> void:
 			plans_hauts.append_array(Geometry2D.clip_polygons(p, hall))
 	for j in etages.size():
 		var y: float = etages[j]
-		for p in (plans if j == 0 else plans_hauts):
+		for p in (plans if j == 0 and niveaux.size() > 0 and niveaux[0] - hall_y < 0.3 else plans_hauts):
 			if p.size() >= 3:
 				_dalle(p, y, j == etages.size() - 1)
 	# — façades : murs creux sur tout le contour, du terrain au toit, avec des portes —
@@ -204,9 +224,9 @@ func _lycee(nom: String, hauteur: float, poly: PackedVector2Array) -> void:
 				ouvertures.append([pt[1] - 1.2, pt[1] + 1.2, pt[2], pt[2] + 2.6])
 		# la grande baie du hall dans la façade d'entrée
 		if hall.size() > 2 and niveaux.size() > 0 and a.distance_to(HALL_A) < 1.0 and b.distance_to(HALL_B) < 1.0:
-			ouvertures.append([lg * 0.5 - HALL_LARGE * 0.5, lg * 0.5 + HALL_LARGE * 0.5, niveaux[0], toit - 1.2])
+			ouvertures.append([lg * 0.5 - HALL_LARGE * 0.5, lg * 0.5 + HALL_LARGE * 0.5, hall_y, toit - 1.2])
 		elif hall.size() > 2 and niveaux.size() > 0 and a.distance_to(HALL_B) < 1.0 and b.distance_to(HALL_A) < 1.0:
-			ouvertures.append([lg * 0.5 - HALL_LARGE * 0.5, lg * 0.5 + HALL_LARGE * 0.5, niveaux[0], toit - 1.2])
+			ouvertures.append([lg * 0.5 - HALL_LARGE * 0.5, lg * 0.5 + HALL_LARGE * 0.5, hall_y, toit - 1.2])
 		_mur_facade(a, b, bas, toit, u, moy, ouvertures, facade)
 		u += lg
 	for pt in portes:
@@ -484,22 +504,14 @@ func _tag(o: Vector3, le_long: Vector3, dehors: Vector3) -> void:
 	var chemin := GRAFF % ("tag_%02d" % (_rng.randi() % 14))
 	if not ResourceLoader.exists(chemin):
 		return
-	var dec := Decal.new()
-	dec.texture_albedo = load(chemin)
-	dec.modulate = [Color(0.10, 0.10, 0.14), Color(0.15, 0.25, 0.65), Color(0.55, 0.12, 0.45), Color(0.15, 0.45, 0.25)][_rng.randi() % 4]
-	var l := _rng.randf_range(0.7, 1.4)
-	dec.size = Vector3(l, 0.4, l * 0.7)
-	dec.distance_fade_enabled = true
-	dec.distance_fade_begin = 18.0
-	dec.distance_fade_length = 6.0
-	dec.transform = Transform3D(Basis(le_long, dehors, le_long.cross(dehors)), o + dehors * 0.05)
-	add_child(dec)
+	var c: Color = [Color(0.10, 0.10, 0.14), Color(0.15, 0.25, 0.65), Color(0.55, 0.12, 0.45), Color(0.15, 0.45, 0.25)][_rng.randi() % 4]
+	preload("res://scripts/marque_murale.gd").poser(self, load(chemin), o, le_long, dehors, _rng.randf_range(0.7, 1.4), c, 18.0, 0, "Tag_classe")
 
 
 # ───────────────────────── le hall sous la verrière ─────────────────────────
 
 func _hall(poly: PackedVector2Array, niveaux: Array[float], toit: float) -> void:
-	var y0: float = niveaux[0]
+	var y0: float = hall_y
 	var d := (HALL_B - HALL_A).normalized()
 	var m := (HALL_A + HALL_B) * 0.5
 	var n_in := Vector2(-d.y, d.x)
@@ -528,23 +540,12 @@ func _hall(poly: PackedVector2Array, niveaux: Array[float], toit: float) -> void
 	mi.material_override = md
 	mi.name = "Hall_dalles"
 	add_child(mi)
-	# 2. la verrière au plafond : charpente en treillis et vitrage clair, la lumière passe
-	var hv := toit + 0.2
-	var verre := StandardMaterial3D.new()
-	verre.albedo_color = Color(0.80, 0.92, 0.98, 0.18)
-	verre.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	verre.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	var vit := MeshInstance3D.new()
-	vit.mesh = _bm_v(Vector3(HALL_LARGE, 0.04, HALL_PROF))
-	vit.material_override = verre
-	vit.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	vit.transform = Transform3D(base, c.call(0.0, HALL_PROF * 0.5, hv))
-	vit.name = "Hall_verriere"
-	add_child(vit)
-	for k in int(HALL_PROF / 2.0) + 1:
-		_ajouter("verriere_fer", Color(0.78, 0.80, 0.82), Transform3D(base * Basis.from_scale(Vector3(HALL_LARGE, 0.12, 0.10)), c.call(0.0, k * 2.0, hv)))
-	for k in 5:
-		_ajouter("verriere_fer", Color(0.78, 0.80, 0.82), Transform3D(base * Basis.from_scale(Vector3(0.10, 0.25, HALL_PROF)), c.call(-HALL_LARGE * 0.5 + k * HALL_LARGE / 4.0, HALL_PROF * 0.5, hv - 0.1)))
+	var verre := _verre()
+	# 2. LA VERRIÈRE (Street View mai 2011) : une galerie vitrée à profil polygonal (côtés droits,
+	#    pans coupés, dessus plat) qui couvre tout le hall et dépasse du toit ; pignon avant entièrement vitré,
+	#    bandeau de petits carreaux en bas, porte au milieu ; devant, deux poteaux ronds qui s'ouvrent en
+	#    bras de fer vers le pignon. La lumière passe : le verre ne fait pas d'ombre.
+	_verriere(c, base, bx, bz, y0, toit)
 	# 3. le CDI au fond : paroi vitrée sur toute la largeur, rayonnages, tables, au rez-de-chaussée
 	var p_cdi := HALL_PROF - PROF_CDI
 	_ajouter("cdi_cadre", Color(0.55, 0.58, 0.60), Transform3D(base * Basis.from_scale(Vector3(HALL_LARGE, 0.12, 0.12)), c.call(0.0, p_cdi, y0 + 2.9)))
@@ -601,10 +602,33 @@ func _hall(poly: PackedVector2Array, niveaux: Array[float], toit: float) -> void
 		for k in int(lg_gc / 0.15):
 			_ajouter("hall_rambarde", Color(0.30, 0.32, 0.34), Transform3D(base * Basis.from_scale(Vector3(0.025, 1.0, 0.025)), c.call(HALL_LARGE * 0.5 - lg_gc + k * 0.15, p_cdi - 0.15, y1 + 0.5)))
 		_boite(base, Vector3(lg_gc, 1.0, 0.1), c.call(HALL_LARGE * 0.5 - lg_gc * 0.5, p_cdi - 0.15, y1 + 0.5))
-	# 7. le perron devant la baie : de larges marches du trottoir au niveau du hall
-	var dehors: Vector3 = c.call(0.0, -1.0, 0.0)
+	# 7. l'entrée : du trottoir (derrière le grand portail, à 6 m) une large rampe DESCEND droit dans le hall,
+	#    entre deux murets carrelés à bande turquoise (Street View juillet 2013). Si le hall est plus haut que
+	#    la rue, on garde un perron de marches.
+	var dehors: Vector3 = c.call(0.0, -RAMPE_LONG, 0.0)
 	var y_out := h(dehors.x, dehors.z)
-	if y0 - y_out > 0.1:
+	if y_out > y0 + 0.15:
+		var monte := y_out - y0
+		var lr := sqrt(RAMPE_LONG * RAMPE_LONG + monte * monte)
+		var incl := Basis(Vector3.RIGHT, atan2(monte, RAMPE_LONG))
+		var o_r: Vector3 = c.call(0.0, -RAMPE_LONG * 0.5, y0 + monte * 0.5 - 0.15)
+		_ajouter("hall_rampe", Color(0.64, 0.64, 0.62), Transform3D(base * incl * Basis.from_scale(Vector3(RAMPE_LARGE, 0.3, lr + 0.1)), o_r))
+		_boite(base * incl, Vector3(RAMPE_LARGE, 0.3, lr + 0.1), o_r)
+		# stries antidérapantes
+		for k in int(RAMPE_LONG / 0.6):
+			var pk := -0.3 - k * 0.6
+			_ajouter("hall_rampe_strie", Color(0.52, 0.52, 0.50), Transform3D(base * Basis.from_scale(Vector3(RAMPE_LARGE - 0.4, 0.02, 0.08)), c.call(0.0, pk, y0 - pk / RAMPE_LONG * monte + 0.01)))
+		# murets carrelés de part et d'autre, à hauteur constante au-dessus du trottoir
+		for sx in [-1.0, 1.0]:
+			var x_m: float = sx * (RAMPE_LARGE * 0.5 + 0.15)
+			var haut := y_out + 0.9
+			var o_m: Vector3 = c.call(x_m, -RAMPE_LONG * 0.5, (y0 - 0.4 + haut) * 0.5)
+			_ajouter("hall_muret_carrelage", Color(0.90, 0.91, 0.89), Transform3D(base * Basis.from_scale(Vector3(0.3, haut - y0 + 0.4, RAMPE_LONG)), o_m))
+			_boite(base, Vector3(0.3, haut - y0 + 0.4, RAMPE_LONG), o_m)
+			_ajouter("hall_muret_turquoise", Color(0.36, 0.70, 0.68), Transform3D(base * Basis.from_scale(Vector3(0.32, 0.3, RAMPE_LONG + 0.02)), c.call(x_m, -RAMPE_LONG * 0.5, haut - 0.15)))
+			for j in 4:
+				_ajouter("hall_muret_joint", Color(0.76, 0.77, 0.76), Transform3D(base * Basis.from_scale(Vector3(0.31, 0.02, RAMPE_LONG)), c.call(x_m, -RAMPE_LONG * 0.5, haut - 0.6 - j * 0.3)))
+	elif y0 - y_out > 0.1:
 		var nbm := int(ceil((y0 - y_out) / 0.16))
 		for k in nbm:
 			var hk := y0 - k * (y0 - y_out) / nbm
@@ -613,6 +637,26 @@ func _hall(poly: PackedVector2Array, niveaux: Array[float], toit: float) -> void
 			var o: Vector3 = c.call(0.0, -0.17 - k * 0.34, bas + taille.y * 0.5)
 			_ajouter("hall_perron", Color(0.66, 0.66, 0.64), Transform3D(base * Basis.from_scale(taille), o))
 			_boite(base, taille, o)
+	# 8. le hall est plus bas que le rez-de-chaussée : un soubassement ferme ses côtés et son fond
+	if niveaux[0] - y0 > 0.3:
+		for i in hall.size():
+			var a2 := hall[i]
+			var b2 := hall[(i + 1) % hall.size()]
+			var mm := (a2 + b2) * 0.5
+			if Geometry2D.get_closest_point_to_segment(mm, HALL_A, HALL_B).distance_to(mm) < 1.0:
+				continue   # le côté de la verrière reste ouvert
+			var dd := (b2 - a2)
+			var lg2 := dd.length()
+			if lg2 < 0.2:
+				continue
+			var nn := Vector2(-dd.y, dd.x) / lg2
+			if Geometry2D.is_point_in_polygon(mm + nn * 0.5, hall):
+				nn = -nn
+			var bs := Basis(Vector3(dd.x / lg2, 0, dd.y / lg2), Vector3.UP, Vector3(nn.x, 0, nn.y)).orthonormalized()
+			var hh2: float = niveaux[0] - y0 + 0.3
+			var oc := Vector3(mm.x + nn.x * 0.15, y0 - 0.3 + hh2 * 0.5, mm.y + nn.y * 0.15)
+			_ajouter("hall_soubassement", C_PLINTHE, Transform3D(bs * Basis.from_scale(Vector3(lg2, hh2, 0.3)), oc))
+			_boite(bs, Vector3(lg2, hh2, 0.3), oc)
 	# 6. bancs le long des murs, un grand vide au milieu
 	for k in 3:
 		_ajouter("hall_banc", Color(0.62, 0.60, 0.56), Transform3D(base * Basis.from_scale(Vector3(0.5, 0.45, 2.4)), c.call(HALL_LARGE * 0.5 - 0.5, 4.0 + k * 4.5, y0 + 0.225)))
@@ -691,6 +735,170 @@ func _prisme() -> ArrayMesh:
 			st.add_vertex(v[i])
 	st.generate_normals()
 	return st.commit()
+
+
+const FER := Color(0.82, 0.84, 0.86)
+
+## Profil de la verrière, en (x, hauteur au-dessus du sol du hall) : côtés droits, puis un dôme
+## (arc de cercle surbaissé, 3,2 m de flèche sur 12 m), comme sur le Street View de 2011.
+const DOME_FLECHE := 3.2
+const DOME_SEGMENTS := 12
+
+func _profil(h1: float) -> PackedVector2Array:
+	var w := HALL_LARGE * 0.5
+	var r := (w * w + DOME_FLECHE * DOME_FLECHE) / (2.0 * DOME_FLECHE)
+	var cy := h1 + DOME_FLECHE - r
+	var a0 := asin(w / r)
+	var out := PackedVector2Array([Vector2(-w, 0)])
+	for k in DOME_SEGMENTS + 1:
+		var a := -a0 + 2.0 * a0 * k / DOME_SEGMENTS
+		out.append(Vector2(r * sin(a), cy + r * cos(a)))
+	out.append(Vector2(w, 0))
+	return out
+
+
+func _verre() -> StandardMaterial3D:
+	var verre := StandardMaterial3D.new()
+	verre.albedo_color = Color(0.80, 0.92, 0.98, 0.20)
+	verre.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	verre.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	verre.cull_mode = BaseMaterial3D.CULL_DISABLED
+	return verre
+
+
+func _barre(a: Vector3, b: Vector3, ep: float, cle := "verriere_fer", col := FER) -> void:
+	var d := b - a
+	var lg := d.length()
+	if lg < 0.01:
+		return
+	var y := d / lg
+	var x := y.cross(Vector3.UP if absf(y.y) < 0.95 else Vector3.RIGHT).normalized()
+	var z := x.cross(y)
+	_ajouter(cle, col, Transform3D(Basis(x, y, z) * Basis.from_scale(Vector3(ep, lg, ep)), (a + b) * 0.5))
+
+
+func _verriere(c: Callable, base: Basis, bx: Vector3, bz: Vector3, y0: float, toit: float) -> void:
+	var h1 := toit - y0 + 0.3
+	var prof := _profil(h1)
+	var verre := _verre()
+	var pt := func(q: Vector2, p: float) -> Vector3:
+		return c.call(q.x, p, y0 + q.y)
+	var p_av := 0.0
+	var p_ar := HALL_PROF
+	# — pignon avant : vitrage, montants tous les 1,2 m, traverses tous les 1,5 m —
+	var tri := Geometry2D.triangulate_polygon(prof)
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for i in tri:
+		st.add_vertex(pt.call(prof[i], p_av))
+	var gm := MeshInstance3D.new()
+	gm.mesh = st.commit()
+	gm.material_override = verre
+	gm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	gm.name = "Verriere_pignon"
+	add_child(gm)
+	var haut_a := func(x: float) -> float:
+		var hmax := 0.0
+		for k in prof.size() - 1:
+			var a: Vector2 = prof[k]
+			var b: Vector2 = prof[k + 1]
+			if (x - a.x) * (x - b.x) <= 0.0 and absf(b.x - a.x) > 0.01:
+				hmax = maxf(hmax, lerpf(a.y, b.y, (x - a.x) / (b.x - a.x)))
+		return hmax
+	var x := -HALL_LARGE * 0.5
+	while x <= HALL_LARGE * 0.5 + 0.01:
+		_barre(pt.call(Vector2(x, 0), p_av), pt.call(Vector2(x, haut_a.call(x)), p_av), 0.09)
+		x += 1.2
+	var y := 1.5
+	while y < h1 + DOME_FLECHE:
+		var demi := HALL_LARGE * 0.5
+		for k in prof.size() - 1:
+			var a: Vector2 = prof[k]
+			var b: Vector2 = prof[k + 1]
+			if (y - a.y) * (y - b.y) < 0.0 and b.x > 0.0:
+				demi = lerpf(a.x, b.x, (y - a.y) / (b.y - a.y))
+		_barre(pt.call(Vector2(-demi, y), p_av), pt.call(Vector2(demi, y), p_av), 0.07)
+		y += 1.5
+	# bandeau bas : petits carreaux blancs à vitre sombre (deux rangs), sauf la porte au milieu
+	var xb := -HALL_LARGE * 0.5 + 0.3
+	while xb < HALL_LARGE * 0.5 - 0.3:
+		if absf(xb) > 1.4:
+			for r in 2:
+				var o: Vector3 = pt.call(Vector2(xb, 0.45 + r * 0.75), p_av - 0.03)
+				_ajouter("verriere_bandeau", Color(0.94, 0.94, 0.92), Transform3D(base * Basis.from_scale(Vector3(0.6, 0.7, 0.06)), o))
+				_ajouter("verriere_carreau", Color(0.20, 0.24, 0.28), Transform3D(base * Basis.from_scale(Vector3(0.42, 0.48, 0.07)), o - bz * 0.01))
+		xb += 0.62
+	# collisions du pignon : deux pans pleins de part et d'autre de la porte (2,8 m)
+	for s in [-1.0, 1.0]:
+		_boite(base, Vector3(HALL_LARGE * 0.5 - 1.4, 3.2, 0.12), c.call(s * (1.4 + (HALL_LARGE * 0.5 - 1.4) * 0.5), p_av, y0 + 1.6))
+	_boite(base, Vector3(HALL_LARGE, h1 - 3.2, 0.12), c.call(0.0, p_av, y0 + 3.2 + (h1 - 3.2) * 0.5))
+	# portes vitrées ouvertes, rabattues contre le pignon
+	for s in [-1.0, 1.0]:
+		_ajouter("verriere_porte", Color(0.30, 0.34, 0.38), Transform3D(base * Basis.from_scale(Vector3(0.06, 2.4, 1.3)), c.call(s * 1.4, p_av + 0.65, y0 + 1.2)))
+	# — la galerie : cadres tous les 3 m sur le profil, pannes à chaque angle, vitrage sur chaque pan —
+	var nb_c := int(HALL_PROF / 3.0)
+	for k in nb_c + 1:
+		var p := p_av + k * HALL_PROF / nb_c
+		for i in prof.size() - 1:
+			if prof[i].y < h1 - 0.01 and prof[i + 1].y < h1 - 0.01:
+				continue
+			_barre(pt.call(prof[i], p), pt.call(prof[i + 1], p), 0.16)
+	for i in range(1, prof.size() - 1):
+		_barre(pt.call(prof[i], p_av), pt.call(prof[i], p_ar), 0.14)
+	for i in range(1, prof.size() - 2):
+		var a: Vector2 = prof[i]
+		var b: Vector2 = prof[i + 1]
+		if a.y < h1 - 0.01 or b.y < h1 - 0.01:
+			continue
+		var pan := MeshInstance3D.new()
+		var stp := SurfaceTool.new()
+		stp.begin(Mesh.PRIMITIVE_TRIANGLES)
+		for q in [[a, p_av], [b, p_av], [b, p_ar], [a, p_av], [b, p_ar], [a, p_ar]]:
+			stp.add_vertex(pt.call(q[0], q[1]))
+		pan.mesh = stp.commit()
+		pan.material_override = verre
+		pan.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(pan)
+		# petits bois du vitrage, le long de la galerie
+		_barre(pt.call(a.lerp(b, 0.5), p_av), pt.call(a.lerp(b, 0.5), p_ar), 0.05)
+	# les côtés de la galerie au-dessus du toit voisin : vitrés aussi
+	for side in [[prof[0], prof[1]], [prof[prof.size() - 1], prof[prof.size() - 2]]]:
+		var bas: Vector2 = Vector2(side[1].x, toit - y0 - 0.2)
+		var pan2 := MeshInstance3D.new()
+		var st2 := SurfaceTool.new()
+		st2.begin(Mesh.PRIMITIVE_TRIANGLES)
+		for q in [[bas, p_av], [side[1], p_av], [side[1], p_ar], [bas, p_av], [side[1], p_ar], [bas, p_ar]]:
+			st2.add_vertex(pt.call(q[0], q[1]))
+		pan2.mesh = st2.commit()
+		pan2.material_override = verre
+		pan2.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(pan2)
+	# — pignon arrière : vitré au-dessus du toit —
+	var haut_ar := PackedVector2Array()
+	for q in prof:
+		haut_ar.append(Vector2(q.x, maxf(q.y, toit - y0 - 0.2)))
+	var tri2 := Geometry2D.triangulate_polygon(haut_ar)
+	if not tri2.is_empty():
+		var st3 := SurfaceTool.new()
+		st3.begin(Mesh.PRIMITIVE_TRIANGLES)
+		for i in tri2:
+			st3.add_vertex(pt.call(haut_ar[i], p_ar))
+		var gm2 := MeshInstance3D.new()
+		gm2.mesh = st3.commit()
+		gm2.material_override = verre
+		gm2.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(gm2)
+	# — devant : deux poteaux ronds qui s'ouvrent en bras vers le pignon (l'auvent « arbre ») —
+	for s in [-1.0, 1.0]:
+		var pied: Vector3 = c.call(s * 2.6, -3.2, y0 - 1.1)
+		var tete: Vector3 = c.call(s * 2.6, -3.2, y0 + h1 * 0.72)
+		_barre(pied, tete, 0.32, "verriere_poteau", Color(0.72, 0.74, 0.74))
+		_boite(base, Vector3(0.32, h1, 0.32), (pied + tete) * 0.5)
+		_barre(tete, pt.call(Vector2(s * HALL_LARGE * 0.5, h1 - 0.3), p_av), 0.12)
+		_barre(tete, pt.call(Vector2(s * 2.2, h1 + DOME_FLECHE * 0.85), p_av), 0.12)
+		_barre(tete, pt.call(Vector2(s * 2.6, h1 * 0.72), p_av), 0.12)
+		_barre(tete, pt.call(Vector2(-s * 0.4, h1 + 1.0), p_av), 0.10)
+	print("Lycée : la verrière à dôme (%.0f m de haut)" % (h1 + DOME_FLECHE))
 
 
 func _bm_v(t: Vector3) -> BoxMesh:
