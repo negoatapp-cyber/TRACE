@@ -282,11 +282,13 @@ func _pied_qui_pousse(t: float) -> Vector3:
 
 
 func _process(delta: float) -> void:
-	if modele == null or _joueur == null:
+	if _joueur == null:
+		return
+	etat = _etat()   # calculé même sans modèle (copies du dépôt sans assets/personnages)
+	if modele == null:
 		return
 	_t += delta
 	_posture(delta)
-	etat = _etat()
 	_placer_sur_vehicule()
 	if pose:
 		_composer(delta)
