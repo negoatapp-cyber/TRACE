@@ -43,7 +43,9 @@ func run() -> void:
 	# Roue arrière trop forte : chute.
 	await appui("monter")
 	Input.action_press("move_forward"); await frames(90)
-	Input.action_press("jump"); await frames(150)
+	Input.action_press("jump"); await frames(60)
+	sc.cabre = 1.3   # forcé au-delà de la limite (en jeu : 3 à 4 s plein gaz sans doser)
+	await frames(5)
 	Input.action_release("jump"); Input.action_release("move_forward")
 	await frames(5)
 	check(c.actuel == null and c.record > 0.0, "trop cabré : chute (record %.1f s)" % c.record)

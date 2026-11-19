@@ -249,7 +249,8 @@ func _vehicule() -> Node3D:
 
 
 ## Assis : sur la selle du scooter, au volant de la voiture (à gauche). Le corps reste visible.
-const SIEGE := {"scooter": Vector3(0, -0.2, 0.12), "voiture": Vector3(-0.38, -0.42, 0.15)}
+## Siège dans le repère du véhicule (+Z = l'avant ; +X = la gauche du conducteur).
+const SIEGE := {"scooter": Vector3(0, -0.2, -0.12), "voiture": Vector3(0.38, -0.42, -0.15)}
 func _placer_sur_vehicule() -> void:
 	var v := _vehicule()
 	var vis := get_parent() as Node3D
@@ -257,12 +258,19 @@ func _placer_sur_vehicule() -> void:
 		if position.x != 0.0 or position.z != 0.0:
 			position.x = 0.0
 			position.z = 0.0
+			rotation.x = 0.0
 		return
 	if vis and not vis.visible:
 		vis.visible = true
 	var siege: Vector3 = SIEGE.get(str(v.get("type")), SIEGE.scooter)
-	position = siege
-	rotation = Vector3.ZERO
+	# Loums suit le modèle du véhicule, roue arrière et inclinaison comprises : on part du modèle
+	# (cabré, penché) et on retire sa pose de repos pour retrouver le repère du véhicule qui bouge avec lui.
+	var repere := v.global_transform
+	var m: Node3D = v.get("modele")
+	if m:
+		repere = m.global_transform * (v.get("base_modele") as Transform3D).affine_inverse()
+	repere.basis = repere.basis.orthonormalized()
+	global_transform = repere * Transform3D(Basis(Vector3.UP, PI), siege)
 
 
 ## Assis : cuisses à l'horizontale, tibias vers le bas, mains en avant sur le guidon ou le volant.

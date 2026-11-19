@@ -101,8 +101,6 @@ func _preparer() -> void:
 		v.add_to_group("vehicule")
 		v.add_to_group("voiture" if type == "voiture" else "mobilier")
 		v.set_meta("type", type)
-		if joueur:
-			v.add_collision_exception_with(joueur)
 		vehicules.append(v)
 		fixe.queue_free()
 
@@ -134,6 +132,9 @@ func _vehicule_proche() -> Vehicule:
 
 func _monter(v: Vehicule) -> void:
 	actuel = v
+	# Les véhicules sont solides ; seul celui qu'on conduit laisse passer Loums (il est assis dedans).
+	v.add_collision_exception_with(joueur)
+	joueur.add_collision_exception_with(v)
 	joueur.set_physics_process(false)
 	joueur.velocity = Vector3.ZERO
 	_hud_joueur(false)
@@ -157,6 +158,8 @@ func _descendre() -> void:
 		p.y = quartier.h(p.x, p.z) + 0.1
 	joueur.global_position = p
 	joueur.velocity = Vector3.ZERO
+	v.remove_collision_exception_with(joueur)
+	joueur.remove_collision_exception_with(v)
 	(joueur.get("visual") as Node3D).visible = true
 	_hud_joueur(true)
 	joueur.set_physics_process(true)
@@ -231,7 +234,9 @@ func _conduire(v: Vehicule, delta: float) -> void:
 func _roue_arriere(v: Vehicule, gaz: float, espace: bool, delta: float) -> void:
 	var tire := 0.0
 	if espace and v.vitesse > 2.5:
-		tire = 3.2 + gaz * 1.6
+		# plein gaz : équilibre vers 55° au début, puis ça tire de plus en plus (il faut doser le gaz),
+		# sinon on bascule au bout de 3 à 4 s plein gaz.
+		tire = 2.7 + gaz * (1.2 + 0.3 * roue_arriere)
 	var retour := 5.0 * sin(v.cabre) + (2.5 if not espace else 0.0)
 	v.cabre_v += (tire - retour) * delta * 2.0
 	v.cabre_v *= exp(-2.5 * delta)
