@@ -55,7 +55,9 @@ func _ready() -> void:
 	spring_arm.add_excluded_object(get_rid())
 	spring_arm.rotation.x = -0.35
 	camera_pivot.top_level = true  # la caméra suit sans hériter des à-coups
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	add_to_group("player")
+	if not TouchControls.actif:
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	_set_mode(Mode.WALK)
 	skate.trick_done.connect(_on_trick_done)
 
@@ -70,6 +72,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	elif event is InputEventMouseButton and event.pressed:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+## Caméra au doigt (contrôles tactiles) : `rel` est un déplacement déjà mis à l'échelle (radians).
+func touch_look(rel: Vector2) -> void:
+	_camera_libre = camera_pause
+	camera_pivot.rotate_y(-rel.x)
+	spring_arm.rotation.x = clampf(spring_arm.rotation.x - rel.y, -1.2, 0.25)
 
 
 func _physics_process(delta: float) -> void:
@@ -385,5 +394,7 @@ func _update_hud() -> void:
 	var state := "CHUTE" if chute_t >= 0.0 else "À PIED"
 	if mode == Mode.SKATE:
 		state = "GRIND" if skate.grinding else ("AIR" if skate.in_air else "SKATE")
-	debug_label.text = "%s   %d km/h\n%s\n\nZQSD bouger · Maj courir / pousser · Espace sauter, grimper / ollie · E planche\nJ kickflip · K shove-it · L grind (maintenir) · R départ · Échap souris\nÀ pied, face à un mur : G bref : tag à la main · G maintenu : flop, pièce · C couleur · B rendu BD / d'origine" % [
-		state, roundi(kmh), skate.last_event]
+	if TouchControls.actif:
+		debug_label.text = "%s   %d km/h\n%s" % [state, roundi(kmh), skate.last_event]
+		return
+	debug_label.text = "%s   %d km/h\n%s" % [state, roundi(kmh), skate.last_event]

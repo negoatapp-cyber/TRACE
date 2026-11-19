@@ -57,6 +57,11 @@ func _ready() -> void:
 	_joueur = get_node_or_null("../Player") as Player
 	_interface()
 	_charger()
+	var aide := Aide.new()
+	aide.name = "Aide"
+	aide.graffiti = self
+	aide.joueur = _joueur
+	add_child(aide)
 
 
 func _physics_process(delta: float) -> void:
@@ -65,7 +70,7 @@ func _physics_process(delta: float) -> void:
 	_message_t = maxf(0.0, _message_t - delta)
 	if _trace:
 		_suivre_le_geste(delta)
-		_texte.text = "TRACE TON TAG   ·   clic gauche maintenu pour peindre\nG ou Entrée : poser   ·   Échap : annuler"
+		_texte.text = "TRACE TON TAG"
 		_barre.visible = false
 		return
 	if _attendre_relache:
@@ -169,9 +174,9 @@ func _mur_devant() -> Dictionary:
 
 ## Appui bref sur G : la caméra se met face au mur, le tag de Loums apparaît en fantôme,
 ## et le joueur le repasse à la souris.
-func _commencer_trace() -> void:
+func _commencer_trace(variante := -1) -> void:
 	tenue = 0.0
-	var v := randi() % NB_TAGS
+	var v := randi() % NB_TAGS if variante < 0 else variante
 	var img := Image.load_from_file(ProjectSettings.globalize_path(LETTRAGE + "tag_%d.png" % (v + 1)))
 	if img == null:
 		return
@@ -263,7 +268,8 @@ func _sortir_trace() -> void:
 		cam.make_current()
 	_joueur.set_physics_process(true)
 	_joueur.set_process_unhandled_input(true)
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	if not TouchControls.actif:
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	_attendre_relache = true
 	tenue = 0.0
 
@@ -548,10 +554,10 @@ func _afficher(peut: bool) -> void:
 		else:
 			_texte.text = "%s   (relâche pour poser)" % noms[p] if p != "" else "maintiens pour un flop · relâche vite pour tracer un tag"
 	elif _conteneur_proche():
-		_texte.text = "F : fouiller le conteneur"
+		_texte.text = ""
 	elif peut and reserve[bombe] < COUT["tag"]:
 		_texte.text = "Bombe vide   ·   C : changer   ·   conteneur derrière la grande barre"
 	elif peut:
-		_texte.text = "G bref : tag à la main   ·   G maintenu : flop, pièce   ·   C : bombe   ·   %d tags, %d flops, %d pièces" % [compte.tag, compte.flop, compte.piece]
+		_texte.text = ""
 	else:
 		_texte.text = ""
