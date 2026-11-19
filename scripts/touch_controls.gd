@@ -31,6 +31,7 @@ const PLACES := {
 	"H": [620, -150, 42],
 	"I": [620, -290, 40],
 	"haut": [-60, 55, 34],
+	"haut2": [-150, 55, 34],
 }
 ## [nom, libellé, action, maintenu]. Une action qui commence par « : » est une commande
 ## envoyée au graffiti (choix dans le menu GRAFF).
@@ -65,6 +66,7 @@ const BOUTONS := {
 	"lacher_g": ["LÂCHER", "jump", false],
 	"descendre": ["DESCENDRE", "monter", false],
 	"reset": ["DÉPART", "reset", false],
+	"demain": ["DEMAIN", "temps_demain", false],
 }
 var _menu_graff := false
 var _visibles: Array = []    ## [nom, place] des boutons affichés en ce moment
@@ -114,6 +116,8 @@ func _choisir_boutons() -> void:
 		if cond and cond.has_method("_vehicule_proche") and cond.call("_vehicule_proche") != null:
 			liste.append(["monter", "D"])
 	liste.append(["reset", "haut"])
+	if ctx == "pied" or ctx == "skate":
+		liste.append(["demain", "haut2"])
 	if ctx + str(liste) != _contexte:
 		_contexte = ctx + str(liste)
 		_visibles = liste

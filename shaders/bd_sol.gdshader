@@ -14,24 +14,33 @@ uniform vec4 herbe_seche : source_color = vec4(0.70, 0.67, 0.44, 1.0);
 uniform vec4 herbe : source_color = vec4(0.46, 0.56, 0.30, 1.0);
 
 varying vec3 monde;
+varying vec3 nmonde;
 
 void vertex() {
 	monde = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	nmonde = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
 }
 
 void fragment() {
 	vec3 p = vec3(monde.x, 0.0, monde.z);
-	float zone = bd_bruit(p * 0.028) * 0.7 + bd_bruit(p * 0.09) * 0.3;  // grandes plaques
-	float vert = bd_bruit(p * 0.045 + vec3(31.0, 0.0, 7.0));
+	// Grandes plaques douces sur le plat ; les pentes deviennent des talus d'herbe sèche
+	// (comme sous la grande barre, rue Raymonde Martin), ravinés de terre.
+	float zone = bd_bruit(p * 0.012) * 0.6 + bd_bruit(p * 0.05) * 0.4;
+	float vert = bd_bruit(p * 0.03 + vec3(31.0, 0.0, 7.0));
+	float pente = 1.0 - clamp(nmonde.y, 0.0, 1.0);
 	vec3 c = beton.rgb;
-	if (zone < 0.36) c = enrobe.rgb;
-	if (zone > 0.56) c = terre.rgb;
-	if (zone > 0.66) c = herbe_seche.rgb;
-	if (zone > 0.62 && vert > 0.70) c = herbe.rgb;
+	if (zone < 0.33) c = mix(beton.rgb, enrobe.rgb, 0.7);
+	if (zone > 0.60) c = mix(beton.rgb, terre.rgb, 0.65);
+	// talus
+	float talus = smoothstep(0.035, 0.07, pente + (zone - 0.5) * 0.04);
+	vec3 t = herbe_seche.rgb;
+	if (bd_bruit(p * 0.09) > 0.62) t = terre.rgb;
+	if (vert > 0.72) t = mix(herbe_seche.rgb, herbe.rgb, 0.6);
+	c = mix(c, t, step(0.5, talus));
 	// Touffes d'herbe et cailloux, en petites taches.
 	float touffe = bd_bruit(p * 1.6);
-	if (zone > 0.5 && touffe > 0.80) c = mix(herbe_seche.rgb, herbe.rgb, step(0.65, vert)) * 0.88;
-	if (zone < 0.5 && touffe > 0.86) c *= 0.9;
+	if (talus > 0.5 && touffe > 0.74) c = mix(herbe_seche.rgb, herbe.rgb, step(0.6, vert)) * 0.86;
+	if (talus < 0.5 && touffe > 0.88) c *= 0.92;
 	c *= bd_texture(monde);
 	ALBEDO = c;
 	ROUGHNESS = 1.0;

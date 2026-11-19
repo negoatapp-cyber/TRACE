@@ -85,7 +85,7 @@ func lignes(c: String) -> Array:
 			return [["F", "fouiller : bombes pleines"], ["E", "planche"]]
 		"mur", "mur_expert":
 			return [["G", "tag (bref) · flop, pièce (maintenir)"], ["1 – 5", "tag, flop, pièce, perche, rouleau"], ["C", "changer de bombe"], ["M", "mode " + ("expert → simple" if graffiti and graffiti.get("expert") else "simple → expert")]]
-	return [["ZQSD", "marcher"], ["Maj", "courir"], ["Espace", "sauter ; vers un mur : grimper, s'accrocher"], ["E", "monter sur la planche"]]
+	return [["ZQSD", "marcher"], ["Maj", "courir"], ["Espace", "sauter ; vers un mur : grimper, s'accrocher"], ["E", "monter sur la planche"], ["N", "au lendemain matin (Maj+N : une semaine)"]]
 
 
 func _remplir(l: Array) -> void:

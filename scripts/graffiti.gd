@@ -62,6 +62,9 @@ var _message_t := 0.0
 
 func _ready() -> void:
 	_joueur = get_node_or_null("../Player") as Player
+	var t := _temps()
+	if t:
+		t.jour_change.connect(func(_j): vieillir())
 	_interface()
 	_charger()
 	var aide := AIDE.new()
@@ -510,13 +513,57 @@ func _sortir_trace() -> void:
 	tenue = 0.0
 
 
+func _temps() -> Node:
+	return get_node_or_null("../Temps")
+
+
+## Le temps passe sur les murs : la peinture pâlit ; un graffiti vu par le gardien ou une voisine
+## est repeint en gris quelques jours plus tard ; les petits tags partent parfois au nettoyage.
+func vieillir() -> void:
+	var t := _temps()
+	if t == null:
+		return
+	var aujourd_hui: int = t.call("jour")
+	for i in poses.size():
+		var g: Dictionary = poses[i]
+		var age: int = aujourd_hui - int(g.get("jour", aujourd_hui))
+		if g.has("efface") or age <= 0:
+			_patiner(i, age)
+			continue
+		var temoins: Array = g.get("temoins", [])
+		var delai := -1
+		if temoins.has("gardien") or temoins.has("voisine"):
+			delai = 3
+		elif g.t == "tag" and (hash(str(g.x) + str(g.z)) % 100) < 25:
+			delai = 10 + hash(str(g.z)) % 20
+		if delai >= 0 and age >= delai:
+			g["efface"] = int(g.get("jour", 0)) + delai
+			var vieux: Node = _noeuds.get(i)
+			if vieux:
+				vieux.queue_free()
+			_dessiner(g, i)
+		_patiner(i, age)
+	_sauver()
+
+
+func _patiner(i: int, age: int) -> void:
+	var n: Node = _noeuds.get(i)
+	if n == null or age <= 0:
+		return
+	var k := clampf(age / 60.0, 0.0, 1.0)
+	for sp in n.find_children("*", "Sprite3D", true, false):
+		if not (sp as Node).has_meta("buff"):
+			(sp as Sprite3D).modulate.a = lerpf(1.0, 0.65, k)
+
+
 func _nouveau(type: String) -> Dictionary:
 	var n: Vector3 = _cible.normal
 	n.y = 0.0
 	n = n.normalized()
 	var p: Vector3 = _cible.position
+	var t := _temps()
 	return {
-		"t": type, "c": couleur, "b": blaze,
+		"t": type, "c": couleur, "b": blaze, "jour": t.call("jour") if t else 0,
 		"x": p.x, "y": _joueur.global_position.y, "z": p.z,
 		"nx": n.x, "nz": n.z, "a": randf_range(-0.06, 0.06) if type == "piece" else randf_range(-0.10, 0.10),
 		"v": randi() % NB_TAGS,
@@ -644,6 +691,20 @@ func _dessiner(g: Dictionary, indice := -1) -> void:
 	var n := Vector3(g.nx, 0, g.nz)
 	var c: Color = COULEURS[int(g.c) % COULEURS.size()]
 	var vrai := _dessiner_lettrage(g)
+	if vrai and g.has("efface"):
+		# repeint en gris par la mairie ou le bailleur : un aplat un peu plus clair que le mur
+		var buff := MeshInstance3D.new()
+		var qm := QuadMesh.new()
+		var l: float = LARGEUR.get(g.t, 1.0)
+		qm.size = Vector2(l * 1.1, l * 0.6)
+		buff.mesh = qm
+		var m := StandardMaterial3D.new()
+		m.albedo_color = Color(0.70, 0.68, 0.64)
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		buff.material_override = m
+		buff.position.z = 0.02
+		buff.set_meta("buff", true)
+		vrai.add_child(buff)
 	if vrai:
 		_placer(vrai, g)
 		if indice >= 0:
@@ -738,6 +799,7 @@ func _charger() -> void:
 			if g is Dictionary and g.has("t") and g.has("nx"):
 				poses.append(g)
 				_dessiner(g, poses.size() - 1)
+		vieillir.call_deferred()
 
 
 func _interface() -> void:

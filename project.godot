@@ -34,6 +34,11 @@ window/handheld/orientation=1
 
 [shader_globals]
 
+nuit={
+"type": "float",
+"value": 0.0
+}
+
 bd_actif={
 "type": "float",
 "value": 1.0

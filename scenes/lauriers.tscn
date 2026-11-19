@@ -1,10 +1,11 @@
-[gd_scene load_steps=9 format=3]
+[gd_scene load_steps=10 format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/player.tscn" id="1_player"]
 [ext_resource type="Script" path="res://scripts/quartier_reel.gd" id="2_quartier"]
 [ext_resource type="Script" path="res://scripts/graffiti.gd" id="3_graffiti"]
 [ext_resource type="Script" path="res://scripts/style_bd.gd" id="4_style"]
 [ext_resource type="Script" path="res://scripts/habitants.gd" id="5_habitants"]
+[ext_resource type="Script" path="res://scripts/temps.gd" id="6_temps"]
 
 [sub_resource type="ProceduralSkyMaterial" id="SkyMat"]
 sky_top_color = Color(0.16, 0.38, 0.74, 1)
@@ -57,6 +58,9 @@ shadow_bias = 0.04
 shadow_blur = 0.8
 directional_shadow_mode = 2
 directional_shadow_max_distance = 320.0
+
+[node name="Temps" type="Node" parent="."]
+script = ExtResource("6_temps")
 
 [node name="Quartier" type="Node3D" parent="."]
 script = ExtResource("2_quartier")

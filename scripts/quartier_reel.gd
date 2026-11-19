@@ -26,6 +26,11 @@ const STYLES := {
 	"cypres_tour": [Color(0.91, 0.85, 0.71), false, 0.45, 2.8, 3.0],
 	"cypres_barre": [Color(0.90, 0.82, 0.67), true, 0.40, 2.8, 3.2, Color(0.84, 0.76, 0.62)],
 	"genets_blanc": [Color(0.94, 0.93, 0.89), true, 0.40, 2.8, 3.2],
+	# Petites barres R+4 de la rue de Marathon et de l'avenue Saint-Paul (Street View 2013-2014) :
+	# enduit beige, rez-de-chaussée et colonnes de panneaux rouge brique (réglés dans habillage.gd).
+	"marathon_rouge": [Color(0.80, 0.72, 0.58), false, 0.45, 2.8, 3.0],
+	# La barre beige de l'impasse « PAIX » (Street View 2014) : enduit beige uni.
+	"impasse_beige": [Color(0.83, 0.78, 0.68), false, 0.35, 2.8, 3.0],
 }
 ## Bandes de couleur : [couleur, largeur des bandes d'angle (m), pignons pleins si mur plus court que (m), antenne]
 const BANDES := {
@@ -52,6 +57,8 @@ const ZONES := {
 
 ## "avant" = le quartier de 2014-2015, "apres" = aujourd'hui. Touche T pour passer de l'un à l'autre.
 static var epoque := "avant"
+## Bâtiments déjà démolis à la date du jeu (temps.gd) : la tour Cyprès B après le 21 juillet 2016.
+static var demolies: Array = []
 
 var gx := PackedFloat32Array()
 var gz := PackedFloat32Array()
@@ -76,6 +83,8 @@ func _ready() -> void:
 			if c[c.size() - 1].substr(1) != epoque:
 				continue
 			c.remove_at(c.size() - 1)
+		if c[0] == "B" and demolies.has(c[1]):
+			continue
 		match c[0]:
 			"B": batiments.append(c)
 			"R": voies.append(c)

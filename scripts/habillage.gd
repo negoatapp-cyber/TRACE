@@ -43,6 +43,8 @@ func _ready() -> void:
 			if c[c.size() - 1].substr(1) != Q.epoque:
 				continue
 			c.remove_at(c.size() - 1)
+		if c[0] == "B" and Q.demolies.has(c[1]):
+			continue   # démoli à la date du jeu (temps.gd, n°1)
 		match c[0]:
 			"B": batiments.append(c)
 			"R": voies.append(c)
@@ -54,9 +56,28 @@ func _ready() -> void:
 	_sol()
 	_rng.seed = 13014
 	_pied_des_cypres()
+	for e in load("res://scripts/habillage_place.gd").emprises():
+		_emprises.append(e)
+	_emprises.append(PackedVector2Array([Vector2(-28, -1), Vector2(-3, -1), Vector2(-3, 96), Vector2(-28, 96)]))  # impasse PAIX
+	_emprises.append(PackedVector2Array([Vector2(115, 34), Vector2(130, 34), Vector2(130, 50), Vector2(115, 50)]))  # le snack
 	_mobilier(voies, batiments, zones)
 	_habiller_voitures()
 	_facades(batiments)
+	_rue_de_marathon(batiments)
+	var ly := Node3D.new()
+	ly.set_script(load("res://scripts/habillage_lycee.gd"))
+	ly.name = "LyceeInterieur"
+	ly.set("habillage", self)
+	add_child(ly)
+	ly.call("construire", batiments)
+	var lv := Node3D.new()
+	lv.set_script(load("res://scripts/habillage_laveran.gd"))
+	lv.name = "BoulevardLaveran"
+	lv.set("habillage", self)
+	add_child(lv)
+	lv.call("construire", batiments, voies, ly.get("portes_monde"), Q.epoque)
+	_mur_paix()
+	_horizon()
 	_vieux_murs(batiments)
 
 
@@ -427,6 +448,354 @@ func _entree_tour(pied: Vector2, angle: float) -> void:
 	_reserver(pied, 4.0)
 
 
+# ───────────────────────── rue de Marathon (Street View 2013-2014) ─────────────────────────
+
+## Les petites barres R+4 : rez-de-chaussée rouge brique, colonnes de panneaux rouges ;
+## devant, des murets et des jardinières peints du même rouge (tagués), avec quelques marches.
+const ROUGE_MURET := Color(0.66, 0.29, 0.25)
+
+func _rue_de_marathon(batiments: Array) -> void:
+	for b in get_tree().get_nodes_in_group("batiment"):
+		if b.get_meta("style", "") != "marathon_rouge":
+			continue
+		for mi in b.get_children():
+			if mi is MeshInstance3D and mi.material_override is ShaderMaterial:
+				var m: ShaderMaterial = mi.material_override
+				m.set_shader_parameter("soubassement_on", 1.0)
+				m.set_shader_parameter("panneaux_part", 0.45)
+	var n := 0
+	for c in batiments:
+		if c[3] != "marathon_rouge":
+			continue
+		var poly := _pts(c[4])
+		if poly.size() > 2 and poly[0].distance_to(poly[poly.size() - 1]) < 0.01:
+			poly.remove_at(poly.size() - 1)
+		for k in poly.size():
+			var a2 := poly[k]
+			var b2 := poly[(k + 1) % poly.size()]
+			var long := a2.distance_to(b2)
+			if long < 18.0:
+				continue
+			var d := (b2 - a2) / long
+			var nrm := _normale_dehors(a2, b2, poly)
+			var angle := atan2(-d.y, d.x)
+			var t := 2.0
+			var i := 0
+			while t < long - 6.0:
+				var seg := 5.0 + _rng.randf() * 3.0
+				var q := a2 + d * (t + seg * 0.5) + nrm * 3.2
+				if _libre(q, 1.0):
+					if i % 3 == 2:
+						# trois marches qui montent vers l'entrée, entre deux murets
+						for m2 in 3:
+							var qm := q + nrm * (0.9 - m2 * 0.35)
+							_boite("Marche_marathon", qm.x, qm.y, Vector3(2.4, 0.18 * (m2 + 1), 0.35), ROUGE_MURET.lightened(0.08), angle)
+					elif i % 4 == 1:
+						var bac := _boite("Jardiniere_marathon", q.x, q.y, Vector3(seg, 0.7, 1.4), ROUGE_MURET, angle)
+						bac.add_to_group("muret")
+					else:
+						var mu := _boite("Muret_marathon", q.x, q.y, Vector3(seg, 0.95, 0.3), ROUGE_MURET, angle)
+						mu.add_to_group("muret")
+					n += 1
+				t += seg + 2.2
+				i += 1
+	print("Rue de Marathon : %d murets, jardinières et marches rouges" % n)
+
+
+## L'impasse « PAIX » et le grand escalier qui monte au plateau des Lauriers (Street View juin 2014,
+## corrigé par Louma : l'escalier est de face, et une barre R+4 est perpendiculaire au mur, à gauche ;
+## 31 rue de Marathon). En descendant la rue de Marathon, l'impasse part vers le sud et monte doucement ;
+## elle bute sur le grand mur du plateau :
+##  - à gauche, la barre « Immeuble impasse » (relevé) puis le grand escalier de face, entre deux murets ;
+##  - un pilier blanc, puis le passage sombre ;
+##  - le mur peint brun-rouge avec le grand rond jaune « PAIX » ;
+##  - à droite, le mur de soutènement en béton qui monte avec la rue, grillage vert dessus, fresque
+##    colorée au bout, lampadaires boules à mât orange sur le trottoir ;
+##  - au-dessus, les pins du plateau, et derrière, la tour des Cyprès B.
+const PAIX_AXE := -10.0     # x du milieu de l'impasse
+const PAIX_MUR := 13.0      # z de la face du grand mur
+const PAIX_BAS := 93.0      # z du débouché sur la rue de Marathon
+const PIERRE := preload("res://shaders/pierre.gdshader")
+
+func _mur_paix() -> void:
+	var yr := sol(PAIX_AXE, PAIX_MUR + 1.0)
+	var yt := maxf(yr + 4.6, h(PAIX_AXE, 2.0) + 0.3)       # haut du mur / niveau du plateau devant
+	var hm := yt - yr
+	var zf := PAIX_MUR                                       # face du mur (côté impasse = +z)
+	var m_pierre := ShaderMaterial.new()
+	m_pierre.shader = PIERRE
+	# — la chaussée de l'impasse et ses trottoirs (bandes qui suivent la pente) —
+	_bande_sol(Vector2(PAIX_AXE, zf + 0.5), Vector2(PAIX_AXE, PAIX_BAS), 6.5, 0.05, Color(0.40, 0.40, 0.43))
+	_bande_sol(Vector2(PAIX_AXE - 4.15, zf + 0.5), Vector2(PAIX_AXE - 4.15, PAIX_BAS), 1.8, 0.15, Color(0.74, 0.72, 0.68))
+	_bande_sol(Vector2(PAIX_AXE + 4.15, zf + 0.5), Vector2(PAIX_AXE + 4.15, PAIX_BAS), 1.8, 0.15, Color(0.74, 0.72, 0.68))
+	# Fond de l'impasse, de gauche à droite (Street View juin 2014, 31 rue de Marathon) :
+	#   pignon de la barre beige | grand escalier de pierre, de face, creusé DANS le plateau
+	#   | pilier beige | passage sombre | mur brun-rouge « PAIX » | angle peint du soutènement de droite.
+	var x_esc_g := -17.0      # bord gauche de l'escalier (= pignon de la barre)
+	var x_esc_d := -13.0      # bord droit (pilier)
+	var x_pil := -12.75
+	var x_pas_d := -11.0      # fin du passage sombre
+	var x_mur_d := PAIX_AXE + 4.9
+	var n := int(ceil(hm / 0.16))
+	var g := hm / n
+	var giron := 0.34
+	var prof := n * giron     # l'escalier recule de prof mètres dans le plateau
+	var z_haut := zf - prof
+	# — le plateau en trois blocs de pierre, qui laissent la tranchée de l'escalier —
+	var p1 := _boite_y("Plateau_gauche", Vector3((x_esc_g - 30.0) * 0.5, yr - 0.5, zf - 8.0), Vector3(x_esc_g + 30.0 + 0.02, hm + 0.5, 16.0), m_pierre)
+	p1.add_to_group("mur")
+	var p2 := _boite_y("Plateau_droite", Vector3((x_esc_d + x_mur_d + 0.6) * 0.5, yr - 0.5, zf - 8.0), Vector3(x_mur_d + 0.6 - x_esc_d, hm + 0.5, 16.0), m_pierre)
+	p2.add_to_group("mur")
+	var p3 := _boite_y("Plateau_fond", Vector3((x_esc_g + x_esc_d) * 0.5, yr - 0.5, z_haut - (16.0 - prof) * 0.5), Vector3(x_esc_d - x_esc_g, hm + 0.5, 16.0 - prof + 0.02), m_pierre)
+	p3.add_to_group("mur")
+	# marches pour redescendre côté Cyprès si le plateau est plus bas derrière
+	var yb := h(PAIX_AXE, -4.0)
+	if yt - yb > 0.4:
+		var n_m := int(ceil((yt - yb) / 0.3))
+		for i in n_m:
+			var hh := yt - (i + 1) * (yt - yb) / n_m
+			_boite_y("Marche_plateau", Vector3(-12.0, yb - 0.3, zf - 16.0 - 0.2 - i * 0.4), Vector3(4.0, hh - yb + 0.3, 0.4), m_pierre)
+	# — A : le grand escalier, de face, la première marche au ras de la rue —
+	var le := x_esc_d - x_esc_g
+	var xe := (x_esc_g + x_esc_d) * 0.5
+	for i in n:
+		var hh := (i + 1) * g
+		var mi := MeshInstance3D.new()
+		mi.mesh = _bm(le, hh, giron + 0.02)
+		mi.material_override = m_pierre
+		mi.position = Vector3(xe, yr + hh * 0.5, zf - (i + 0.5) * giron)
+		mi.name = "Marche_grand_escalier"
+		add_child(mi)
+	# rampe de collision sous les marches
+	var lg := sqrt(prof * prof + hm * hm)
+	var pente := atan2(hm, prof)
+	var rampe := StaticBody3D.new()
+	var cs := CollisionShape3D.new()
+	var sh := BoxShape3D.new()
+	sh.size = Vector3(le, 0.2, lg)
+	cs.shape = sh
+	rampe.add_child(cs)
+	rampe.transform = Transform3D(Basis(Vector3.RIGHT, pente), Vector3(xe, yr + hm * 0.5 - 0.1, zf - prof * 0.5))
+	rampe.name = "Rampe_grand_escalier"
+	add_child(rampe)
+	# une seule main courante fine, côté gauche, contre le pignon
+	var mc := MeshInstance3D.new()
+	mc.mesh = _bm(0.05, 0.05, lg)
+	mc.material_override = _mat(Color(0.62, 0.62, 0.60))
+	mc.transform = Transform3D(Basis(Vector3.RIGHT, pente), Vector3(x_esc_g + 0.25, yr + hm * 0.5 + 0.9, zf - prof * 0.5))
+	add_child(mc)
+	for k in 4:
+		var t := (k + 0.5) / 4.0
+		var po := MeshInstance3D.new()
+		po.mesh = _bm(0.04, 0.9, 0.04)
+		po.material_override = _mat(Color(0.62, 0.62, 0.60))
+		po.position = Vector3(x_esc_g + 0.25, yr + hm * t + 0.45, zf - prof * t)
+		add_child(po)
+	# — B : le pilier beige, plus haut que le mur —
+	_boite_y("Pilier_PAIX", Vector3(x_pil, yr, zf + 0.25), Vector3(0.5, hm + 1.8, 0.5), _mat(Color(0.86, 0.81, 0.70)))
+	# — C : le passage sombre, sur toute la hauteur du mur —
+	_boite_y("Passage_sombre", Vector3((x_pil + 0.25 + x_pas_d) * 0.5, yr, zf + 0.04), Vector3(x_pas_d - x_pil - 0.25, hm - 0.1, 0.1), _mat(Color(0.09, 0.08, 0.09)))
+	# — D : le mur peint brun-rouge, le rond « PAIX » en bas au milieu —
+	var xm := (x_pas_d + x_mur_d) * 0.5
+	var d_mur := _boite_y("Mur_PAIX", Vector3(xm, yr, zf + 0.12), Vector3(x_mur_d - x_pas_d, hm, 0.3), _mat(Color(0.54, 0.32, 0.26)))
+	d_mur.add_to_group("mur")
+	_fresque("paix", Vector3(xm - 0.6, yr + 1.15, zf + 0.27), Vector3(1, 0, 0), Vector3(0, 0, 1), 2.3)
+	# — E : le soutènement en béton de droite, qui monte avec la rue, grillage vert, fresque au bout —
+	var x_d := PAIX_AXE + 5.2
+	var pas := 6.0
+	var z := zf + 0.3
+	while z < PAIX_BAS - 10.0:
+		var ys := sol(x_d, z + pas * 0.5)
+		var haut_mur := lerpf(hm, 0.8, clampf((z - zf) / 60.0, 0.0, 1.0))
+		var seg := _boite_y("Soutenement_beton", Vector3(x_d + 0.3, ys - 0.2, z + pas * 0.5), Vector3(0.6, haut_mur + 0.2, pas + 0.02), _mat(Color(0.78, 0.74, 0.68)))
+		seg.add_to_group("mur")
+		# grillage vert : poteaux, lisses et barreaudage serré (lisible de loin comme une grille)
+		var vert := Color(0.18, 0.40, 0.27)
+		var y_g := ys + haut_mur
+		for k in 2:
+			var po := MeshInstance3D.new()
+			po.mesh = _bm(0.07, 1.9, 0.07)
+			po.material_override = _mat(vert)
+			po.position = Vector3(x_d + 0.1, y_g + 0.95, z + k * pas * 0.5)
+			add_child(po)
+		for yy in [0.1, 1.85]:
+			var li := MeshInstance3D.new()
+			li.mesh = _bm(0.05, 0.05, pas)
+			li.material_override = _mat(vert)
+			li.position = Vector3(x_d + 0.1, y_g + yy, z + pas * 0.5)
+			add_child(li)
+		var b_n := int(pas / 0.25)
+		for k in b_n:
+			var ba := MeshInstance3D.new()
+			ba.mesh = _bm(0.02, 1.75, 0.02)
+			ba.material_override = _mat(vert.lightened(0.05))
+			ba.position = Vector3(x_d + 0.1, y_g + 0.97, z + (k + 0.5) * 0.25)
+			ba.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			add_child(ba)
+		z += pas
+	_fresque("fresque_impasse", Vector3(x_d - 0.02, yr + 1.9, zf + 7.0), Vector3(0, 0, 1), Vector3(-1, 0, 0), 11.0)
+	# lampadaires boules à mât orangé, sur le trottoir de droite
+	for zl in [zf + 6.0, zf + 26.0, zf + 46.0, zf + 66.0]:
+		_lampadaire_boule(Vector2(x_d - 0.7, zl))
+	# — gauche : potelets blancs et muret rouge bas, comme au pied des barres —
+	var zp := zf + 22.0
+	while zp < PAIX_BAS - 6.0:
+		_potelet_blanc(Vector2(PAIX_AXE - 5.0, zp))
+		zp += 3.0
+	# — la barre de gauche : grilles rouges au pied, barrière blanche au bord du trottoir —
+	var zr := 16.0
+	while zr < 52.0:
+		var gr := _boite("Grille_rouge", -16.6, zr, Vector3(0.08, 1.1, 2.2), Color(0.66, 0.26, 0.22))
+		gr.add_to_group("mur")
+		zr += 2.6
+	for zb in [zf + 34.0, zf + 37.0]:
+		_potelet_blanc(Vector2(PAIX_AXE - 5.1, zb))
+	var lisse := _boite("Barriere_blanche", PAIX_AXE - 5.1, zf + 35.5, Vector3(0.06, 0.06, 3.0), Color(0.92, 0.91, 0.88))
+	lisse.position.y += 0.5
+	# — voitures garées au fond : une bleue devant le passage, une sombre contre le mur de droite —
+	_voiture_impasse(Vector2(-11.4, zf + 3.0), PI, Color(0.12, 0.30, 0.66))
+	_voiture_impasse(Vector2(-6.4, zf + 2.8), PI + 0.08, Color(0.12, 0.13, 0.15))
+	# — pins sur le plateau, derrière le mur, et un grand arbre sombre au-dessus de l'escalier —
+	for q in [Vector2(-19.5, zf - 4.0), Vector2(-15.0, z_haut - 2.5), Vector2(-9.5, zf - 3.5), Vector2(-6.0, zf - 7.0)]:
+		_pin(q)
+	# vieux mur sali de gauche à droite : quelques coulures au pied
+	_reserver(Vector2(-11.4, zf + 3.0), 2.4)
+
+
+func _voiture_impasse(p: Vector2, angle: float, c: Color) -> void:
+	var corps := _boite("Voiture_impasse", p.x, p.y, Vector3(1.7, 0.74, 4.0), Color(0.6, 0.6, 0.6), angle, -0.25)
+	var m := _vetir(corps, "voiture_citadine", Vector3(0, -0.62, 0))
+	if m:
+		_repeindre(m, "Carrosserie", c)
+
+
+## Une boîte posée à une altitude donnée (y = bas de la boîte), avec collision.
+func _boite_y(nom: String, bas: Vector3, taille: Vector3, m: Material) -> StaticBody3D:
+	var body := StaticBody3D.new()
+	var cs := CollisionShape3D.new()
+	var sh := BoxShape3D.new()
+	sh.size = taille
+	cs.shape = sh
+	body.add_child(cs)
+	var mi := MeshInstance3D.new()
+	mi.mesh = _bm(taille.x, taille.y, taille.z)
+	mi.material_override = m
+	body.add_child(mi)
+	body.name = nom
+	body.position = bas + Vector3.UP * taille.y * 0.5
+	add_child(body, true)
+	return body
+
+
+## Une bande au sol qui suit le terrain (chaussée, trottoir), de a à b.
+func _bande_sol(a: Vector2, b: Vector2, largeur: float, dessus: float, c: Color) -> void:
+	var d := (b - a).normalized()
+	var nrm := Vector2(-d.y, d.x)
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLE_STRIP)
+	var long := a.distance_to(b)
+	var k := 0.0
+	while k <= long + 0.01:
+		var p := a + d * k
+		for s2 in [-1.0, 1.0]:
+			var q: Vector2 = p + nrm * largeur * 0.5 * s2
+			st.set_normal(Vector3.UP)
+			st.add_vertex(Vector3(q.x, h(q.x, q.y) + dessus, q.y))
+		k += 1.0
+	var mi := MeshInstance3D.new()
+	mi.mesh = st.commit()
+	mi.material_override = _mat(c)
+	mi.name = "Bande_sol"
+	add_child(mi)
+
+
+## Une fresque peinte (décalque) sur un mur : centre, direction le long du mur, normale vers l'extérieur.
+func _fresque(nom: String, centre: Vector3, le_long: Vector3, dehors: Vector3, largeur: float) -> void:
+	var tex := _texture(nom)
+	if tex == null:
+		return
+	var dec := Decal.new()
+	dec.texture_albedo = tex
+	var ratio := float(tex.get_height()) / float(tex.get_width())
+	dec.size = Vector3(largeur, 1.0, largeur * ratio)
+	dec.normal_fade = 0.4
+	dec.distance_fade_enabled = true
+	dec.distance_fade_begin = 110.0
+	dec.distance_fade_length = 20.0
+	dec.transform = Transform3D(Basis(le_long, dehors, le_long.cross(dehors)), centre + dehors * 0.15)
+	dec.name = "Fresque_" + nom
+	add_child(dec, true)
+
+
+func _lampadaire_boule(p: Vector2) -> void:
+	var mat := _boite("Lampadaire_boule", p.x, p.y, Vector3(0.14, 4.2, 0.14), Color(0.78, 0.48, 0.34))
+	mat.add_to_group("mobilier")
+	var boule := SphereMesh.new()
+	boule.radius = 0.32
+	boule.height = 0.64
+	_maillage("Boule", mat, boule, Color(0.96, 0.95, 0.92), Vector3(0, 2.4, 0))
+	_boite("Socle_lampadaire", p.x, p.y, Vector3(0.6, 0.5, 0.6), Color(0.80, 0.78, 0.74))
+
+
+func _potelet_blanc(p: Vector2) -> void:
+	var b := _boite("Potelet_blanc", p.x, p.y, Vector3(0.12, 1.0, 0.12), Color(0.92, 0.91, 0.88))
+	b.add_to_group("mobilier")
+
+
+## L'horizon : les quartiers nord tout autour, en silhouettes simples (pavillons à toits de tuiles,
+## petits immeubles, quelques tours), pour que la cité ne flotte plus au milieu d'une plaine vide.
+## Rien n'y est jouable : pas de collision, pas d'ombre, un seul objet par type.
+func _horizon() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 1313
+	var centre := Vector2(40.0, 20.0)
+	var murs := []
+	var toits := []
+	var teintes_mur := [Color(0.93, 0.89, 0.80), Color(0.90, 0.84, 0.72), Color(0.95, 0.93, 0.88), Color(0.88, 0.78, 0.62), Color(0.92, 0.80, 0.70)]
+	var tuile := Color(0.78, 0.45, 0.32)
+	for i in 2600:
+		var a := rng.randf() * TAU
+		var r := sqrt(rng.randf_range(430.0 * 430.0, 1300.0 * 1300.0))
+		var p := centre + Vector2(cos(a), sin(a)) * r
+		var y := h(p.x, p.y)
+		var rot := Basis(Vector3.UP, a + rng.randf_range(-0.3, 0.3))
+		var t := rng.randf()
+		var c: Color = teintes_mur[rng.randi() % teintes_mur.size()]
+		if t < 0.8:
+			# pavillon : un cube et un toit de tuiles
+			var taille := Vector3(rng.randf_range(7, 11), rng.randf_range(4.5, 7.0), rng.randf_range(6, 9))
+			murs.append([Transform3D(rot * Basis.from_scale(taille), Vector3(p.x, y + taille.y * 0.5 - 0.3, p.y)), c])
+			toits.append([Transform3D(rot * Basis.from_scale(Vector3(taille.x + 0.6, 0.9, taille.z + 0.6)), Vector3(p.x, y + taille.y, p.y)), tuile.darkened(rng.randf() * 0.15)])
+		elif t < 0.97:
+			var taille := Vector3(rng.randf_range(18, 40), rng.randf_range(10, 16), rng.randf_range(10, 13))
+			murs.append([Transform3D(rot * Basis.from_scale(taille), Vector3(p.x, y + taille.y * 0.5 - 0.3, p.y)), c])
+		else:
+			var taille := Vector3(rng.randf_range(14, 20), rng.randf_range(30, 50), rng.randf_range(14, 20))
+			murs.append([Transform3D(rot * Basis.from_scale(taille), Vector3(p.x, y + taille.y * 0.5 - 0.3, p.y)), c])
+	for lot in [["Horizon_murs", murs], ["Horizon_toits", toits]]:
+		var liste: Array = lot[1]
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_colors = true
+		var cube := BoxMesh.new()
+		mm.mesh = cube
+		mm.instance_count = liste.size()
+		for i in liste.size():
+			mm.set_instance_transform(i, liste[i][0])
+			mm.set_instance_color(i, liste[i][1])
+		var mi := MultiMeshInstance3D.new()
+		mi.multimesh = mm
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var m := ShaderMaterial.new()
+		m.shader = preload("res://shaders/bd_toon.gdshader")
+		m.set_shader_parameter("couleur_instance", true)
+		m.set_shader_parameter("grain", 0.3)
+		mi.material_override = m
+		mi.name = lot[0]
+		add_child(mi)
+	print("Horizon : %d silhouettes" % murs.size())
+
+
 # ───────────────────────── façades en relief et toits ─────────────────────────
 
 func _facades(batiments: Array) -> void:
@@ -442,6 +811,12 @@ func _facades(batiments: Array) -> void:
 	g.set("habillage", self)
 	add_child(g)
 	g.call("construire", batiments, Q.epoque)
+	var pl := Node3D.new()
+	pl.set_script(load("res://scripts/habillage_place.gd"))
+	pl.name = "PlaceDuJardin"
+	pl.set("habillage", self)
+	add_child(pl)
+	pl.call("construire", batiments)
 
 
 # ───────────────────────── vieux graffitis, affiches, effacements ─────────────────────────

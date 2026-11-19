@@ -23,6 +23,12 @@ uniform vec3 persienne : source_color = vec3(0.62, 0.55, 0.46);
 uniform vec3 bande : source_color = vec3(0.84, 0.46, 0.28);
 uniform float bande_largeur = 0.0;
 uniform float pignon_max = 0.0;
+// Petites barres de la rue de Marathon (Street View 2013-2014) : rez-de-chaussée peint en rouge brique
+// et colonnes de panneaux rouges entre les fenêtres, sur enduit beige.
+uniform vec3 soubassement : source_color = vec3(0.70, 0.30, 0.26);
+uniform float soubassement_on = 0.0;
+uniform vec3 panneaux : source_color = vec3(0.68, 0.30, 0.28);
+uniform float panneaux_part = 0.0;
 uniform vec3 encre : source_color = vec3(0.12, 0.09, 0.16);
 
 varying vec3 ln;
@@ -56,7 +62,12 @@ void fragment() {
 		if (plein) {
 			col = v < rdc ? bande * 0.85 : bande;
 		} else if (v < rdc) {
-			col = mc * 0.82;
+			col = soubassement_on > 0.5 ? soubassement : mc * 0.82;
+			// grilles devant les fenêtres du rez-de-chaussée
+			if (soubassement_on > 0.5) {
+				float fx = fract(u / travee);
+				if (fx > 0.25 && fx < 0.75 && v > 0.9 && v < rdc - 0.6) col = fract(u * 6.0) < 0.25 ? vec3(0.18) : vitre;
+			}
 		} else if (v < hauteur - 0.5) {
 			vec2 g = vec2(u / travee, (v - rdc) / etage);
 			vec2 cell = floor(g);
@@ -83,6 +94,11 @@ void fragment() {
 				}
 			} else {
 				bool cadre = f.x > 0.20 && f.x < 0.80 && f.y > 0.28 && f.y < 0.82;
+				// colonnes de panneaux rouges (par travée) et fins bandeaux entre les étages
+				if (panneaux_part > 0.0) {
+					if (h21(vec2(cell.x, 9.0)) < panneaux_part && h21(vec2(cell.x, floor(cell.y / 2.0) + 3.0)) > 0.25) col = panneaux;
+					if (f.y < 0.05) col = panneaux * 0.95;
+				}
 				if (encrer && cadre && !(f.x > 0.22 && f.x < 0.78 && f.y > 0.3 && f.y < 0.8)) {
 					col = encre;
 				} else if (f.x > 0.22 && f.x < 0.78 && f.y > 0.3 && f.y < 0.8) {

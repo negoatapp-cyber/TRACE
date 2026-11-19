@@ -7,6 +7,7 @@ render_mode cull_disabled;
 #include "res://shaders/bd_grain.gdshaderinc"
 
 uniform vec4 couleur : source_color = vec4(1.0);
+uniform bool couleur_instance = false; // multimesh : chaque instance porte sa couleur (mosaïques)
 uniform sampler2D texture_couleur : source_color, filter_linear_mipmap, repeat_enable;
 uniform bool avec_texture = false;
 uniform float paliers = 6.0; // une texture peinte est réduite à quelques teintes
@@ -23,7 +24,7 @@ void vertex() {
 }
 
 void fragment() {
-	vec3 c = couleur.rgb;
+	vec3 c = couleur_instance ? COLOR.rgb : couleur.rgb;
 	if (avec_texture) {
 		vec3 t = texture(texture_couleur, UV).rgb;
 		if (bd_actif > 0.5) {

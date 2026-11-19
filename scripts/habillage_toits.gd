@@ -1,6 +1,6 @@
 extends Node3D
 ## TRACE — décor des accès aux toits (conversation n°2, lot 2).
-##  - L'échafaudage du pignon nord de la grande barre (2014-2015, pendant la réhabilitation) :
+##  - L'échafaudage de la tour des Genêts côté rue de Marathon (Street View juin 2014) :
 ##    tubes, planchers tous les 2 m, bâches bleues, filet de chantier.
 ##  - Les escaliers de secours métalliques du lycée, de l'école, de l'hôpital et de l'internat.
 ## Tout est solide (on peut marcher sur les planchers et monter les escaliers), dans le groupe « prise ».
@@ -38,7 +38,9 @@ func construire(batiments: Array, epoque: String) -> void:
 			moy += h(p.x, p.y)
 		moy /= poly.size()
 		var toit := moy + float(c[2])
-		if nom == "Grande barre des Lauriers" and epoque == "avant":
+		# Street View juin 2014 (20 rue de Marathon) : la tour des Genêts est sous échafaudage,
+		# avec des conteneurs bleus de chantier au pied.
+		if nom == "Les Genêts" and epoque == "avant":
 			_echafaudage(poly, toit)
 		for e: Array in ESCALIERS:
 			if e[0] == nom:
@@ -55,15 +57,15 @@ func h(x: float, z: float) -> float:
 # ───────────────────────── échafaudage de la barre ─────────────────────────
 
 func _echafaudage(poly: PackedVector2Array, toit: float) -> void:
-	# Le pignon nord : le côté le plus au nord parmi les côtés courts.
+	# La face côté rue de Marathon : le côté court le plus au sud (z le plus petit).
 	var meilleur := -1
-	var zmax := -INF
+	var zmin := INF
 	for k in poly.size():
 		var a := poly[k]
 		var b := poly[(k + 1) % poly.size()]
 		var l := a.distance_to(b)
-		if l > 6.0 and l < 16.0 and (a.y + b.y) * 0.5 > zmax:
-			zmax = (a.y + b.y) * 0.5
+		if l > 6.0 and l < 16.0 and (a.y + b.y) * 0.5 < zmin:
+			zmin = (a.y + b.y) * 0.5
 			meilleur = k
 	if meilleur < 0:
 		return
@@ -81,7 +83,7 @@ func _echafaudage(poly: PackedVector2Array, toit: float) -> void:
 	var nb_niv := int(round((toit + 0.75 - 1.5 - y0) / NIVEAU))
 	var niveau := (toit + 0.75 - 1.5 - y0) / nb_niv
 	var corps := StaticBody3D.new()
-	corps.name = "Echafaudage_barre"
+	corps.name = "Echafaudage_Genets"
 	corps.add_to_group("prise")
 	add_child(corps)
 	var c_route := int(nb_col / 2) - 1   # le zigzag occupe deux travées au milieu
@@ -119,7 +121,14 @@ func _echafaudage(poly: PackedVector2Array, toit: float) -> void:
 	var pf := a + d * (long * 0.5) + n * (ECART_MUR + PROFONDEUR + 0.05)
 	_ajouter("filet", Color(0.85, 0.88, 0.9), Transform3D(_ech(base, Vector3(nb_col * COLONNE, 1.4, 0.02)), Vector3(pf.x, toit + 0.5, pf.y)))
 	var depart := a + d * (debut + (c_route + 0.5) * COLONNE) + n * (ECART_MUR + PROFONDEUR + 0.8)
-	acces.append(["échafaudage de la barre", Vector3(depart.x, h(depart.x, depart.y), depart.y), toit, Vector3(n.x, 0, n.y), Vector3(d.x, 0, d.y)])
+	acces.append(["échafaudage des Genêts", Vector3(depart.x, h(depart.x, depart.y), depart.y), toit, Vector3(n.x, 0, n.y), Vector3(d.x, 0, d.y)])
+	# Conteneurs bleus de chantier, posés devant.
+	for k in 3:
+		var pc := a + d * (long * 0.5 + (k - 1) * 2.6) + n * (ECART_MUR + PROFONDEUR + 6.0 + (k % 2) * 0.3)
+		var yc := h(pc.x, pc.y)
+		var bc := base * Basis(Vector3.UP, PI * 0.5)
+		_ajouter("conteneur", Color(0.16, 0.36, 0.70), Transform3D(bc * Basis.from_scale(Vector3(6.0, 2.6, 2.4)), Vector3(pc.x, yc + 1.3, pc.y)))
+		_boite(corps, bc, Vector3(6.0, 2.6, 2.4), Vector3(pc.x, yc + 1.3, pc.y))
 	# Panneau de chantier au pied (sans marque).
 	var pp := a + d * (debut - 1.2) + n * 2.0
 	_ajouter("panneau", Color(0.95, 0.93, 0.85), Transform3D(_ech(base, Vector3(2.0, 1.3, 0.05)), Vector3(pp.x, h(pp.x, pp.y) + 1.6, pp.y)))

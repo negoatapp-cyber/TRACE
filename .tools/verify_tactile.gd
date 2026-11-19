@@ -22,7 +22,7 @@ func run() -> void:
 	var p = level.get_node("Player"); var q = level.get_node("Quartier"); var g = level.get_node("Graffiti")
 	p.global_position = Vector3(57, q.h(57, -45) + 0.2, -45)
 	await frames(20)
-	check(noms() == ["saut", "courir", "planche", "reset"], "à pied, loin de tout : %s" % str(noms()))
+	check(noms() == ["saut", "courir", "planche", "reset", "demain"], "à pied, loin de tout : %s" % str(noms()))
 	# au pied de l'échafaudage, face au premier plateau bleu : GRIMPER
 	var toits = level.find_child("AccesToits", true, false)
 	if toits:
