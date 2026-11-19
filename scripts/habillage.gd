@@ -66,12 +66,11 @@ func h(x: float, z: float) -> float:
 func _modele(nom: String) -> Node3D:
 	if not _modeles.has(nom):
 		_modeles[nom] = null
-		var chemin := ProjectSettings.globalize_path(DECOR % nom)
-		if FileAccess.file_exists(chemin):
-			var doc := GLTFDocument.new()
-			var etat := GLTFState.new()
-			if doc.append_from_file(chemin, etat) == OK:
-				_modeles[nom] = doc.generate_scene(etat)
+		var chemin := DECOR % nom
+		if ResourceLoader.exists(chemin):
+			var ps := load(chemin) as PackedScene
+			if ps:
+				_modeles[nom] = ps.instantiate()
 	var m = _modeles[nom]
 	return (m as Node3D).duplicate() if m else null
 
@@ -409,13 +408,13 @@ const ENCRES_TAG := [Color(0.10, 0.10, 0.12), Color(0.10, 0.10, 0.12), Color(0.7
 
 func _texture(nom: String) -> Texture2D:
 	if not _textures.has(nom):
-		var img := Image.load_from_file(ProjectSettings.globalize_path(GRAFF % nom))
-		_textures[nom] = ImageTexture.create_from_image(img) if img else null
+		var chemin: String = GRAFF % nom
+		_textures[nom] = (load(chemin) as Texture2D) if ResourceLoader.exists(chemin) else null
 	return _textures[nom]
 
 
 func _vieux_murs(batiments: Array) -> void:
-	if not FileAccess.file_exists(ProjectSettings.globalize_path(GRAFF % "tag_00")):
+	if not ResourceLoader.exists(GRAFF % "tag_00"):
 		return
 	var n := 0
 	for c in batiments:

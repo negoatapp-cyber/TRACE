@@ -37,3 +37,6 @@ assets/graffitis/*
 # Dossier perso (photos, vidéos avec des vraies personnes) : jamais dans le dépôt
 trace/
 !.tools/lettrage_refs.py
+
+# fichiers à jeter (en attente de suppression sur le PC)
+_to_delete/

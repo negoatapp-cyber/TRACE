@@ -40,15 +40,15 @@ func _ready() -> void:
 	_joueur = owner as Player
 	if _joueur == null:
 		_joueur = get_parent().get_parent() as Player
-	var chemin := ProjectSettings.globalize_path(FICHIER)
-	if not FileAccess.file_exists(chemin):
+	var chemin := FICHIER
+	# Modèle importé par Godot (marche aussi dans l'export web, où le .glb brut n'est pas embarqué).
+	if not ResourceLoader.exists(chemin):
 		return
-	var doc := GLTFDocument.new()
-	var etat := GLTFState.new()
-	if doc.append_from_file(chemin, etat) != OK:
+	var ps := load(chemin) as PackedScene
+	if ps == null:
 		push_warning("TRACE : impossible de lire " + FICHIER)
 		return
-	modele = doc.generate_scene(etat) as Node3D
+	modele = ps.instantiate() as Node3D
 	if modele == null:
 		return
 	add_child(modele)

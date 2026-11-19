@@ -177,9 +177,12 @@ func _mur_devant() -> Dictionary:
 func _commencer_trace(variante := -1) -> void:
 	tenue = 0.0
 	var v := randi() % NB_TAGS if variante < 0 else variante
-	var img := Image.load_from_file(ProjectSettings.globalize_path(LETTRAGE + "tag_%d.png" % (v + 1)))
-	if img == null:
+	var modele := _texture("tag_%d" % (v + 1))
+	if modele == null:
 		return
+	var img := modele.get_image()
+	if img.is_compressed():
+		img.decompress()
 	var g := _nouveau("tag")
 	g["v"] = v
 	g["a"] = 0.0
@@ -320,13 +323,17 @@ func _poser() -> void:
 
 func _texture(nom: String) -> Texture2D:
 	if not _textures.has(nom):
-		var chemin := ProjectSettings.globalize_path(nom if nom.begins_with("user://") else LETTRAGE + nom + ".png")
 		var tex: Texture2D = null
-		if FileAccess.file_exists(chemin):
-			var img := Image.load_from_file(chemin)
+		if nom.begins_with("user://"):
+			# tag tracé par le joueur, enregistré à part
+			var img := Image.load_from_file(ProjectSettings.globalize_path(nom))
 			if img:
 				img.generate_mipmaps()
 				tex = ImageTexture.create_from_image(img)
+		else:
+			var chemin := LETTRAGE + nom + ".png"
+			if ResourceLoader.exists(chemin):
+				tex = load(chemin) as Texture2D
 		_textures[nom] = tex
 	return _textures[nom]
 
