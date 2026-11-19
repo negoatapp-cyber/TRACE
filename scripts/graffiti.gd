@@ -143,7 +143,7 @@ func vu_par(role: String) -> void:
 	var t: Array = _trace_g.get("temoins", [])
 	t.append(role)
 	_trace_g["temoins"] = t
-	var qui := {"passant": "un passant", "voisine": "une voisine", "gardien": "le gardien", "jeune": "les jeunes"}
+	var qui := {"passant": "un passant", "voisine": "une voisine", "gardien": "le gardien", "jeune": "les jeunes", "patron": "le patron du snack"}
 	_message = "VU par %s" % qui.get(role, role)
 	_message_t = 2.5
 

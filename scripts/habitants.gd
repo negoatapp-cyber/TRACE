@@ -15,11 +15,25 @@ const REPLIQUES := {
 	"voisine": ["Oh ! C'est pas chez toi ici !", "Je vais le dire au gardien !", "Ça va, les murs sont propres peut-être ?"],
 	"gardien": ["Hé toi ! Arrête ça !", "Bouge de là !"],
 	"jeune": ["Vas-y Loums !", "Ah ouais, propre !", "Fais-le en grand !"],
+	"patron": ["Pas devant ma baraque, j'ai dit !", "Oh, le môme…"],
 }
+## Les vrais personnages (planches de Louma, 19.11), modélisés dans Meshy : assets/personnages/pnj/<nom>.glb.
+## Tant qu'un .glb manque, la silhouette provisoire reste. Le crew (12 à 15) et le policier (02) sont gardés
+## pour l'histoire (n°4) et la police : creer_personnage(nom) les fabrique à la demande.
+const DOSSIER_PNJ := "res://assets/personnages/pnj/"
+const CASTING := {
+	"gardien": ["01_gardien"],
+	"voisine": ["03_voisine"],
+	"patron": ["04_patron_snack"],
+	"jeune": ["06_jeune_couronne", "07_jeune_chaine", "08_jeune_doudoune"],
+	"passant": ["05_jeune_casquette", "09_jeune_capuche", "10_jeune_kaki"],
+}
+const TAILLES := {"jeune": 1.68, "patron": 1.66, "voisine": 1.64}
 const TENUES := {
 	"passant": [Color(0.30, 0.36, 0.50), Color(0.55, 0.45, 0.35), Color(0.25, 0.25, 0.28), Color(0.62, 0.30, 0.28)],
 	"voisine": [Color(0.55, 0.35, 0.55), Color(0.70, 0.55, 0.40)],
 	"gardien": [Color(0.18, 0.28, 0.45)],
+	"patron": [Color(0.45, 0.30, 0.20)],
 	"jeune": [Color(0.15, 0.15, 0.16), Color(0.85, 0.85, 0.82), Color(0.20, 0.45, 0.30)],
 }
 const PEAUX := [Color(0.94, 0.78, 0.62), Color(0.78, 0.56, 0.38), Color(0.55, 0.36, 0.22), Color(0.36, 0.24, 0.16)]
@@ -31,6 +45,7 @@ var habitants: Array = []
 var reputation := {"jeunes": 0, "voisins": 0, "gardien": 0}   ## ce que le quartier pense de Loums (J3)
 var _rng := RandomNumberGenerator.new()
 var _t_vue := 0.0
+var _distribue := {}            ## rôle -> combien de personnages de ce rôle déjà habillés
 
 
 class Habitant extends CharacterBody3D:
@@ -44,6 +59,8 @@ class Habitant extends CharacterBody3D:
 	var bulle: Label3D
 	var bulle_t := 0.0
 	var corps: Node3D
+	var anim: AnimationPlayer    ## celle du modèle Meshy, si le vrai personnage est là
+	var clips := {}              ## "attente" / "marche" -> nom du clip
 	var a_vu := false            ## a déjà vu le graffiti en cours
 	var bloque_t := 0.0
 	var _pas := 0.0
@@ -130,6 +147,13 @@ func _peupler() -> void:
 		var p0: Vector2 = tour_barre[k * 2] + Vector2(_rng.randf_range(-6, 6), _rng.randf_range(-6, 6))
 		var p1: Vector2 = tour_barre[k * 2 + 1] + Vector2(_rng.randf_range(-6, 6), _rng.randf_range(-6, 6))
 		_ajouter("voisine", PackedVector3Array([Vector3(p0.x, _h(p0.x, p0.y), p0.y), Vector3(p1.x, _h(p1.x, p1.y), p1.y)]), 0.8)
+	# le patron du snack, devant sa baraque (zone « ravitaillement » de n°2)
+	for z in get_tree().get_nodes_in_group("ravitaillement"):
+		if str(z.get_meta("type", "")) == "peinture":
+			var zp: Vector3 = (z as Node3D).global_position
+			var hp := _ajouter("patron", PackedVector3Array([Vector3(zp.x + 1.2, _h(zp.x + 1.2, zp.z), zp.z)]), 0.0)
+			hp.etat = "reste"
+			break
 	# jeunes : en bande, au pied des immeubles, près du départ
 	var bande := Vector2(48, -58)
 	for k in 3:
@@ -153,7 +177,15 @@ func _ajouter(role: String, route: PackedVector3Array, vitesse: float) -> Habita
 	cs.shape = cap
 	cs.position.y = 0.85
 	h.add_child(cs)
-	h.corps = _silhouette(role)
+	var n: int = _distribue.get(role, 0)
+	_distribue[role] = n + 1
+	var noms: Array = CASTING.get(role, [])
+	h.corps = creer_personnage(noms[n % noms.size()], float(TAILLES.get(role, 1.75))) if not noms.is_empty() else null
+	if h.corps:
+		h.anim = _trouver_anim(h.corps)
+		h.clips = _ranger_clips(h.anim)
+	else:
+		h.corps = _silhouette(role)
 	h.add_child(h.corps)
 	h.bulle = Label3D.new()
 	h.bulle.billboard = BaseMaterial3D.BILLBOARD_ENABLED
@@ -171,6 +203,66 @@ func _ajouter(role: String, route: PackedVector3Array, vitesse: float) -> Habita
 	h.global_position = route[0] + Vector3.UP * 0.1
 	habitants.append(h)
 	return h
+
+
+## Un vrai personnage : son .glb Meshy (importé, ou lu directement), pieds au sol, tourné vers -Z,
+## ramené à « taille » mètres. null si le fichier n'est pas encore là.
+func creer_personnage(nom: String, taille := 1.75) -> Node3D:
+	var chemin := DOSSIER_PNJ + nom + ".glb"
+	var m: Node3D = null
+	if ResourceLoader.exists(chemin):
+		var ps := load(chemin) as PackedScene
+		if ps:
+			m = ps.instantiate() as Node3D
+	if m == null:
+		var brut := ProjectSettings.globalize_path(chemin)
+		if not FileAccess.file_exists(brut):
+			return null
+		var doc := GLTFDocument.new()
+		var st := GLTFState.new()
+		if doc.append_from_file(brut, st) != OK:
+			return null
+		m = doc.generate_scene(st) as Node3D
+	if m == null:
+		return null
+	var racine := Node3D.new()
+	racine.name = "Corps_" + nom
+	racine.add_child(m)
+	var boite := AABB()
+	var premier := true
+	for mi in m.find_children("*", "MeshInstance3D", true, false):
+		var b := (m.global_transform.affine_inverse() * (mi as MeshInstance3D).global_transform) * (mi as MeshInstance3D).get_aabb()
+		boite = b if premier else boite.merge(b)
+		premier = false
+	if not premier and boite.size.y > 0.0:
+		var s := taille / boite.size.y
+		m.scale = Vector3.ONE * s
+		m.position = Vector3(-(boite.position.x + boite.size.x * 0.5) * s, -boite.position.y * s, -(boite.position.z + boite.size.z * 0.5) * s)
+	racine.rotation.y = PI       # les modèles Meshy regardent vers +Z, les habitants avancent vers -Z
+	return racine
+
+
+func _trouver_anim(n: Node) -> AnimationPlayer:
+	var l := n.find_children("*", "AnimationPlayer", true, false)
+	return l[0] as AnimationPlayer if not l.is_empty() else null
+
+
+func _ranger_clips(ap: AnimationPlayer) -> Dictionary:
+	var c := {}
+	if ap == null:
+		return c
+	for nom in ap.get_animation_list():
+		var b := String(nom).to_lower()
+		if not c.has("marche") and (b.contains("walk") or b.contains("marche")):
+			c["marche"] = nom
+		elif not c.has("attente") and (b.contains("idle") or b.contains("attente") or b.contains("stand") or b.contains("breath")):
+			c["attente"] = nom
+	for k in ["marche", "attente"]:
+		if c.has(k):
+			var a := ap.get_animation(c[k])
+			if a:
+				a.loop_mode = Animation.LOOP_LINEAR
+	return c
 
 
 ## Une silhouette simple, dans les aplats du rendu BD : corps, tête, jambes.
@@ -267,9 +359,19 @@ func _physics_process(delta: float) -> void:
 		else:
 			h.bloque_t = 0.0
 		# la démarche : un léger balancement
-		h._pas += Vector2(h.velocity.x, h.velocity.z).length() * delta * 4.0
-		h.corps.position.y = absf(sin(h._pas)) * 0.04
-		h.corps.rotation.z = sin(h._pas) * 0.04
+		var vit := Vector2(h.velocity.x, h.velocity.z).length()
+		if h.anim:
+			var clip: String = h.clips.get("marche" if vit > 0.3 else "attente", "")
+			if clip != "" and h.anim.current_animation != clip:
+				h.anim.play(clip, 0.25)
+			elif clip == "" and h.anim.is_playing():
+				h.anim.stop()   # pas de clip d'attente : il reste debout, immobile
+			if vit > 0.3:
+				h.anim.speed_scale = clampf(vit / 1.2, 0.6, 1.6)
+		else:
+			h._pas += vit * delta * 4.0
+			h.corps.position.y = absf(sin(h._pas)) * 0.04
+			h.corps.rotation.z = sin(h._pas) * 0.04
 		if h.bulle_t > 0.0:
 			h.bulle_t -= delta
 			if h.bulle_t <= 0.0:

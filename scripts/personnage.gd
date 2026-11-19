@@ -6,7 +6,10 @@ extends Node3D
 ## Le fichier est lu directement au lancement (pas besoin de l'ouvrir dans l'éditeur).
 ## Les animations sont reconnues à leur nom : idle / walk / run / jump.
 
-const FICHIER := "res://assets/personnages/loums.glb"
+const FICHIER_ROUGE := "res://assets/personnages/loums.glb"
+const FICHIER_BLEU := "res://assets/personnages/loums_bleu.glb"   ## 2e tenue (planche 3 : veste bleue, ceinture de bombes)
+const CHOIX_TENUE := "user://tenue.txt"
+var FICHIER := FICHIER_ROUGE
 const TAILLE := 1.75   ## hauteur voulue du personnage (m)
 
 ## Loums est goofy : pied droit devant. Sur la planche, il regarde vers sa gauche
@@ -39,7 +42,30 @@ var _bascule := 0.0            ## chute : tout le corps bascule en avant autour 
 
 ## Le modèle de Loums : la version importée par Godot si elle existe (nécessaire pour l'export web),
 ## sinon lecture directe du .glb (lancement sans passage par l'éditeur, quand le fichier .import manque).
+## La tenue choisie (F8 pour changer, si la 2e tenue existe).
+static func tenue() -> String:
+	if FileAccess.file_exists(CHOIX_TENUE):
+		return FileAccess.get_file_as_string(CHOIX_TENUE).strip_edges()
+	return "rouge"
+
+
+static func tenue_bleue_dispo() -> bool:
+	return ResourceLoader.exists(FICHIER_BLEU) or FileAccess.file_exists(ProjectSettings.globalize_path(FICHIER_BLEU))
+
+
+func _unhandled_key_input(e: InputEvent) -> void:
+	var k := e as InputEventKey
+	if k and k.pressed and not k.echo and k.keycode == KEY_F8 and tenue_bleue_dispo():
+		var f := FileAccess.open(CHOIX_TENUE, FileAccess.WRITE)
+		if f:
+			f.store_string("rouge" if tenue() == "bleue" else "bleue")
+			f.close()
+		get_tree().reload_current_scene()
+
+
 func _charger_modele() -> Node3D:
+	if tenue() == "bleue" and tenue_bleue_dispo():
+		FICHIER = FICHIER_BLEU
 	if ResourceLoader.exists(FICHIER):
 		var ps := load(FICHIER) as PackedScene
 		if ps:
