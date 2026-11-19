@@ -63,4 +63,74 @@ func run() -> void:
 		viser(Vector3(0.6, 1.2, -3.6))
 		await photo("02_planche_nose")
 		p.set_physics_process(true)
+	if veut("ollie"):
+		placer(57, -45, 0.0)
+		p._set_mode(p.Mode.SKATE)
+		await frames(30)
+		Input.action_press("jump")
+		await frames(30)
+		await figer("03_ollie_charge", Vector3(-3.4, 0.9, -0.4))
+		Input.action_release("jump")
+		await frames(5)
+		await figer("03_ollie_pop", Vector3(-3.4, 1.2, -0.4))
+		await frames(12)
+		await figer("03_ollie_air", Vector3(-3.4, 1.4, -0.4), 1.4)
+		while p.skate.in_air:
+			await physics_frame
+		await frames(4)
+		await figer("03_ollie_reception", Vector3(-3.4, 0.9, -0.4))
+	for figure in ["kickflip", "shove_it"]:
+		if not veut(figure):
+			continue
+		placer(57, -45, 0.0)
+		p._set_mode(p.Mode.SKATE)
+		await frames(30)
+		Input.action_press("jump")
+		await frames(30)
+		Input.action_release("jump")
+		await frames(3)
+		Input.action_press(figure)
+		await frames(2)
+		Input.action_release(figure)
+		await frames(10)
+		await figer("04_" + figure, Vector3(-3.0, 1.3, -1.2), 1.1)
+		while p.skate.in_air:
+			await physics_frame
+	if veut("grind"):
+		var rail = level.get_tree().get_nodes_in_group("grindable")[0]
+		var a: Vector3 = rail.top_start()
+		var b: Vector3 = rail.top_end()
+		var dir := (b - a).normalized()
+		placer(a.x, a.z, 0.0)
+		p._set_mode(p.Mode.SKATE)
+		await frames(10)
+		p.global_position = a + dir * 0.3 + Vector3.UP * 0.3
+		p.velocity = Vector3(0, -1, 0)
+		p.skate.speed = 4.0
+		p.skate.heading = atan2(-dir.x, -dir.z)
+		p.skate.in_air = true
+		p.skate.trick_t = 1.0
+		Input.action_press("grind")
+		await frames(16)
+		await figer("05_grind", Vector3(-3.2, 1.1, -1.0), 0.8)
+		Input.action_release("grind")
+		await frames(30)
+	if veut("frein"):
+		placer(57, -45, 0.0)
+		p._set_mode(p.Mode.SKATE)
+		await frames(30)
+		p.skate.speed = 6.0
+		Input.action_press("move_back")
+		await frames(10)
+		await figer("06_frein", Vector3(-3.0, 0.9, 1.4))
+		Input.action_release("move_back")
 	quit(0)
+
+## Fige le joueur (plus de physique), laisse la pose se poser, photographie.
+func figer(nom: String, cam_decalage: Vector3, hauteur := 0.9) -> void:
+	p.set_physics_process(false)
+	for i in 6:
+		await process_frame
+	viser(cam_decalage, hauteur)
+	await photo(nom)
+	p.set_physics_process(true)

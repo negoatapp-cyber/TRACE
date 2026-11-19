@@ -277,19 +277,50 @@ func _sur_planche(c: Dictionary) -> void:
 	var accroupi := 0.11
 	var ecart := 0.55
 	var pousse := skate.push_phase >= 0.0 and not skate.in_air
+	var haut_bras := -0.8     # bras plus ou moins levés
+	var avant_bras := 0.05    # bras vers l'avant (+) ou l'arrière (-)
 	if pousse:
 		var ph := skate.push_phase
 		torsion = 0.25 * nez
 		penche = 0.32
-		accroupi = 0.13 + sin(ph * PI) * 0.04
+		accroupi = 0.15 + sin(ph * PI) * 0.04
 		ecart = 0.35
+	if skate.charge >= 0.0:
+		# Ollie qui se charge : on descend, le buste au-dessus des pieds, bras vers l'avant.
+		var k := clampf(skate.charge / skate.charge_max, 0.0, 1.0)
+		accroupi += 0.25 * k
+		penche += 0.3 * k
+		ecart = lerpf(ecart, 0.3, k)
+		avant_bras += 0.4 * k
+	if skate.grinding:
+		# 50-50 : bras grands ouverts, genoux pliés, buste moins tourné.
+		torsion = 0.3 * nez
+		accroupi = 0.17
+		penche = 0.2
+		ecart = 0.95
+		haut_bras = -0.35 + sin(_t * 2.1) * 0.08
+	elif skate.in_air and (skate.saute or skate.air_t > 0.15):
+		# En l'air : les bras montent pour l'équilibre ; les genoux sont remontés par la planche.
+		accroupi = 0.05
+		ecart = 0.75
+		haut_bras = -0.45
+	if skate.reception > 0.0 and not skate.in_air:
+		# Réception : on plie pour amortir, puis on se relève.
+		accroupi += 0.17 * sin(PI * (1.0 - skate.reception))
+		penche += 0.1 * sin(PI * (1.0 - skate.reception))
+	if skate.freine:
+		# Frein : le pied arrière frotte derrière le tail, le buste recule un peu.
+		penche = 0.05
+		accroupi = 0.22
+		torsion = 0.3 * nez
 	c.buste = Vector3(penche, torsion, -skate.lean * 0.12)
 	c.bassin = Vector3(0, -_u(accroupi), 0)
 	c.tete = Vector3(-0.1, nez * 1.05 - torsion, 0)
 	var balance := sin(_t * 1.3) * 0.05 + skate.lean * 0.25
 	var yaw := Basis(Vector3.UP, torsion)
-	c.bg = [yaw * Vector3(ecart, -0.8, 0.05 + balance), yaw * Vector3(ecart * 0.9, -0.55, 0.35)]
-	c.bd = [yaw * Vector3(-ecart, -0.8, 0.05 - balance), yaw * Vector3(-ecart * 0.9, -0.55, 0.35)]
+	var bas2 := haut_bras * 0.7
+	c.bg = [yaw * Vector3(ecart, haut_bras, avant_bras + balance), yaw * Vector3(ecart * 0.9, bas2, avant_bras + 0.3)]
+	c.bd = [yaw * Vector3(-ecart, haut_bras, avant_bras - balance), yaw * Vector3(-ecart * 0.9, bas2, avant_bras + 0.3)]
 
 
 ## Le squelette vient d'être posé (animations + postures + IK) : la planche suit la main.
@@ -314,7 +345,40 @@ func _posture(delta: float) -> void:
 	position.y = lerpf(0.0, 0.03, _poids)
 	if cible_avant:
 		cible_avant.position = PIED_AVANT
-		cible_arriere.position = _pied_qui_pousse(skate.push_phase) if pousse else PIED_ARRIERE
+		if pousse:
+			cible_arriere.position = _pied_qui_pousse(skate.push_phase)
+		elif sur_planche and skate.freine:
+			cible_arriere.position = _pied_qui_freine()
+		else:
+			cible_arriere.position = PIED_ARRIERE
+		if sur_planche and skate.in_air and skate.trick_t < 1.0 and skate.trick in ["Kickflip", "Shove-it"]:
+			_pieds_en_flip(skate)
+
+
+## Kickflip / shove-it : les pieds quittent la planche qui tourne sous eux, puis la rattrapent.
+## Les cibles suivent la planche « à plat » (sans sa rotation), soulevées au milieu du flip.
+func _pieds_en_flip(skate: SkateController) -> void:
+	var planche := cible_avant.get_parent() as Node3D
+	var vis := get_parent() as Node3D
+	var cadre := vis.global_transform * Transform3D(Basis(), planche.position)
+	var t := skate.trick_t
+	var leve := sin(PI * t) * 0.24
+	var face := -1.0 if goofy else 1.0
+	var avant := PIED_AVANT + Vector3(0, leve, 0)
+	if skate.trick == "Kickflip":
+		# le pied avant glisse vers le bord et chasse la planche
+		avant.x += face * 0.1 * sin(PI * minf(t * 1.6, 1.0))
+	else:
+		# shove-it : le pied arrière racle le tail vers l'arrière
+		avant.y += 0.03
+	cible_avant.global_position = cadre * avant
+	cible_arriere.global_position = cadre * (PIED_ARRIERE + Vector3(0, leve * 0.9, 0))
+
+
+## Frein : le pied arrière descend derrière le tail et frotte le sol.
+func _pied_qui_freine() -> Vector3:
+	var face := -1.0 if goofy else 1.0
+	return Vector3(face * 0.06, -0.085 + CHEVILLE - 0.01, 0.46)
 
 
 func _porter_planche(a_pied: bool) -> void:

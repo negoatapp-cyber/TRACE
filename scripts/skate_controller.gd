@@ -18,7 +18,11 @@ signal trick_done(trick_name: String, clean: bool)
 @export var slope_factor := 1.0      ## 1 = gravité réelle sur les pentes
 
 @export_group("Air")
-@export var ollie_velocity := 5.2
+@export var ollie_velocity := 5.2   ## pop en sortie de grind
+@export var ollie_min := 4.0         ## ollie à peine appuyé (≤ 0,2 s)
+@export var ollie_max := 6.0         ## ollie chargé à fond (≥ 0,6 s)
+@export var charge_min := 0.2
+@export var charge_max := 0.6
 @export var air_turn := 0.5          ## part du virage conservée en l'air
 @export var flip_duration := 0.45    ## durée d'un kickflip / shove-it (s)
 
@@ -37,6 +41,15 @@ var grinding := false
 var last_event := ""     ## affiché dans le HUD
 var push_phase := -1.0   ## 0 → 1 pendant une poussée, -1 sinon (lu par l'animation)
 var lean := 0.0          ## inclinaison dans les virages, -1 → 1 (lu par l'animation)
+## Lus par l'animation :
+var charge := -1.0       ## secondes d'appui sur Espace (accroupi), -1 sinon
+var air_t := 0.0         ## secondes depuis le décollage
+var pop_t := -1.0        ## secondes depuis le pop (le tail claque), -1 sinon
+var reception := 0.0     ## 1 → 0 juste après l'atterrissage (amorti)
+var freine := false      ## le pied arrière frotte le sol
+var ollie_v := 0.0       ## impulsion du dernier ollie (m/s)
+var saute := false       ## en l'air après un vrai saut (ollie, sortie de rail), pas une bosse
+var vitesse_chute := 0.0 ## vitesse au moment d'une chute (la planche part avec)
 const PUSH_CONTACT := Vector2(0.25, 0.6)  ## part du cycle où le pied touche le sol
 
 var _rail: Rail
@@ -55,6 +68,10 @@ func enter(p: CharacterBody3D, yaw: float) -> void:
 	grinding = false
 	push_phase = -1.0
 	lean = 0.0
+	charge = -1.0
+	pop_t = -1.0
+	reception = 0.0
+	freine = false
 
 
 func forward() -> Vector3:
@@ -69,6 +86,9 @@ func step(p: CharacterBody3D, delta: float) -> void:
 
 	var input := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 	var steer := -input.x
+	reception = move_toward(reception, 0.0, delta / 0.3)
+	if pop_t >= 0.0:
+		pop_t = pop_t + delta if pop_t < 1.0 else -1.0
 
 	if p.is_on_floor():
 		if in_air:
@@ -77,7 +97,7 @@ func step(p: CharacterBody3D, delta: float) -> void:
 		heading += steer * turn_rate * delta * clampf(1.2 - speed_ratio, 0.45, 1.2)
 
 		# Pousser : des coups de pied, pas une accélération continue.
-		var veut_pousser := Input.is_action_pressed("push") or input.y < -0.5
+		var veut_pousser := (Input.is_action_pressed("push") or input.y < -0.5) and charge < 0.0
 		if veut_pousser and push_phase < 0.0 and speed < max_push_speed:
 			push_phase = 0.0
 		if push_phase >= 0.0:
@@ -92,6 +112,7 @@ func step(p: CharacterBody3D, delta: float) -> void:
 			speed = move_toward(speed, 0.0, brake_decel * delta)
 		else:
 			speed = move_toward(speed, 0.0, rolling_friction * delta)
+		freine = push_phase < 0.0 and input.y > 0.5 and absf(speed) > 0.3
 		lean = lerpf(lean, steer * clampf(absf(speed) / 6.0, 0.0, 1.0), minf(1.0, 8.0 * delta))
 
 		# Pente : la gravité accélère ou freine le long du cap.
@@ -103,12 +124,28 @@ func step(p: CharacterBody3D, delta: float) -> void:
 
 		p.velocity = along * speed
 
-		if Input.is_action_just_pressed("jump"):
-			p.velocity += Vector3.UP * ollie_velocity
-			in_air = true
-			trick = "Ollie"
-			trick_t = 1.0
+		# Ollie chargé : appuyer = s'accroupir, relâcher = sauter (plus on a tenu, plus c'est haut).
+		if Input.is_action_just_pressed("jump") and charge < 0.0:
+			charge = 0.0
+			push_phase = -1.0
+		if charge >= 0.0:
+			charge += delta
+			if not Input.is_action_pressed("jump"):
+				var k := clampf((charge - charge_min) / (charge_max - charge_min), 0.0, 1.0)
+				ollie_v = lerpf(ollie_min, ollie_max, k)
+				p.velocity += Vector3.UP * ollie_v
+				in_air = true
+				air_t = 0.0
+				pop_t = 0.0
+				saute = true
+				charge = -1.0
+				trick = "Ollie"
+				trick_t = 1.0
 	else:
+		air_t += delta
+		charge = -1.0
+		if air_t > 0.15:
+			freine = false  # une vraie phase en l'air, pas une bosse
 		if p.velocity.y > 1.0:
 			push_phase = -1.0   # un vrai saut interrompt la poussée ; une bosse non
 		if not in_air:
@@ -135,11 +172,16 @@ func step(p: CharacterBody3D, delta: float) -> void:
 
 func _land() -> void:
 	in_air = false
+	saute = false
+	if air_t > 0.15:
+		reception = 1.0  # amorti après un vrai saut, pas après une bosse
+	air_t = 0.0
 	if trick == "":
 		return
 	var clean := trick_t >= 1.0
 	last_event = trick if clean else "Chute (" + trick + " pas fini)"
 	if not clean:
+		vitesse_chute = speed
 		speed *= 0.2
 	trick_done.emit(trick, clean)
 	trick = ""
@@ -204,6 +246,8 @@ func _leave_rail(p: CharacterBody3D, dir: Vector3, up: float, done: String) -> v
 	p.global_position += Vector3.UP * 0.05
 	p.velocity = dir * speed + Vector3.UP * up
 	in_air = true
+	saute = up > 2.0
+	air_t = 0.0
 	trick = ""
 	trick_t = 1.0
 	trick_done.emit(done, true)

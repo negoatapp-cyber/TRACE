@@ -53,6 +53,10 @@ func run() -> void:
 	sk.skeleton_updated.connect(noter.bind(sk))
 	await attente()
 	await planche()
+	await ollie()
+	await flips()
+	await grind()
+	await frein()
 	print("RESULT failures=", failures)
 	quit(failures)
 
@@ -100,3 +104,121 @@ func planche() -> void:
 	var d1: float = po.RightFoot.distance_to(perso.cible_avant.global_position)
 	var d2: float = po.LeftFoot.distance_to(perso.cible_arriere.global_position)
 	check(d1 < 0.06 and d2 < 0.06, "planche : pieds sur les vis (%.3f / %.3f m)" % [d1, d2])
+
+func hanche_pieds() -> float:
+	return po.Hips.y - (po.LeftFoot.y + po.RightFoot.y) * 0.5
+
+func ollie() -> void:
+	placer(57, -45, 0.0)
+	p._set_mode(p.Mode.SKATE)
+	await frames(40)
+	var h0 := hanche_pieds()
+	Input.action_press("jump")
+	await frames(24)
+	var h_charge := hanche_pieds()
+	check(not p.skate.in_air and p.skate.charge > 0.3, "ollie : Espace tenu = accroupi, pas encore en l'air")
+	check(h_charge < h0 - 0.12, "ollie : le bassin descend en chargeant (%.2f → %.2f m)" % [h0, h_charge])
+	var d1: float = po.RightFoot.distance_to(perso.cible_avant.global_position)
+	var d2: float = po.LeftFoot.distance_to(perso.cible_arriere.global_position)
+	check(d1 < 0.06 and d2 < 0.06, "ollie : les pieds restent sur la planche en chargeant (%.3f / %.3f)" % [d1, d2])
+	Input.action_release("jump")
+	await frames(2)
+	check(p.skate.in_air and absf(p.skate.ollie_v - 5.0) < 0.3, "ollie : décolle au relâché, 0,4 s → %.2f m/s" % p.skate.ollie_v)
+	var pop := 0.0
+	var h_air := 99.0
+	while p.skate.in_air:
+		pop = maxf(pop, p.board.rotation.x)
+		h_air = minf(h_air, hanche_pieds())
+		await physics_frame
+	check(pop > 0.3, "ollie : le tail claque, le nose se lève (%.2f rad)" % pop)
+	check(h_air < h0 - 0.12, "ollie : genoux remontés en l'air (%.2f m)" % h_air)
+	var h_rec := 99.0
+	for i in 20:
+		await physics_frame
+		h_rec = minf(h_rec, hanche_pieds())
+	check(h_rec < h0 - 0.08, "ollie : flexion à la réception (%.2f m)" % h_rec)
+	# hauteur selon le temps d'appui
+	for essai in [[2, 4.0], [50, 6.0]]:
+		await frames(20)
+		Input.action_press("jump")
+		await frames(essai[0])
+		Input.action_release("jump")
+		await frames(2)
+		check(absf(p.skate.ollie_v - essai[1]) < 0.15, "ollie : appui de %d images → %.2f m/s (attendu %.1f)" % [essai[0], p.skate.ollie_v, essai[1]])
+		while p.skate.in_air:
+			await physics_frame
+
+func flips() -> void:
+	for figure in ["kickflip", "shove_it"]:
+		placer(57, -45, 0.0)
+		p._set_mode(p.Mode.SKATE)
+		await frames(30)
+		Input.action_press("jump")
+		await frames(20)
+		Input.action_release("jump")
+		await frames(3)
+		Input.action_press(figure)
+		await frames(2)
+		Input.action_release(figure)
+		var leve := 0.0
+		while p.skate.trick_t < 1.0 and p.skate.in_air:
+			var cadre: Vector3 = p.visual.global_transform * p.board.position
+			leve = maxf(leve, minf(po.RightFoot.y, po.LeftFoot.y) - cadre.y)
+			await physics_frame
+		check(leve > 0.2, "%s : les pieds quittent la planche (%.2f m au-dessus)" % [figure, leve])
+		while p.skate.in_air:
+			await physics_frame
+		await frames(2)
+		var d1: float = po.RightFoot.distance_to(perso.cible_avant.global_position)
+		var d2: float = po.LeftFoot.distance_to(perso.cible_arriere.global_position)
+		var dc: float = perso.cible_avant.global_position.distance_to(p.board.to_global(perso.PIED_AVANT))
+		check(not p.skate.last_event.begins_with("Chute") and d1 < 0.06 and d2 < 0.06 and dc < 0.01, "%s : les pieds rattrapent la planche (%s)" % [figure, p.skate.last_event])
+
+func grind() -> void:
+	var rails: Array = root.get_tree().get_nodes_in_group("grindable")
+	check(rails.size() > 0, "50-50 : il y a des rails dans le quartier")
+	if rails.is_empty():
+		return
+	var rail = rails[0]
+	var a: Vector3 = rail.top_start()
+	var b: Vector3 = rail.top_end()
+	var dir := (b - a).normalized()
+	placer(a.x, a.z, 0.0)
+	p._set_mode(p.Mode.SKATE)
+	await frames(20)
+	var h_sol := hanche_pieds()
+	p.global_position = a + dir * 0.3 + Vector3.UP * 0.3
+	p.velocity = Vector3(0, -1, 0)
+	p.skate.speed = 5.0
+	p.skate.heading = atan2(-dir.x, -dir.z)
+	p.skate.in_air = true
+	p.skate.trick_t = 1.0
+	Input.action_press("grind")
+	await frames(14)
+	check(p.skate.grinding, "50-50 : sur le rail")
+	var long: Vector3 = p.board.global_basis.z
+	long.y = 0
+	var aligne: float = absf(long.normalized().dot(Vector3(dir.x, 0, dir.z).normalized()))
+	check(aligne > 0.98, "50-50 : planche dans l'axe du rail (%.3f)" % aligne)
+	var mains := Vector2(po.LeftHand.x - po.RightHand.x, po.LeftHand.z - po.RightHand.z).length()
+	check(mains > 1.0, "50-50 : bras écartés (%.2f m entre les mains)" % mains)
+	check(hanche_pieds() < h_sol - 0.03, "50-50 : genoux fléchis (%.2f contre %.2f)" % [hanche_pieds(), h_sol])
+	Input.action_release("grind")
+	await frames(40)
+
+func frein() -> void:
+	placer(57, -45, 0.0)
+	p._set_mode(p.Mode.SKATE)
+	await frames(30)
+	p.skate.speed = 6.0
+	Input.action_press("move_back")
+	await frames(12)
+	var sol: float = p.global_position.y
+	var pied: Vector3 = po.LeftFoot
+	var centre: Vector3 = p.board.global_position
+	var arriere: float = (pied - centre).dot(-p.skate.forward())
+	var ecart: float = pied.distance_to(perso.cible_arriere.global_position)
+	check(p.skate.freine and pied.y - sol < 0.16 and ecart < 0.06, "frein : le pied arrière touche le sol (cheville à %.2f m, %.3f m de la cible)" % [pied.y - sol, ecart])
+	check(arriere > 0.35, "frein : le pied traîne derrière le tail (%.2f m)" % arriere)
+	Input.action_release("move_back")
+	await frames(10)

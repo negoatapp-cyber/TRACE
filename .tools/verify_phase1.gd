@@ -47,6 +47,7 @@ func run() -> void:
 	Input.action_press("jump")
 	await frames(2)
 	Input.action_release("jump")
+	await frames(2)  # ollie chargé : on décolle au relâché
 	check(skate.in_air and player.velocity.y > 0.0, "Ollie takes off")
 	Input.action_press("kickflip")
 	await frames(2)
@@ -61,6 +62,7 @@ func run() -> void:
 	Input.action_press("jump")
 	await frames(2)
 	Input.action_release("jump")
+	await frames(2)
 	Input.action_press("shove_it")
 	await frames(2)
 	Input.action_release("shove_it")

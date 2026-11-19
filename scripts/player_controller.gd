@@ -189,13 +189,29 @@ func _respawn() -> void:
 	_set_mode(Mode.WALK)
 
 
-## Rotation de la planche pendant les flips (purement visuel).
+const POP_DUREE := 0.2
+
+## Rotation de la planche : pop, genoux remontés, flips (purement visuel).
 func _animate_board() -> void:
 	board.rotation = Vector3.ZERO
 	board.position = Vector3(0, 0.085, 0)
 	if mode == Mode.SKATE and not skate.in_air:
 		board.rotation.z = -skate.lean * 0.12   # la planche bascule dans le virage
-	if mode != Mode.SKATE or skate.trick_t >= 1.0:
+	if mode != Mode.SKATE:
+		return
+	if skate.in_air and not skate.grinding:
+		# Genoux remontés : la planche monte vers lui, puis redescend avant la réception.
+		var monte := smoothstep(0.0, 0.12, skate.air_t) if skate.saute else smoothstep(0.25, 0.45, skate.air_t)
+		var descend := clampf((-velocity.y - 1.0) / 3.0, 0.0, 1.0)
+		board.position.y += 0.22 * monte * (1.0 - 0.6 * descend)
+	if skate.pop_t >= 0.0 and skate.pop_t < POP_DUREE:
+		# Pop : le tail claque au sol, le nose se lève, puis la planche se remet à plat.
+		var a := 0.5 * sin(PI * skate.pop_t / POP_DUREE)
+		var tail := Vector3(0, 0, 0.38)
+		var r := Basis(Vector3.RIGHT, a)
+		board.rotation.x = a
+		board.position += tail - r * tail
+	if skate.trick_t >= 1.0:
 		return
 	match skate.trick:
 		"Kickflip":
