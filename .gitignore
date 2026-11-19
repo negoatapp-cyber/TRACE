@@ -20,6 +20,7 @@
 !.tools/verify_toits.gd
 !.tools/verify_tactile.gd
 !.tools/verify_solide.gd
+!.tools/verify_habitants.gd
 !.tools/capture_animations.gd
 
 # Fichiers locaux à ne jamais publier (dépôt public)

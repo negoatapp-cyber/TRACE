@@ -79,6 +79,8 @@ func _physics_process(delta: float) -> void:
 		_suivre_le_geste(delta)
 		var e: Dictionary = _etapes[_etape_i]
 		_texte.text = "%s   ·   %d/%d : %s" % [NOMS[_trace_g.t], _etape_i + 1, _etapes.size(), e.titre] if _etapes.size() > 1 else (("TRACE TON TAG" if expert else "TAG") if _trace_g.t == "tag" else NOMS[_trace_g.t])
+		if _message_t > 0.0 and _message.begins_with("VU"):
+			_texte.text += "\n" + _message
 		_barre.visible = false
 		if _trace.fini_de_taper():
 			_etape_finie(_trace.peinture, _trace.qualite())
@@ -129,6 +131,27 @@ const RACCOURCIS := {"graff_1": "tag", "graff_2": "flop", "graff_3": "piece", "g
 
 func couleur_en_cours() -> Color:
 	return COULEURS[int(_trace_g.get("c", couleur)) % COULEURS.size()]
+
+
+## Un habitant a vu Loums peindre (habitants.gd) : noté dans le graffiti en cours.
+func vu_par(role: String) -> void:
+	if _trace_g.is_empty():
+		return
+	var t: Array = _trace_g.get("temoins", [])
+	t.append(role)
+	_trace_g["temoins"] = t
+	var qui := {"passant": "un passant", "voisine": "une voisine", "gardien": "le gardien", "jeune": "les jeunes"}
+	_message = "VU par %s" % qui.get(role, role)
+	_message_t = 2.5
+
+
+## Le gardien arrive : on arrête là (un flop ou une pièce restent au mur, à moitié faits).
+func chasse_par(qui: String) -> void:
+	if _trace == null:
+		return
+	_interrompre()
+	_message = "%s t'a fait partir" % (qui.substr(0, 1).to_upper() + qui.substr(1))
+	_message_t = 3.5
 
 
 ## Simple (Loums peint tout seul) ou expert (on trace soi-même sur le calque).
