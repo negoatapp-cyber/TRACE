@@ -5,7 +5,7 @@
 
 ## 1. L'objectif
 
-**Une démo jouable de 30 minutes.** On est en 2014-2015, dans le quartier des Lauriers et devant le lycée. Le joueur incarne Loums :
+**Une démo jouable de 30 minutes, prête pour Noël (vendredi 25.12.2026).** On est en 2014-2015, dans le quartier des Lauriers et devant le lycée. Le joueur incarne Loums :
 
 - il se déplace à pied et en skate dans le quartier réel ;
 - il graffe, du tag rapide à la grosse pièce, à la bombe, à la perche et au rouleau ;
@@ -19,14 +19,16 @@ Elle est réussie si une personne qui ne connaît pas le projet joue 30 minutes 
 
 ## 2. Les quatre jalons
 
-| Jalon | Contenu | Il est fini quand… |
-|---|---|---|
-| **J1. Le corps** | Tous les gestes de Loums sont animés et lisibles : skate, graffiti, grimpe (détail en section 4). | On joue 10 minutes sans voir un seul geste manquant ou faux. |
-| **J2. Le quartier vivant** | Habillage du quartier (textures, mobilier urbain, lumière). Des habitants avec leurs trajets et leurs habitudes. Le fait d'être vu. | Le quartier se reconnaît, et quelqu'un réagit quand on graffe sous ses yeux. |
-| **J3. La trace** | Branchement du simulateur V3.1 : ce que Loums fait laisse des souvenirs chez les habitants et en lui. Réputation par milieu. Le temps qui passe : jour et nuit, semaines, la tour Cyprès B démolie en juillet 2016. | Deux parties jouées différemment donnent deux quartiers différents. |
-| **J4. Le test des 30 minutes** | Réglages, son, menus minimum, puis trois testeurs extérieurs. | Les trois testeurs finissent les 30 minutes. |
+| Jalon | Contenu | Il est fini quand… | Date |
+|---|---|---|---|
+| **J1. Le corps** | Tous les gestes de Loums sont animés et lisibles : skate, graffiti, grimpe (détail en section 4). | On joue 10 minutes sans voir un seul geste manquant ou faux. | 29.11 |
+| **J2. Le quartier vivant** | Habillage du quartier (textures, mobilier urbain, lumière). Des habitants avec leurs trajets et leurs habitudes. Le fait d'être vu. | Le quartier se reconnaît, et quelqu'un réagit quand on graffe sous ses yeux. | 08.12 |
+| **J3. La trace** | Branchement du simulateur V3.1 : ce que Loums fait laisse des souvenirs chez les habitants et en lui. Réputation par milieu. Le temps qui passe : jour et nuit, semaines, la tour Cyprès B démolie en juillet 2016. | Deux parties jouées différemment donnent deux quartiers différents. | 16.12 |
+| **J4. Le test des 30 minutes** | Réglages, son, menus minimum, puis trois testeurs extérieurs. | Les trois testeurs finissent les 30 minutes. | 22.12 |
 
 On ne commence pas un jalon avant d'avoir joué au précédent.
+
+**Calendrier (5 semaines).** Du 22 au 24.12 : marge, pas de nouveauté, seulement des corrections. Si un jalon glisse de plus de deux jours, on coupe dans le jalon suivant plutôt que de repousser Noël. Ce qu'on coupe en premier, dans l'ordre : le temps qui passe en semaines et la démolition de Cyprès B (J3), puis les réputations par milieu (J3, on garde une seule réputation), puis le rouleau (J1).
 
 ## 3. Qui fait quoi
 
@@ -106,10 +108,10 @@ Le lettrage est dessiné dans le style du jeu (aplats et encre), pas découpé d
 ## 5. Les décisions qui attendent Louma
 
 1. ~~Regular ou goofy~~ → **goofy** (19.11).
-2. **Comment on trace un graffiti.** Le simple maintien de G (comme aujourd'hui), ou un geste guidé : on suit au stick le tracé du blaze, et la qualité dépend de la précision.
+2. **Comment on trace un graffiti.** Proposition du 19.11 : le joueur trace lui-même, Loums exécute. Le tag se trace en entier d'un geste ; flop et pièce étape par étape (fond balayé, contour tracé, lights tapées en rythme, surcontour balayé, signature tracée). La qualité du geste se voit sur le mur (coulures, trait tremblant). En attente de la réponse de Louma.
 3. ~~Le blaze~~ → **LOUMS**, d'après ses tags, flops et pièces en photo (19.11). Le lettrage reste à affiner avec lui.
 4. ~~Où récupérer la peinture~~ → **un conteneur derrière la grande barre** (19.11).
-5. **La date visée** pour la démo.
+5. ~~La date visée~~ → **Noël, 25.12.2026** (19.11).
 
 ## 6. Où on en est (19.11.2026)
 
