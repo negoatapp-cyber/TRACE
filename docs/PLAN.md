@@ -35,16 +35,17 @@ Plusieurs conversations Claude travaillent en parallèle. Pour ne pas se marcher
 | Conversation | Territoire | Fichiers à elle |
 |---|---|---|
 | **N°1 : gameplay et systèmes** (celle-ci, qui tient ce plan) | Loums, skate, graffiti, grimpe, habitants, simulateur, données du quartier, intégration | `scripts/player_controller.gd`, `skate_controller.gd`, `skateboard.gd`, `graffiti.gd`, `personnage.gd`, `quartier_reel.gd`, `input_setup.gd`, `data/`, `scenes/`, `.tools/`, `docs/PLAN.md` |
-| **N°2 : habillage urbain** | Textures, matériaux, mobilier urbain, éclairage, ciel | `assets/decor/`, `materials/`, `shaders/` (sauf ce que n°1 y crée), et un script à elle, `scripts/habillage.gd` |
+| **N°2 : habillage urbain** | Rendu BD, textures, matériaux, mobilier urbain, éclairage, ciel | `scripts/style_bd.gd`, `shaders/bd_*`, `shaders/facade.gdshader`, `assets/decor/`, `materials/`, et un script à elle pour le mobilier, `scripts/habillage.gd` |
 
 **Le point de contact.** `quartier_reel.gd` construit les volumes et range chaque élément dans un groupe Godot : `terrain`, `batiment` (avec le style en métadonnée `style`), `lycee`, `sol_voie`, `sol_zone`, `mur`, `muret`, `rail`, `voiture`, `arbre`. `habillage.gd` passe après la construction et habille ces groupes. N°2 ne modifie pas `quartier_reel.gd` : si un groupe manque, elle le demande à n°1.
 
 **Les règles communes.**
 
-1. GitHub (`negoatapp-cyber/TRACE`, branche `main`) est la source unique. On récupère la dernière version avant de commencer, et on envoie un commit par tâche terminée.
-2. Le dossier du PC (`Downloads\TRACE`) est mis à jour depuis GitHub. On n'y modifie rien sans l'envoyer aussi sur GitHub, sinon la prochaine mise à jour l'efface.
-3. Rien de privé dans le dépôt, qui est public : ni le PDF de vie, ni les planches, ni les modèles 3D sous licence Meshy (`assets/personnages/*.glb` reste en local), ni de vraies personnes.
-4. Le lieu est réel et les habitants sont fictifs. Aucune marque réelle visible.
+1. **Deux copies du projet existent.** Le dossier du PC (`Downloads\TRACE`), où l'on joue, et GitHub (`negoatapp-cyber/TRACE`, branche `main`), qui garde l'historique.
+2. **N°2 travaille directement dans le dossier du PC.** Elle ne touche pas aux fichiers de n°1, sauf pour la palette de couleurs (`STYLES`, `VOIES`, `ZONES`, `BANDES` en tête de `quartier_reel.gd`) et pour ajouter des styles dans `data/quartier_reel.txt`.
+3. **N°1 rapatrie le travail du PC sur GitHub** avant chaque mise à jour du PC : elle compare les fichiers, fusionne ce qui a changé des deux côtés, envoie le tout sur GitHub, puis seulement recopie sur le PC. Rien n'est écrasé sans avoir été fusionné.
+4. **Rien de privé dans le dépôt**, qui est public : ni le PDF de vie, ni les planches, ni les photos personnelles (`*.jpg` à la racine), ni le modèle de Loums et ses textures (`assets/personnages/` reste en local, licence Meshy privée), ni de vraies personnes.
+5. Le lieu est réel et les habitants sont fictifs. Aucune marque réelle visible.
 
 ## 4. Fiche des gestes (J1)
 
@@ -111,6 +112,7 @@ Chaque geste a une commande, une durée, une animation et un effet. Les animatio
 - Graffiti en trois tailles avec sauvegarde.
 - Vraie planche 3D.
 - Loums modélisé et animé : attente, marche, course.
+- Rendu BD (n°2) : aplats en trois tons, encrage, Cyprès à bandes orange, palette « Marseille délavée » ; touche B pour comparer.
 
 **Suivant (n°1) :** J1, dans cet ordre :
 
