@@ -11,7 +11,7 @@ func frames(n: int) -> void:
 
 ## Les postures et l'IK ne sont appliquées qu'à la mise à jour du squelette :
 ## on lit les os pendant le signal skeleton_updated.
-const LUS := ["Hips", "Neck", "Head", "LeftHand", "RightHand", "LeftFoot", "RightFoot",
+const LUS := ["Spine2", "Hips", "Neck", "Head", "LeftHand", "RightHand", "LeftFoot", "RightFoot",
 	"LeftArm", "RightArm", "LeftUpLeg", "RightUpLeg", "LeftLeg", "RightLeg"]
 var po := {}
 func noter(sk: Skeleton3D) -> void:
@@ -265,11 +265,11 @@ func chute() -> void:
 	p.velocity = Vector3.ZERO
 	await frames(10)
 	Input.action_press("toggle_board"); await frames(2); Input.action_release("toggle_board")
-	await frames(10)
-	var main: Vector3 = po.RightHand
-	check(not p.planche_libre and p.mode == p.Mode.WALK and p.board.global_position.distance_to(main) < 0.45, "chute : à côté, E ramasse la planche (à la main)")
+	await frames(40)
+	var derriere: float = -(p.board.global_position - po.Spine2).dot(poitrine())
+	check(not p.planche_libre and p.mode == p.Mode.WALK and derriere > 0.1, "chute : à côté, E ramasse la planche et la remet dans le dos (%.2f m)" % derriere)
 	Input.action_press("toggle_board"); await frames(2); Input.action_release("toggle_board")
-	await frames(5)
+	await frames(40)
 	check(p.mode == p.Mode.SKATE, "chute : E encore, il remonte dessus")
 
 func grimpe() -> void:
@@ -334,7 +334,6 @@ func bombe() -> void:
 	for t in traces:
 		etendue = maxf(etendue, (t - traces[0]).length())
 	check(etendue > 0.1, "bombe : petits balayages (%.2f m)" % etendue)
-	check(p.board.global_position.distance_to(po.LeftHand) < 0.45, "bombe : la planche passe dans la main gauche")
 	Input.action_release("graff")
 	await frames(20)
 	check(not perso._bombe.visible and perso.etat != "bombe", "bombe : G relâché, la bombe disparaît")

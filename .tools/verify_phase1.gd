@@ -39,6 +39,7 @@ func run() -> void:
 	Input.action_press("toggle_board")
 	await frames(2)
 	Input.action_release("toggle_board")
+	await frames(35)  # il prend la planche dans son dos, la pose, monte (~0,5 s)
 	check(player.mode == player.Mode.SKATE and player.board.visible, "Mount board")
 	Input.action_press("push")
 	await frames(50)

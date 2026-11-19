@@ -27,6 +27,13 @@ const CHUTE_DUREE := 1.6            ## tomber, rester au sol, se relever (s)
 var chute_t := -1.0                 ## secondes depuis la chute, -1 sinon (lu par l'animation)
 var planche_libre := false          ## après une chute, la planche roule seule : il faut aller la chercher
 var _planche_vel := Vector3.ZERO
+## Monter / descendre de la planche prend un instant (lu par l'animation) :
+## « decroche » = il prend la planche dans son dos, la pose devant lui et monte ;
+## « accroche » = il ramasse la planche par le tail et la remet dans son dos.
+const TRANSITION_DUREE := 0.5
+var transition := ""
+var transition_t := 0.0
+var planche_depart := Transform3D()  ## où était la planche au début de « accroche »
 
 @onready var camera_pivot: Node3D = $CameraPivot
 @onready var spring_arm: SpringArm3D = $CameraPivot/SpringArm3D
@@ -65,11 +72,20 @@ func _physics_process(delta: float) -> void:
 	if chute_t >= 0.0:
 		_chute_step(delta)
 		return
-	if Input.is_action_just_pressed("toggle_board") and is_on_floor() and not skate.grinding:
+	if transition != "":
+		_transition_step(delta)
+		return
+	# (sur la planche, une bosse décolle les roues une image : ça compte comme au sol)
+	var au_sol := is_on_floor() or (mode == Mode.SKATE and not skate.saute and skate.air_t < 0.15)
+	if Input.is_action_just_pressed("toggle_board") and au_sol and not skate.grinding:
 		if planche_libre:
 			_ramasser()
+		elif mode == Mode.WALK:
+			_commencer("decroche")
 		else:
-			_set_mode(Mode.SKATE if mode == Mode.WALK else Mode.WALK)
+			planche_depart = board.global_transform
+			_set_mode(Mode.WALK)
+			_commencer("accroche")
 
 	if _mantling:
 		_mantle_step(delta)
@@ -242,11 +258,34 @@ func _ramasser() -> void:
 	if d > 1.6:
 		skate.last_event = "Ta planche est là-bas (%d m)" % roundi(d)
 		return
+	planche_depart = board.global_transform
 	planche_libre = false
 	_planche_vel = Vector3.ZERO
 	board.top_level = false
 	board.visible = true
+	board.global_transform = planche_depart
+	_commencer("accroche")
 	skate.last_event = "Planche ramassée"
+
+
+func _commencer(quoi: String) -> void:
+	transition = quoi
+	transition_t = 0.0
+	velocity.x = 0.0
+	velocity.z = 0.0
+
+
+func _transition_step(delta: float) -> void:
+	transition_t += delta
+	velocity.y -= _gravity * delta
+	velocity.x = move_toward(velocity.x, 0.0, walk_accel * delta)
+	velocity.z = move_toward(velocity.z, 0.0, walk_accel * delta)
+	move_and_slide()
+	if transition_t >= TRANSITION_DUREE:
+		var fini := transition
+		transition = ""
+		if fini == "decroche":
+			_set_mode(Mode.SKATE)
 
 
 func _set_mode(new_mode: Mode) -> void:
@@ -265,6 +304,7 @@ func _set_mode(new_mode: Mode) -> void:
 
 func _respawn() -> void:
 	chute_t = -1.0
+	transition = ""
 	if planche_libre:
 		planche_libre = false
 		board.top_level = false
@@ -280,8 +320,8 @@ const POP_DUREE := 0.2
 
 ## Rotation de la planche : pop, genoux remontés, flips (purement visuel).
 func _animate_board() -> void:
-	if planche_libre:
-		return
+	if planche_libre or mode == Mode.WALK:
+		return  # à pied, c'est Personnage qui la porte (dans le dos) ou la manie
 	board.rotation = Vector3.ZERO
 	board.position = Vector3(0, 0.085, 0)
 	if mode == Mode.SKATE and not skate.in_air:

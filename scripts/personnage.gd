@@ -27,6 +27,7 @@ var cible_avant: Marker3D      ## pied avant (droit si goofy)
 var cible_arriere: Marker3D    ## pied arrière : c'est lui qui pousse
 var _poids := 0.0              ## 0 = à pied, 1 = sur la planche
 var _main_droite := -1
+var _os_torse := -1              ## haut du buste : la planche y est accrochée (dans le dos)
 var pose: PoseProcedurale      ## postures calculées (attente debout, planche, ollie, chute…)
 var etat := ""                 ## ce que fait le corps : debout, marche, planche, chute, grimpe, bombe…
 var _t := 0.0
@@ -154,6 +155,7 @@ func _preparer_ik() -> void:
 		ik.set_pole_node(i, ik.get_path_to(jambes[i][2]))
 	ik.influence = 0.0
 	_main_droite = squelette.find_bone("mixamorig_RightHand")
+	_os_torse = squelette.find_bone("mixamorig_Spine2")
 	# Les postures calculées passent avant l'IK : les pieds restent posés sur la planche.
 	pose = PoseProcedurale.new()
 	squelette.add_child(pose)
@@ -228,6 +230,8 @@ func _etat() -> String:
 	var v := Vector2(_joueur.velocity.x, _joueur.velocity.z).length()
 	if _joueur.chute_t >= 0.0:
 		return "chute"
+	if _joueur.transition != "":
+		return _joueur.transition
 	if _joueur._mantling:
 		return "grimpe"
 	if _joueur.mode == Player.Mode.WALK and _tenue_bombe() > 0.0:
@@ -270,6 +274,8 @@ func _composer(delta: float) -> void:
 			_grimpe(c)
 		"bombe":
 			_geste_bombe(c)
+		"decroche", "accroche":
+			_main_planche(c)
 	if _bombe:
 		_bombe.visible = etat == "bombe"
 	# Les poids passent de 0 à 1 en 0,2 s (fondu avec la marche) ; plus vite pour grimper.
@@ -420,6 +426,35 @@ func _grimpe(c: Dictionary) -> void:
 	c.jd = [Vector3(-0.03, -1, -0.15), Vector3(-0.02, -1, -0.25)]
 
 
+## Monter / descendre : la main droite suit la planche (le nose sur l'épaule,
+## le tail quand il la ramasse au sol).
+func _main_planche(c: Dictionary) -> void:
+	_debout(c)
+	c.vif = 30.0
+	c.fondu = 0.08
+	var planche := get_parent().get_node_or_null("Board") as Node3D
+	if planche == null:
+		return
+	var k: float = clampf(_joueur.transition_t / Player.TRANSITION_DUREE, 0.0, 1.0)
+	var prise: Vector3
+	var baisse := 0.0
+	if etat == "decroche":
+		prise = planche.global_transform * Vector3(0, 0, -0.36)     # le truck du haut
+		baisse = 0.18 * smoothstep(0.4, 0.8, k) * (1.0 - smoothstep(0.85, 1.0, k))
+		c.buste = Vector3(0.1 + 0.4 * baisse / 0.18, -0.25 * (1.0 - k), 0)
+	else:
+		var u := smoothstep(0.35, 0.9, k)
+		prise = planche.global_transform * Vector3(0, 0, -0.36)     # le nose qui monte
+		baisse = 0.12 * sin(PI * clampf(k / 0.6, 0.0, 1.0))
+		c.buste = Vector3(0.1 + 0.4 * baisse / 0.12, -0.2 * u, 0)
+	c.bassin = Vector3(0, -_u(baisse), 0)
+	c.jg = [Vector3(0.04, -1, 0.9 * baisse), Vector3(0.02, -1, -0.9 * baisse)]
+	c.jd = [Vector3(-0.04, -1, 0.9 * baisse), Vector3(-0.02, -1, -0.9 * baisse)]
+	var inv := squelette.global_transform.affine_inverse()
+	var d: Vector3 = (inv * prise - pose.origine_repos("RightArm")).normalized()
+	c.bd = [d + Vector3(0, -0.15, 0), d]
+
+
 func _tenue_bombe() -> float:
 	if _graffiti == null:
 		_graffiti = _joueur.get_node_or_null("../Graffiti")
@@ -462,9 +497,9 @@ func _apres_squelette() -> void:
 		# la bombe suit la main droite (pose finale, après postures et IK)
 		var main := squelette.global_transform * squelette.get_bone_global_pose(_main_droite)
 		_bombe.global_transform = main * Transform3D(Basis(), Vector3(0, 0.07, 0.035) / maxf(modele.scale.x, 0.001))
-	if _joueur == null or _joueur.planche_libre:
+	if _joueur == null or _joueur.planche_libre or _joueur.mode != Player.Mode.WALK:
 		return
-	_porter_planche(_joueur.mode == Player.Mode.WALK)
+	_porter_planche()
 
 
 ## Sur la planche : de profil, pieds sur les vis, genoux fléchis, penché dans les virages.
@@ -524,22 +559,57 @@ func _pied_qui_freine() -> Vector3:
 	return Vector3(face * 0.06, -0.085 + CHEVILLE - 0.01, 0.46)
 
 
-func _porter_planche(a_pied: bool) -> void:
+## La planche dans le dos, en diagonale comme sur un sac de skate : grip contre le dos,
+## un truck en haut à l'épaule droite, l'autre en bas vers la hanche gauche,
+## par-dessus le sac et la perche (qui reste droite le long du dos).
+## Repère du squelette : +Z devant, +X sa gauche. Décalage depuis l'os du haut du buste.
+const DOS_DECALAGE := Vector3(0.0, -0.15, -0.31)
+const DOS_DIAGONALE := Vector3(-1.0, 1.0, 0.0)   ## direction du nose : vers l'épaule droite
+
+func transform_dos() -> Transform3D:
+	var gp := squelette.get_bone_global_pose(_os_torse)
+	var gr := squelette.get_bone_global_rest(_os_torse)
+	var r := gp.basis.orthonormalized() * gr.basis.orthonormalized().inverse()
+	var pos := gp.origin + r * DOS_DECALAGE
+	var z := -(r * DOS_DIAGONALE).normalized()        # +Z planche = vers le tail
+	var grip := r * Vector3(0, 0, 1)                   # le grip regarde le dos
+	var y := (grip - z * grip.dot(z)).normalized()
+	var x := y.cross(z)
+	var sg := squelette.global_transform
+	return Transform3D((sg.basis * Basis(x, y, z)).orthonormalized(), sg * pos)
+
+
+## Planche au sol devant lui, prête à être montée.
+func _transform_sol_devant() -> Transform3D:
+	var vis := get_parent() as Node3D
+	return vis.global_transform * Transform3D(Basis(), Vector3(0, 0.085, -0.15))
+
+
+## La planche au sol qui pivote sur son tail jusqu'à se dresser (nose en l'air), 0 → 1.
+func _planche_dressee(v: float) -> Transform3D:
+	var dep: Transform3D = _joueur.planche_depart
+	var tail := dep * Vector3(0, 0, 0.38)
+	var axe := dep.basis.x.normalized()
+	var r := Basis(axe, 1.25 * v)
+	var t := Transform3D(r * dep.basis, tail + r * (dep.origin - tail))
+	return t
+
+
+func _porter_planche() -> void:
 	var planche := get_parent().get_node_or_null("Board") as Node3D
-	if planche == null or squelette == null or _main_droite < 0:
-		return
-	if not a_pied:
+	if planche == null or squelette == null or _os_torse < 0:
 		return
 	planche.visible = true
-	# Quand la main droite tient la bombe, la planche passe dans la main gauche.
-	var gauche := etat == "bombe"
-	var os_main := squelette.find_bone("mixamorig_LeftHand") if gauche else _main_droite
-	var main: Vector3 = (squelette.global_transform * squelette.get_bone_global_pose(os_main)).origin
-	# Planche verticale le long de la jambe, grip contre la cuisse, tenue par le nose.
-	var vis := get_parent() as Node3D
-	var b := vis.global_basis
-	var droite := b.x.normalized() * (-1.0 if gauche else 1.0)
-	var haut := b.y.normalized()
-	var avant := -b.z.normalized()
-	var base := Basis(avant, -droite, haut).orthonormalized()   # X planche, Y = normale du plateau, Z = long
-	planche.global_transform = Transform3D(base, main - haut * 0.30 + droite * 0.05)
+	var k: float = clampf(_joueur.transition_t / Player.TRANSITION_DUREE, 0.0, 1.0)
+	match _joueur.transition:
+		"decroche":
+			# la main va chercher la planche sur l'épaule, la fait passer devant et la pose
+			var u := smoothstep(0.3, 0.85, k)
+			planche.global_transform = transform_dos().interpolate_with(_transform_sol_devant(), u)
+		"accroche":
+			# il claque le tail : la planche se dresse, nose dans la main, puis repasse dans le dos
+			var u := smoothstep(0.35, 0.9, k)
+			var dressee := _planche_dressee(smoothstep(0.0, 0.3, k))
+			planche.global_transform = dressee.interpolate_with(transform_dos(), u)
+		_:
+			planche.global_transform = transform_dos()
