@@ -45,7 +45,10 @@ var _apercu_cle := ""
 var _reprise := -1             ## indice d'une pièce inachevée qu'on reprend
 const PIECE_DEBUT := 3.8       ## au-delà, on commence une pièce
 const PIECE_PAS := 0.8         ## durée de chaque étape de la pièce
-var _trace: TraceTag           ## tag en cours de tracé à la main
+## Chargés par chemin (et non par nom de classe) : le jeu marche même lancé sans passer par l'éditeur.
+const TRACE_TAG := preload("res://scripts/trace_tag.gd")
+const AIDE := preload("res://scripts/aide.gd")
+var _trace: TRACE_TAG          ## tag en cours de tracé à la main
 var _trace_g := {}
 var _camera_trace: Camera3D
 var _attendre_relache := false
@@ -57,7 +60,7 @@ func _ready() -> void:
 	_joueur = get_node_or_null("../Player") as Player
 	_interface()
 	_charger()
-	var aide := Aide.new()
+	var aide := AIDE.new()
 	aide.name = "Aide"
 	aide.graffiti = self
 	aide.joueur = _joueur
@@ -187,7 +190,7 @@ func _commencer_trace(variante := -1) -> void:
 	g["v"] = v
 	g["a"] = 0.0
 	_trace_g = g
-	_trace = TraceTag.new()
+	_trace = TRACE_TAG.new()
 	_trace.name = "TraceTag"
 	add_child(_trace)
 	_trace.preparer(img, COULEURS[couleur], LARGEUR.tag)

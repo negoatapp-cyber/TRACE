@@ -28,7 +28,8 @@ var cible_arriere: Marker3D    ## pied arrière : c'est lui qui pousse
 var _poids := 0.0              ## 0 = à pied, 1 = sur la planche
 var _main_droite := -1
 var _os_torse := -1              ## haut du buste : la planche y est accrochée (dans le dos)
-var pose: PoseProcedurale      ## postures calculées (attente debout, planche, ollie, chute…)
+const POSE := preload("res://scripts/pose_procedurale.gd")
+var pose: POSE                 ## postures calculées (attente debout, planche, ollie, chute…)
 var etat := ""                 ## ce que fait le corps : debout, marche, planche, chute, grimpe, bombe…
 var _t := 0.0
 var _graffiti: Node              ## lu seulement (tenue de G, mur visé) pour le geste de la bombe
@@ -167,7 +168,7 @@ func _preparer_ik() -> void:
 	_main_droite = squelette.find_bone("mixamorig_RightHand")
 	_os_torse = squelette.find_bone("mixamorig_Spine2")
 	# Les postures calculées passent avant l'IK : les pieds restent posés sur la planche.
-	pose = PoseProcedurale.new()
+	pose = POSE.new()
 	squelette.add_child(pose)
 	squelette.move_child(pose, ik.get_index())
 	squelette.skeleton_updated.connect(_apres_squelette)

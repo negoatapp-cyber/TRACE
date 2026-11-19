@@ -11,6 +11,7 @@ const TOON := preload("res://shaders/bd_toon.gdshader")
 const ENCRAGE_PATH := "res://shaders/bd_encrage.gdshader"
 const ENCRAGE_WEB_PATH := "res://shaders/bd_encrage_web.gdshader"  # sans normales : mode Compatibilité (web, mobile)
 const HABILLAGE := preload("res://scripts/habillage.gd")
+const CONDUITE := preload("res://scripts/conduite.gd")
 
 ## Ciel et ambiance en mode BD.
 @export var ciel_haut := Color(0.16, 0.48, 0.93)
@@ -124,6 +125,11 @@ func _poser_habillage() -> void:
 	hab.name = "Habillage"
 	hab.set("quartier", q)
 	scene.add_child(hab)
+	# La conduite des véhicules posés par l'habillage (voiture, scooter).
+	var cond := Node.new()
+	cond.set_script(CONDUITE)
+	cond.name = "Conduite"
+	scene.add_child(cond)
 
 
 ## Un quad plein écran attaché à la caméra porte l'encrage.

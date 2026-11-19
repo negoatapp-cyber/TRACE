@@ -49,6 +49,9 @@ func _ready() -> void:
 			"Z": zones.append(c)
 			"M": _murs_releves.append(_pts(c[1]))
 			"W": _murs_releves.append(_pts(c[1]))
+	for c in voies:
+		_axes.append([_pts(c[3]), (Q.VOIES.get(c[1], Q.VOIES["s"]) as Array)[0] * 0.5, c[1]])
+	_sol()
 	_rng.seed = 13014
 	_pied_des_cypres()
 	_mobilier(voies, batiments, zones)
@@ -58,6 +61,35 @@ func _ready() -> void:
 
 func h(x: float, z: float) -> float:
 	return quartier.h(x, z)
+
+
+## Hauteur où POSER un objet : le sol, plus l'épaisseur de la chaussée (7 cm) ou du trottoir (10 cm),
+## qui sont dessinés au-dessus du sol réel. Sans ça, les objets s'enfoncent dans le trottoir.
+func sol(x: float, z: float) -> float:
+	var p := Vector2(x, z)
+	var plus := 0.0
+	for ax in _axes:
+		var type: String = ax[2]
+		if type != "b" and type != "r" and type != "s":
+			continue
+		var demi: float = ax[1]
+		var pts: PackedVector2Array = ax[0]
+		for k in pts.size() - 1:
+			var d := Geometry2D.get_closest_point_to_segment(p, pts[k], pts[k + 1]).distance_to(p)
+			if d < demi:
+				plus = maxf(plus, 0.07)
+			elif type != "s" and d < demi + 2.2:
+				plus = maxf(plus, 0.10)
+	return h(x, z) + plus
+
+
+## Le sol hors chaussées : béton, enrobé, terre battue et herbe sèche au lieu du sable uniforme.
+func _sol() -> void:
+	var m := ShaderMaterial.new()
+	m.shader = load("res://shaders/bd_sol.gdshader")
+	for t in get_tree().get_nodes_in_group("terrain"):
+		for mi in (t as Node).find_children("*", "MeshInstance3D", true, false):
+			(mi as MeshInstance3D).material_override = m
 
 
 # ───────────────────────── modèles 3D (Blender) ─────────────────────────
@@ -86,6 +118,7 @@ func _vetir(corps: Node3D, nom: String, decalage := Vector3.ZERO, rot_y := 0.0, 
 	m.rotation.y = rot_y
 	m.scale = Vector3.ONE * echelle
 	corps.add_child(m)
+	corps.set_meta("modele", m)
 	return m
 
 
@@ -149,8 +182,6 @@ func _mobilier(voies: Array, batiments: Array, zones: Array) -> void:
 	for c in zones:
 		if c[1] in ["terrain", "parking", "skatepark", "bitume"]:
 			_emprises.append(_pts(c[3]))
-	for c in voies:
-		_axes.append([_pts(c[3]), (Q.VOIES.get(c[1], Q.VOIES["s"]) as Array)[0] * 0.5])
 	var n_lampe := 0
 	var n_arbre := 0
 	for c in voies:
@@ -274,7 +305,7 @@ func _pied_des_cypres() -> void:
 			_pin(p)
 
 
-## Au point de départ : une voiture et un scooter garés, prêts pour la conduite (n°1).
+## Au point de départ : une voiture et un scooter garés, qu'on peut conduire (conduite.gd).
 ## Ils sont dans le groupe « vehicule », avec la métadonnée « type » = "voiture" ou "scooter".
 func _aire_d_essai() -> void:
 	var a: Vector2 = MARATHON[0]
@@ -293,7 +324,7 @@ func _aire_d_essai() -> void:
 	_reserver(pv, 2.4)
 	# Le scooter, sur le trottoir est, à côté.
 	var ps := axe + est * (demi + 1.2) - dir * 1.5
-	var sc := _scooter(ps, atan2(dir.x, dir.y) + PI * 0.5)
+	var sc := _scooter(ps, atan2(dir.x, dir.y) + PI)  # dans l'axe de la rue, prêt à partir
 	sc.add_to_group("vehicule")
 	sc.set_meta("type", "scooter")
 
@@ -654,7 +685,7 @@ func _conteneur(p: Vector2, dir: Vector2) -> void:
 
 func _banc(p: Vector2, dir: Vector2) -> void:
 	# Un banc se grinde : c'est un rail bas et large, avec un dossier.
-	var a := Vector3(p.x, h(p.x, p.y), p.y)
+	var a := Vector3(p.x, sol(p.x, p.y), p.y)
 	var x := Vector3(dir.x, 0, dir.y).normalized()
 	var z := x.cross(Vector3.UP).normalized()
 	var r := Rail.new()
@@ -814,7 +845,7 @@ func _boite(nom: String, x: float, z: float, taille: Vector3, c: Color, angle :=
 	mi.material_override = _mat(c)
 	body.add_child(mi)
 	body.name = nom
-	body.transform = Transform3D(Basis(Vector3.UP, angle), Vector3(x, h(x, z) + taille.y * 0.5 - enfonce, z))
+	body.transform = Transform3D(Basis(Vector3.UP, angle), Vector3(x, sol(x, z) + taille.y * 0.5 - enfonce, z))
 	add_child(body, true)
 	return body
 
