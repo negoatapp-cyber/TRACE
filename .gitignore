@@ -1,0 +1,16 @@
+# Godot 4
+.godot/
+/android/
+export_presets.cfg
+*.tmp
+
+# Moteur et outils de validation locaux
+.tools/*
+!.tools/verify_phase1.gd
+
+# Fichiers locaux à ne jamais publier (dépôt public)
+*.mp4
+*.zip
+*.pdf
+/*.png
+/*.png.import

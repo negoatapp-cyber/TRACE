@@ -1,0 +1,115 @@
+[gd_scene load_steps=10 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/player.tscn" id="1_player"]
+[ext_resource type="Script" path="res://scripts/rail.gd" id="2_rail"]
+
+[sub_resource type="ProceduralSkyMaterial" id="SkyMat"]
+sky_top_color = Color(0.45, 0.6, 0.8, 1)
+sky_horizon_color = Color(0.8, 0.78, 0.72, 1)
+ground_horizon_color = Color(0.8, 0.78, 0.72, 1)
+
+[sub_resource type="Sky" id="Sky"]
+sky_material = SubResource("SkyMat")
+
+[sub_resource type="Environment" id="Env"]
+background_mode = 2
+sky = SubResource("Sky")
+ambient_light_source = 3
+tonemap_mode = 2
+ssao_enabled = true
+fog_enabled = true
+fog_density = 0.004
+
+[sub_resource type="StandardMaterial3D" id="Mat_ground"]
+albedo_color = Color(0.42, 0.42, 0.42, 1)
+
+[sub_resource type="StandardMaterial3D" id="Mat_building"]
+albedo_color = Color(0.68, 0.66, 0.62, 1)
+
+[sub_resource type="StandardMaterial3D" id="Mat_kicker"]
+albedo_color = Color(0.3, 0.3, 0.33, 1)
+
+[sub_resource type="StandardMaterial3D" id="Mat_props"]
+albedo_color = Color(0.55, 0.53, 0.5, 1)
+
+[node name="IlotGrey" type="Node3D"]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Env")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.866, 0.354, -0.354, 0, 0.707, 0.707, 0.5, -0.612, 0.612, 0, 20, 0)
+light_energy = 1.2
+shadow_enabled = true
+
+[node name="Ground" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
+use_collision = true
+size = Vector3(50, 1, 50)
+material = SubResource("Mat_ground")
+
+[node name="Buildings" type="Node3D" parent="."]
+
+[node name="North" type="CSGBox3D" parent="Buildings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 6, -22)
+use_collision = true
+size = Vector3(44, 12, 6)
+material = SubResource("Mat_building")
+
+[node name="South" type="CSGBox3D" parent="Buildings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 6, 22)
+use_collision = true
+size = Vector3(44, 12, 6)
+material = SubResource("Mat_building")
+
+[node name="West" type="CSGBox3D" parent="Buildings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -22, 9, 0)
+use_collision = true
+size = Vector3(6, 18, 38)
+material = SubResource("Mat_building")
+
+[node name="East" type="CSGBox3D" parent="Buildings"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 22, 4.5, 0)
+use_collision = true
+size = Vector3(6, 9, 38)
+material = SubResource("Mat_building")
+
+[node name="Obstacles" type="Node3D" parent="."]
+
+[node name="Kicker" type="CSGBox3D" parent="Obstacles"]
+transform = Transform3D(1, 0, 0, 0, 0.978, -0.208, 0, 0.208, 0.978, 0, 0, 2)
+use_collision = true
+size = Vector3(3, 0.6, 3.4)
+material = SubResource("Mat_kicker")
+
+[node name="Rail" type="StaticBody3D" parent="Obstacles"]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 6, 0, 5)
+script = ExtResource("2_rail")
+length = 9.0
+height = 0.5
+thickness = 0.08
+
+[node name="Ledge" type="StaticBody3D" parent="Obstacles"]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, -6, 0, 5)
+script = ExtResource("2_rail")
+length = 9.0
+height = 0.45
+thickness = 0.45
+color = Color(0.6, 0.6, 0.58, 1)
+
+[node name="Props" type="Node3D" parent="."]
+
+[node name="Bench" type="CSGBox3D" parent="Props"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -12, 0.25, -12)
+use_collision = true
+size = Vector3(3, 0.5, 0.8)
+material = SubResource("Mat_props")
+
+[node name="Planter" type="CSGBox3D" parent="Props"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 12, 0.4, -12)
+use_collision = true
+size = Vector3(2.5, 0.8, 2.5)
+material = SubResource("Mat_props")
+
+[node name="Player" parent="." instance=ExtResource("1_player")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, 13)
