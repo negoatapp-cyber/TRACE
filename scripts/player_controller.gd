@@ -136,5 +136,5 @@ func _update_hud() -> void:
 	var state := "À PIED"
 	if mode == Mode.SKATE:
 		state = "GRIND" if skate.grinding else ("AIR" if skate.in_air else "SKATE")
-	debug_label.text = "%s   %d km/h\n%s\n\nZQSD bouger · Maj pousser · Espace ollie · E planche\nJ kickflip · K shove-it · L grind (maintenir) · R départ · Échap souris" % [
+	debug_label.text = "%s   %d km/h\n%s\n\nZQSD bouger · Maj pousser · Espace ollie · E planche\nJ kickflip · K shove-it · L grind (maintenir) · R départ · Échap souris\nÀ pied, face à un mur : G graffiti (maintenir) · C couleur" % [
 		state, roundi(kmh), skate.last_event]

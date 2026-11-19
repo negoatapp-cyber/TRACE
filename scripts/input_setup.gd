@@ -12,6 +12,8 @@ extends Node
 ##   J      kickflip             X (carré)
 ##   K      shove-it             B (rond)
 ##   L      grind (maintenir)    bouton épaule droite
+##   G      graffiti (maintenir) bouton épaule gauche
+##   C      changer de couleur   croix haut
 ##   R      revenir au départ    Select
 ##   Échap  libérer la souris
 
@@ -43,6 +45,10 @@ func _ready() -> void:
 	_button("shove_it", JOY_BUTTON_B)
 	_key("grind", KEY_L)
 	_button("grind", JOY_BUTTON_RIGHT_SHOULDER)
+	_key("graff", KEY_G)
+	_button("graff", JOY_BUTTON_LEFT_SHOULDER)
+	_key("graff_color", KEY_C)
+	_button("graff_color", JOY_BUTTON_DPAD_UP)
 	_key("reset", KEY_R)
 	_button("reset", JOY_BUTTON_BACK)
 
