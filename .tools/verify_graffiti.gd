@@ -31,8 +31,21 @@ func run() -> void:
 		p.global_position.z -= 9.0
 		await frames(20)
 	check(g.poses.size() == 3 and FileAccess.file_exists("user://graffitis.json"), "3 graffitis sauvegardés")
+	# Pièce interrompue puis reprise (bombes pleines, autre endroit du mur).
+	g.reserve = [1.0, 1.0, 1.0, 1.0]
+	p.global_position = Vector3(-24.8, q.h(-24.8, -72) + 0.2, -72); p.velocity = Vector3.ZERO
+	p.visual.rotation.y = PI * 0.5
+	await frames(30)
+	Input.action_press("graff"); await frames(290); Input.action_release("graff"); await frames(5)
+	var derniere: Dictionary = g.poses[g.poses.size() - 1]
+	check(derniere.t == "piece" and int(derniere.e) < 5, "pièce interrompue à l'étape %d" % int(derniere.get("e", -1)))
+	var avant: int = g.poses.size()
+	Input.action_press("graff"); await frames(200); Input.action_release("graff"); await frames(5)
+	derniere = g.poses[g.poses.size() - 1]
+	check(g.poses.size() == avant and int(derniere.e) == 5, "pièce reprise et finie (étape %d, %d graffitis)" % [int(derniere.get("e", -1)), g.poses.size()])
+	var nb: int = g.poses.size()
 	Input.action_press("graff"); await frames(20); Input.action_release("graff"); await frames(5)
-	check(g.poses.size() == 3, "un appui trop court ne pose rien")
+	check(g.poses.size() == nb, "un appui trop court ne pose rien")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path("user://graffitis.json"))
 	print("RESULT failures=", failures)
 	quit(failures)

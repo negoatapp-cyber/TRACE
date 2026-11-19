@@ -30,3 +30,7 @@ assets/personnages/*
 # Le lettrage de Loums (photos de Louma) : local seulement
 assets/graffitis/*
 !assets/graffitis/LISEZMOI.md
+
+# Dossier perso (photos, vidéos avec des vraies personnes) : jamais dans le dépôt
+trace/
+!.tools/lettrage_refs.py

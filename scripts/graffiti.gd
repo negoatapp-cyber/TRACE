@@ -10,9 +10,10 @@ const SAUVEGARDE := "user://graffitis.json"
 ## Le vrai lettrage de Loums, tiré des photos de Louma (gardé en local, hors du dépôt public).
 ## S'il manque, on retombe sur une police simple.
 const LETTRAGE := "res://assets/graffitis/"
-const LARGEUR := {"tag": 0.75, "flop": 2.0, "piece": 3.6}   ## largeur sur le mur (m)
+const LARGEUR := {"tag": 0.9, "flop": 2.2, "piece": 3.8}   ## largeur sur le mur (m)
+const NB_TAGS := 4
 const PORTEE := 2.2
-const PALIERS := [["tag", 0.8], ["flop", 3.0], ["piece", 7.0]]
+const PALIERS := [["tag", 0.8], ["flop", 3.0], ["piece", 3.8]]
 const COULEURS := [Color(0.92, 0.15, 0.45), Color(0.12, 0.12, 0.14), Color(0.95, 0.95, 0.92), Color(0.15, 0.55, 0.95), Color(0.98, 0.82, 0.10), Color(0.25, 0.75, 0.35), Color(0.80, 0.15, 0.15), Color(0.55, 0.30, 0.80)]
 
 @export var blaze := "LOUMS"
@@ -36,6 +37,12 @@ var _pastille: ColorRect
 var _cible := {}
 var _jauges: HBoxContainer
 var _textures := {}
+var _noeuds := {}              ## indice dans poses -> nœud dessiné
+var _apercu: Node3D            ## ce que le joueur est en train de peindre
+var _apercu_cle := ""
+var _reprise := -1             ## indice d'une pièce inachevée qu'on reprend
+const PIECE_DEBUT := 3.8       ## au-delà, on commence une pièce
+const PIECE_PAS := 0.8         ## durée de chaque étape de la pièce
 
 
 func _ready() -> void:
@@ -55,6 +62,10 @@ func _physics_process(delta: float) -> void:
 		_fouiller()
 	_cible = _mur_devant()
 	var peut := not _cible.is_empty() and _joueur.mode == Player.Mode.WALK and _joueur.is_on_floor()
+	if peut and Input.is_action_just_pressed("graff"):
+		_reprise = _piece_a_reprendre()
+		if _reprise >= 0:
+			tenue = PIECE_DEBUT + int(poses[_reprise].get("e", 0)) * PIECE_PAS + 0.01
 	if peut and Input.is_action_pressed("graff") and reserve[bombe] >= COUT["tag"]:
 		tenue += delta
 		# On ne peut pas dépasser ce que la bombe contient encore.
@@ -62,13 +73,54 @@ func _physics_process(delta: float) -> void:
 			if reserve[bombe] < COUT[e[0]]:
 				tenue = minf(tenue, e[1] - 0.01)
 				break
-		if tenue >= PALIERS[2][1] + 0.4:
+		if _etape() >= 5 and tenue >= PIECE_DEBUT + 5 * PIECE_PAS + 0.3:
 			_poser()
 	elif tenue > 0.0:
 		if peut or not _cible.is_empty():
 			_poser()
 		tenue = 0.0
+		_reprise = -1
+	_maj_apercu()
 	_afficher(peut)
+
+
+## Étape de la pièce : 0 esquisse, 1 fond, 2 contour, 3 lights, 4 surcontour, 5 signature.
+func _etape() -> int:
+	return clampi(int((tenue - PIECE_DEBUT) / PIECE_PAS), 0, 5)
+
+
+## Une pièce inachevée, à soi, sur le mur qu'on regarde : on peut la reprendre.
+func _piece_a_reprendre() -> int:
+	if _cible.is_empty():
+		return -1
+	var p: Vector3 = _cible.position
+	for i in range(poses.size() - 1, -1, -1):
+		var g: Dictionary = poses[i]
+		if g.t == "piece" and int(g.get("e", 5)) < 5 and Vector2(g.x - p.x, g.z - p.z).length() < 2.5:
+			return i
+	return -1
+
+
+## Montre en direct ce qu'on est en train de peindre.
+func _maj_apercu() -> void:
+	var type := _palier()
+	var cle := ""
+	if tenue > 0.0 and type != "" and not _cible.is_empty():
+		cle = "%s_%d_%d" % [type, _etape() if type == "piece" else 0, couleur]
+	if cle == _apercu_cle:
+		return
+	_apercu_cle = cle
+	if _apercu:
+		_apercu.queue_free()
+		_apercu = null
+	if cle == "":
+		return
+	var g := _nouveau(type)
+	g["e"] = _etape()
+	_apercu = _dessiner_lettrage(g)
+	if _apercu:
+		_placer(_apercu, g)
+		add_child(_apercu)
 
 
 func _palier() -> String:
@@ -94,23 +146,47 @@ func _mur_devant() -> Dictionary:
 	return hit
 
 
-func _poser() -> void:
-	var type := _palier()
-	tenue = 0.0
-	if type == "" or _cible.is_empty():
-		return
+func _nouveau(type: String) -> Dictionary:
 	var n: Vector3 = _cible.normal
 	n.y = 0.0
 	n = n.normalized()
 	var p: Vector3 = _cible.position
-	reserve[bombe] = maxf(0.0, reserve[bombe] - COUT[type])
-	var g := {
+	if _reprise >= 0:
+		return poses[_reprise].duplicate()
+	return {
 		"t": type, "c": couleur, "b": blaze,
 		"x": p.x, "y": _joueur.global_position.y, "z": p.z,
-		"nx": n.x, "nz": n.z, "a": randf_range(-0.10, 0.10),
+		"nx": n.x, "nz": n.z, "a": randf_range(-0.06, 0.06) if type == "piece" else randf_range(-0.10, 0.10),
+		"v": randi() % NB_TAGS,
 	}
-	poses.append(g)
-	_dessiner(g)
+
+
+func _poser() -> void:
+	var type := _palier()
+	var etape := _etape()
+	tenue = 0.0
+	if type == "" or _cible.is_empty():
+		_reprise = -1
+		return
+	var cout: float = COUT[type]
+	if type == "piece":
+		var avant := int(poses[_reprise].get("e", -1)) if _reprise >= 0 else -1
+		cout = COUT.piece * float(etape - avant) / 6.0
+	reserve[bombe] = maxf(0.0, reserve[bombe] - cout)
+	var g := _nouveau(type)
+	if type == "piece":
+		g["e"] = etape
+	if _reprise >= 0:
+		# On reprend la pièce : on remplace l'ancienne version.
+		var vieux: Node = _noeuds.get(_reprise)
+		if vieux:
+			vieux.queue_free()
+		poses[_reprise] = g
+		_dessiner(g, _reprise)
+	else:
+		poses.append(g)
+		_dessiner(g, poses.size() - 1)
+	_reprise = -1
 	_sauver()
 
 
@@ -148,16 +224,23 @@ func _dessiner_lettrage(g: Dictionary) -> Node3D:
 	var c: Color = COULEURS[int(g.c) % COULEURS.size()]
 	var autre: Color = COULEURS[(int(g.c) + 3) % COULEURS.size()]
 	var couches := []
-	# Règle du graffiti : fond, contour (sombre ou clair selon le fond), lights, surcontour.
+	# Règle du graffiti (Louma) : tag = un trait ; flop = fond, contour, surcontour ;
+	# pièce = fond, contour (sombre ou clair selon le fond), lights, surcontour, puis une signature.
 	var contour := ENCRE if c.get_luminance() > 0.35 else Color(0.97, 0.96, 0.92)
+	var troisieme: Color = COULEURS[(int(g.c) + 5) % COULEURS.size()]
+	var lumiere := Color(1, 0.99, 0.95)
+	var etape: int = int(g.get("e", 99))   # étapes visibles (aperçu pendant qu'on peint)
 	match g.t:
 		"tag":
-			couches = [["tag", c]]
+			couches = [["tag_%d" % (int(g.get("v", 0)) % NB_TAGS + 1), c]]
 		"flop":
-			couches = [["flop_surcontour", autre], ["flop_contour", contour], ["flop_fond", c], ["flop_encre", ENCRE]]
+			couches = [["flop_surcontour", autre], ["flop_contour", contour], ["flop_fond", c], ["flop_lights", lumiere]]
 		"piece":
-			couches = [["piece_surcontour", autre], ["piece_contour", contour], ["piece_fond", c], ["piece_lights", Color(1, 0.99, 0.95)],
-				["piece_encre", ENCRE], ["piece_signature", contour]]
+			couches = [["piece_esquisse", Color(0.2, 0.2, 0.22, 0.8)], ["piece_surcontour2", troisieme], ["piece_surcontour", autre],
+				["piece_contour", contour], ["piece_fond", c], ["piece_lights", lumiere]]
+			# Ordre de peinture : esquisse, fond, contour, lights, surcontour. L'esquisse disparaît sous la peinture finie.
+			var ordre := {"piece_esquisse": 0, "piece_fond": 1, "piece_contour": 2, "piece_lights": 3, "piece_surcontour": 4, "piece_surcontour2": 4}
+			couches = couches.filter(func(cc): return ordre[cc[0]] <= etape and not (cc[0] == "piece_esquisse" and etape >= 2))
 	var racine := Node3D.new()
 	var k := 0
 	for couche in couches:
@@ -167,16 +250,29 @@ func _dessiner_lettrage(g: Dictionary) -> Node3D:
 			return null
 		racine.add_child(_calque(t, LARGEUR[g.t], couche[1], k))
 		k += 1
+	if g.t == "piece" and int(g.get("e", 99)) >= 5:
+		var sig := _texture("tag_4")
+		if sig:
+			var sp := _calque(sig, LARGEUR.piece * 0.22, ENCRE, k + 1)
+			sp.position += Vector3(LARGEUR.piece * 0.42, -0.62, 0)
+			racine.add_child(sp)
 	return racine
 
 
-func _dessiner(g: Dictionary) -> void:
+func _placer(n: Node3D, g: Dictionary) -> void:
+	var nn := Vector3(g.nx, 0, g.nz)
+	var h: float = {"tag": 1.45, "flop": 1.55, "piece": 1.9}[g.t]
+	n.transform = Transform3D(Basis.looking_at(-nn, Vector3.UP).rotated(nn, float(g.a)), Vector3(g.x, float(g.y) + h, g.z) + nn * 0.035)
+
+
+func _dessiner(g: Dictionary, indice := -1) -> void:
 	var n := Vector3(g.nx, 0, g.nz)
 	var c: Color = COULEURS[int(g.c) % COULEURS.size()]
 	var vrai := _dessiner_lettrage(g)
 	if vrai:
-		var h: float = {"tag": 1.45, "flop": 1.5, "piece": 1.8}[g.t]
-		vrai.transform = Transform3D(Basis.looking_at(-n, Vector3.UP).rotated(n, float(g.a)), Vector3(g.x, float(g.y) + h, g.z) + n * 0.035)
+		_placer(vrai, g)
+		if indice >= 0:
+			_noeuds[indice] = vrai
 		vrai.name = "Graff_" + str(g.t)
 		add_child(vrai, true)
 		compte[g.t] = int(compte.get(g.t, 0)) + 1
@@ -263,7 +359,7 @@ func _charger() -> void:
 		for g in data:
 			if g is Dictionary and g.has("t") and g.has("nx"):
 				poses.append(g)
-				_dessiner(g)
+				_dessiner(g, poses.size() - 1)
 
 
 func _interface() -> void:
@@ -281,7 +377,7 @@ func _interface() -> void:
 	_texte.add_theme_constant_override("outline_size", 4)
 	boite.add_child(_texte)
 	_barre = ProgressBar.new()
-	_barre.max_value = PALIERS[2][1]
+	_barre.max_value = PIECE_DEBUT + 5 * PIECE_PAS
 	_barre.show_percentage = false
 	_barre.custom_minimum_size = Vector2(340, 10)
 	boite.add_child(_barre)
@@ -322,7 +418,11 @@ func _afficher(peut: bool) -> void:
 	if tenue > 0.0:
 		var p := _palier()
 		var noms := {"": "…", "tag": "TAG", "flop": "FLOP", "piece": "PIÈCE"}
-		_texte.text = "%s   (relâche pour poser)" % noms[p]
+		var etapes := ["esquisse", "fond", "contour", "lights", "surcontour", "signature"]
+		if p == "piece":
+			_texte.text = "PIÈCE : %s   (relâche pour t'arrêter, reviens la finir)" % etapes[_etape()]
+		else:
+			_texte.text = "%s   (relâche pour poser)" % noms[p]
 	elif _conteneur_proche():
 		_texte.text = "F : fouiller le conteneur"
 	elif peut and reserve[bombe] < COUT["tag"]:
