@@ -334,6 +334,12 @@ func _texture(nom: String) -> Texture2D:
 			var chemin := LETTRAGE + nom + ".png"
 			if ResourceLoader.exists(chemin):
 				tex = load(chemin) as Texture2D
+			elif FileAccess.file_exists(ProjectSettings.globalize_path(chemin)):
+				# pas encore importé par l'éditeur : on lit l'image directement
+				var brute := Image.load_from_file(ProjectSettings.globalize_path(chemin))
+				if brute:
+					brute.generate_mipmaps()
+					tex = ImageTexture.create_from_image(brute)
 		_textures[nom] = tex
 	return _textures[nom]
 

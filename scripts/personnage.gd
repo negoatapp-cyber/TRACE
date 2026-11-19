@@ -36,20 +36,30 @@ var _bombe: MeshInstance3D       ## la bombe dans la main droite
 var _bascule := 0.0            ## chute : tout le corps bascule en avant autour des pieds (rad)
 
 
+## Le modèle de Loums : la version importée par Godot si elle existe (nécessaire pour l'export web),
+## sinon lecture directe du .glb (lancement sans passage par l'éditeur, quand le fichier .import manque).
+func _charger_modele() -> Node3D:
+	if ResourceLoader.exists(FICHIER):
+		var ps := load(FICHIER) as PackedScene
+		if ps:
+			return ps.instantiate() as Node3D
+	var brut := ProjectSettings.globalize_path(FICHIER)
+	if not FileAccess.file_exists(brut):
+		return null
+	var doc := GLTFDocument.new()
+	var etat := GLTFState.new()
+	if doc.append_from_file(brut, etat) != OK:
+		return null
+	return doc.generate_scene(etat) as Node3D
+
+
 func _ready() -> void:
 	_joueur = owner as Player
 	if _joueur == null:
 		_joueur = get_parent().get_parent() as Player
-	var chemin := FICHIER
-	# Modèle importé par Godot (marche aussi dans l'export web, où le .glb brut n'est pas embarqué).
-	if not ResourceLoader.exists(chemin):
-		return
-	var ps := load(chemin) as PackedScene
-	if ps == null:
-		push_warning("TRACE : impossible de lire " + FICHIER)
-		return
-	modele = ps.instantiate() as Node3D
+	modele = _charger_modele()
 	if modele == null:
+		push_warning("TRACE : impossible de lire " + FICHIER + " (Loums reste une capsule)")
 		return
 	add_child(modele)
 	_mettre_a_l_echelle()
