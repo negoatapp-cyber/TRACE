@@ -29,6 +29,7 @@ const PLACES := {
 	"F": [480, -225, 50],
 	"G": [480, -85, 50],
 	"H": [620, -150, 42],
+	"I": [620, -290, 40],
 	"haut": [-60, 55, 34],
 }
 ## [nom, libellé, action, maintenu]. Une action qui commence par « : » est une commande
@@ -49,6 +50,9 @@ const BOUTONS := {
 	"flop": ["FLOP", ":flop", false],
 	"piece": ["PIÈCE", ":piece", false],
 	"reprendre": ["REPRENDRE", ":reprendre", false],
+	"perche": ["PERCHE", ":perche", false],
+	"rouleau": ["ROULEAU", ":rouleau", false],
+	"mode": ["MODE", ":mode", false],
 	"couleur": ["COUL.", "graff_color", false],
 	"fermer": ["✕", ":fermer", false],
 	"poser": ["SUITE", "graff", false],
@@ -95,7 +99,7 @@ func _choisir_boutons() -> void:
 		liste = [["ollie", "A"], ["pousser", "B"], ["planche", "C"], ["flip", "D"], ["shove", "E"], ["grind", "F"]]
 	elif _menu_graff and g and g.call("peut_graffer"):
 		ctx = "menu_graff"
-		liste = [["tag", "G"], ["flop", "F"], ["piece", "E"], ["couleur", "B"], ["fermer", "C"]]
+		liste = [["tag", "G"], ["flop", "F"], ["piece", "E"], ["perche", "H"], ["rouleau", "A"], ["couleur", "B"], ["fermer", "C"], ["mode", "I"]]
 		if g.call("a_reprendre_ici"):
 			liste.append(["reprendre", "D"])
 	else:
@@ -139,7 +143,11 @@ func _ready() -> void:
 
 ## Un bouton affiché, sous la forme [nom, libellé, action, maintenu, dx, dy, rayon].
 func _bouton(v: Array) -> Array:
-	var d: Array = BOUTONS[v[0]]
+	var d: Array = BOUTONS[v[0]].duplicate()
+	if v[0] == "mode":
+		var scene := get_tree().current_scene
+		var g: Node = scene.get_node_or_null("Graffiti") if scene else null
+		d[0] = "EXPERT" if g and g.get("expert") else "SIMPLE"
 	var pl: Array = PLACES[v[1]]
 	return [v[0], d[0], d[1], d[2], pl[0], pl[1], pl[2]]
 
@@ -262,10 +270,13 @@ func _commande(c: String) -> void:
 			_menu_graff = true
 		"fermer":
 			_menu_graff = false
-		"tag", "flop", "piece", "reprendre":
+		"tag", "flop", "piece", "perche", "rouleau", "reprendre":
 			_menu_graff = false
 			if g:
 				g.call("commande_tactile", c)
+		"mode":
+			if g:
+				g.call("basculer_mode")
 		"lacher":
 			Input.action_press("move_back")
 			await get_tree().create_timer(0.1).timeout

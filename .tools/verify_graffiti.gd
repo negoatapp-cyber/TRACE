@@ -46,6 +46,7 @@ func run() -> void:
 	var p = level.get_node("Player")
 	var q = level.get_node("Quartier")
 	var g = level.get_node("Graffiti")
+	g.expert = true   # ces vérifications tracent « à la main » (mode expert)
 	# au pied de la façade est de la barre, tourné vers elle (vers l'ouest)
 	p.global_position = Vector3(-24.2, q.h(-24.2, -100) + 0.2, -100); p.velocity = Vector3.ZERO
 	p.visual.rotation.y = PI * 0.5
@@ -147,6 +148,25 @@ func run() -> void:
 	var nb: int = g.poses.size()
 	Input.action_press("graff"); await frames(40); Input.action_release("graff"); await frames(5)
 	check(g.poses.size() == nb and g._trace == null, "un appui moyen (ni bref ni flop) ne pose rien")
+	# Mode simple : Loums peint tout seul (tag, perche, rouleau, flop).
+	g.expert = false
+	g.reserve = [1.0, 1.0, 1.0, 1.0]
+	for type in ["tag", "perche", "rouleau", "flop"]:
+		var zz: float = [-100.0, -91.0, -82.0, -72.0][["tag", "perche", "rouleau", "flop"].find(type)]
+		var xx := -24.8 if zz > -80.0 else -24.2
+		p.global_position = Vector3(xx, q.h(xx, zz) + 0.2, zz); p.velocity = Vector3.ZERO
+		p.visual.rotation.y = PI * 0.5
+		await frames(15)
+		var avant: int = g.poses.size()
+		g.commande_tactile(type)
+		check(g._trace != null, "mode simple, %s : ça commence" % type)
+		for i in 900:
+			await physics_frame
+			if g._trace == null:
+				break
+		var fait: Dictionary = g.poses[g.poses.size() - 1] if g.poses.size() > avant else {}
+		print("   notes ", fait.get("notes"), " message ", g._message)
+		check(not fait.is_empty() and fait.t == type and (fait.has("img") or fait.get("fini", false)), "mode simple, %s : posé tout seul (note %.2f)" % [type, float(fait.get("q", 0))])
 	DirAccess.remove_absolute(ProjectSettings.globalize_path("user://graffitis.json"))
 	print("RESULT failures=", failures)
 	quit(failures)

@@ -44,6 +44,17 @@ var camera: Camera3D
 var appuye := false           ## bouton de peinture maintenu (souris, ou forcé par les tests)
 var curseur := Vector2(-1000, -1000)   ## position du jet sur l image (px), -1000 si inconnue
 var depose := 0.0             ## peinture dépensée (pour la réserve de la bombe)
+## Mode simple : Loums peint tout seul, la bombe parcourt le lettrage ligne par ligne.
+var auto := false
+var _chemin := PackedVector2Array()
+var _levees := PackedByteArray()     ## 1 = on relâche la bombe avant ce point
+var _ci := 0
+var _vitesse := 400.0
+var _auto_fini := false
+var attente := 0.0                    ## mode simple : le temps de sortir la bombe ou la perche avant de peindre
+var vertical := false                 ## rouleau : de haut en bas, lettre après lettre
+var inertie := 0.0            ## perche : le jet suit la main avec retard et oscille un peu (s)
+var _vise := Vector2(-1000, -1000)
 var age := 0.0                ## depuis quand on est devant le tag (Loums secoue la bombe au début)
 
 
@@ -192,7 +203,7 @@ var _index_doigt := -1
 
 ## Sur téléphone : le doigt peint (sauf sur les boutons, et GRAFF pose le tag).
 func _input(event: InputEvent) -> void:
-	if not TouchControls.actif:
+	if not TouchControls.actif or auto:
 		return
 	if event is InputEventScreenTouch:
 		if event.pressed and not (TouchControls.call("_bouton_sous", event.position) as Array).is_empty():
@@ -212,6 +223,14 @@ func _input(event: InputEvent) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if auto:
+		if event.is_action_pressed("ui_cancel"):
+			annule.emit()
+			get_viewport().set_input_as_handled()
+		elif event.is_action_pressed("graff") or event.is_action_pressed("ui_accept"):
+			terminer_auto()
+			get_viewport().set_input_as_handled()
+		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		appuye = event.pressed
 		get_viewport().set_input_as_handled()
@@ -249,10 +268,98 @@ func vers_monde(p: Vector2) -> Vector3:
 	return to_global(Vector3((p.x - _w * 0.5) * px, -(p.y - _h * 0.5) * px, 0.01))
 
 
+## Mode simple : prépare le trajet de la bombe (lignes en zigzag sur le lettrage) pour finir en « duree » s.
+func lancer_auto(duree: float) -> void:
+	auto = true
+	if mode == "taper":
+		return
+	var pas := maxf(3.0, RAYON * 0.9)
+	var dx := maxi(2, int(PAS))   # un impact par pas de jet : la même épaisseur de peinture qu'à la main
+	var lignes := _h if not vertical else _w
+	var long_ligne := _w if not vertical else _h
+	var y := pas * 0.5
+	var sens := 1
+	while y < lignes:
+		var xs := range(0, long_ligne, dx) if sens > 0 else range(long_ligne - 1, -1, -dx)
+		var precedent := -1000
+		for x in xs:
+			var pt := Vector2(x, y) if not vertical else Vector2(y, x)
+			if guide.get_pixel(int(pt.x), int(pt.y)).a > 0.5:
+				_chemin.append(pt)
+				_levees.append(1 if absi(x - precedent) > maxf(pas * 1.5, dx * 1.5) else 0)
+				precedent = x
+		y += pas
+		sens = -sens
+	var longueur := _chemin.size() * maxf(2.0, PAS)
+	_vitesse = maxf(250.0, longueur / maxf(duree, 0.2))
+	DEBIT = 300.0 / RAYON * _vitesse / 400.0   # même épaisseur de peinture, plus vite
+
+
+func _auto_step(delta: float) -> void:
+	if mode == "taper" or _auto_fini:
+		return
+	var budget := _vitesse * delta
+	while budget > 0.0 and _ci < _chemin.size():
+		var p := _chemin[_ci]
+		if _levees[_ci] == 1:
+			appuye = false
+			peindre(0.0001)
+			curseur = p
+			_precedent = Vector2(-1000, -1000)
+		appuye = true
+		var d := maxf(curseur.distance_to(p), 1.0)
+		curseur = p
+		peindre(d / _vitesse)
+		budget -= d
+		_ci += 1
+	if _ci >= _chemin.size():
+		appuye = false
+		_auto_fini = true
+		fini.emit.call_deferred(peinture, qualite())
+
+
+## Mode simple, G : on finit la couche d'un coup.
+func terminer_auto() -> void:
+	if mode == "taper":
+		while _cible_i >= 0 and _cible_i < _cibles.size():
+			_cible_t = LIGHT_DUREE
+			curseur = _cibles[_cible_i][0]
+			appuye = true
+			_avait_appuye = false
+			_taper(0.0)
+		return
+	_vitesse *= 1000.0
+	_auto_step(1.0)
+
+
 func _process(delta: float) -> void:
 	age += delta
+	if auto and age < attente:
+		return
+	if auto:
+		if mode == "taper":
+			# les lights se posent toutes seules quand l'anneau se referme
+			if _cible_i >= 0 and _cible_i < _cibles.size() and _cible_t > LIGHT_DUREE * 0.5:
+				curseur = _cibles[_cible_i][0]
+				appuye = not _avait_appuye
+		else:
+			_auto_step(delta)
+		if mode == "taper":
+			peindre(delta)
+		if _sale:
+			_tex.update(peinture)
+			_sale = false
+		return
 	if camera:
-		curseur = point_souris()
+		var main := point_souris()
+		if inertie > 0.0 and main.x > -999.0:
+			# au bout de 3 m de perche : le jet traîne derrière la main et balance doucement
+			if _vise.x < -999.0:
+				_vise = main
+			_vise = _vise.lerp(main, 1.0 - exp(-delta / inertie))
+			curseur = _vise + Vector2(sin(age * 2.3), cos(age * 1.7)) * 3.0
+		else:
+			curseur = main
 	peindre(delta)
 
 

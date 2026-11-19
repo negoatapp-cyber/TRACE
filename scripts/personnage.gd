@@ -346,7 +346,7 @@ func _composer(delta: float) -> void:
 		"assis":
 			_assis(c)
 	if _bombe:
-		_bombe.visible = etat == "bombe"
+		_bombe.visible = etat == "bombe" and _type_outil() == ""
 	# Les poids passent de 0 à 1 en 0,2 s (fondu avec la marche) ; plus vite pour grimper.
 	var fondu: float = c.get("fondu", 0.2)
 	pose.poids_haut = move_toward(pose.poids_haut, c.haut, delta / fondu)
@@ -565,6 +565,35 @@ func _geste_bombe(c: Dictionary) -> void:
 		c.tete = Vector3(0.25, 0, 0)
 		return
 	var cible: Dictionary = _graffiti.get("_cible")
+	var outil := _type_outil()
+	if trace and outil != "" and float(trace.get("age")) < 0.7:
+		# Il passe la main droite par-dessus l'épaule et sort la perche du dos (Getting Up).
+		var k := clampf(float(trace.get("age")) / 0.7, 0.0, 1.0)
+		var derriere := Vector3(-0.15, 0.9, -0.5).normalized()
+		var devant := Vector3(-0.2, 0.3, 1.0).normalized()
+		var d0 := derriere.lerp(devant, smoothstep(0.45, 1.0, k)).normalized()
+		c.bd = [d0 + Vector3(0, -0.2, 0), d0 + Vector3(0, 0.3, 0)]
+		c.bg = [Vector3(0.2, -0.6, 0.6), Vector3(0.05, -0.2, 1.0)] if k > 0.6 else c.bg
+		c.tete = Vector3(0.1, -0.3 * (1.0 - k), 0)
+		return
+	if trace and outil != "":
+		# Perche ou rouleau : les deux mains tiennent le manche, tendues vers le point peint.
+		var jet2: Vector3 = _graffiti.call("point_du_jet")
+		var inv1 := squelette.global_transform.affine_inverse()
+		for cote in ["Left", "Right"]:
+			var d2: Vector3 = (inv1 * jet2 - pose.origine_repos(cote + "Arm")).normalized()
+			if outil == "perche":
+				d2 = (d2 + Vector3(0, 0.6, 0)).normalized()   # bras levés, la perche fait le reste
+			else:
+				d2 = (d2 + Vector3(0, -0.25, 0)).normalized()  # rouleau : bras devant, un peu bas
+			var bras: Array[Vector3] = [d2 + Vector3(0, -0.15, 0), d2]
+			if cote == "Left":
+				c.bg = bras
+			else:
+				c.bd = bras
+		c.buste = Vector3(-0.15 if outil == "perche" else 0.12, 0, 0)
+		c.tete = Vector3(-0.35 if outil == "perche" else 0.1, 0, 0)
+		return
 	if trace:
 		# Le bras vise le jet : là où le joueur peint. Bombe levée vers le mur même au repos.
 		var jet: Vector3 = _graffiti.call("point_du_jet")
@@ -590,7 +619,88 @@ func _geste_bombe(c: Dictionary) -> void:
 
 
 ## Le squelette vient d'être posé (animations + postures + IK) : la planche suit la main.
+## « perche » ou « rouleau » quand Loums peint avec, sinon "".
+func _type_outil() -> String:
+	if _trace_en_cours() == null:
+		return ""
+	var g: Dictionary = _graffiti.get("_trace_g")
+	var t: String = str(g.get("t", ""))
+	return t if t == "perche" or t == "rouleau" else ""
+
+
+var _manche: MeshInstance3D      ## la perche, ou le manche du rouleau
+var _rouleau: MeshInstance3D     ## le manchon du rouleau
+var _mat_rouleau: StandardMaterial3D
+
+
+func _outils() -> void:
+	var outil := _type_outil()
+	if outil == "":
+		if _manche:
+			_manche.visible = false
+			_rouleau.visible = false
+		return
+	if _manche == null:
+		_manche = MeshInstance3D.new()
+		var cyl := CylinderMesh.new()
+		cyl.top_radius = 0.018
+		cyl.bottom_radius = 0.018
+		cyl.height = 1.0
+		_manche.mesh = cyl
+		var m := StandardMaterial3D.new()
+		m.albedo_color = Color(0.75, 0.76, 0.78)
+		_manche.material_override = m
+		_manche.top_level = true
+		add_child(_manche)
+		_rouleau = MeshInstance3D.new()
+		var r := CylinderMesh.new()
+		r.top_radius = 0.045
+		r.bottom_radius = 0.045
+		r.height = 0.25
+		_rouleau.mesh = r
+		_mat_rouleau = StandardMaterial3D.new()
+		_rouleau.material_override = _mat_rouleau
+		_rouleau.top_level = true
+		add_child(_rouleau)
+	var mg := (squelette.global_transform * squelette.get_bone_global_pose(squelette.find_bone("mixamorig_LeftHand"))).origin
+	var md := (squelette.global_transform * squelette.get_bone_global_pose(_main_droite)).origin
+	var mains := (mg + md) * 0.5
+	var jet: Vector3 = _graffiti.call("point_du_jet")
+	var trace := _trace_en_cours()
+	var age := float(trace.get("age")) if trace else 1.0
+	if age < 0.7:
+		# la perche sort du dos : elle suit la main droite, pointée vers le haut puis vers le mur
+		var k := clampf(age / 0.7, 0.0, 1.0)
+		var vers_haut := md + Vector3.UP * 1.6 + (md - global_position).normalized() * -0.2
+		jet = vers_haut.lerp(jet, smoothstep(0.5, 1.0, k))
+		mains = md
+	var n := Vector3.ZERO
+	if trace:
+		n = (trace as Node3D).global_transform.basis.z.normalized()
+	var bout := jet + n * (0.06 if outil == "rouleau" else 0.02)
+	# le manche part un peu sous les mains et va jusqu'au mur
+	var de := mains - (bout - mains).normalized() * 0.25
+	var long := de.distance_to(bout)
+	var axe := (bout - de).normalized()
+	var b := Basis()
+	b.y = axe
+	b.x = axe.cross(Vector3.UP if absf(axe.y) < 0.95 else Vector3.RIGHT).normalized()
+	b.z = b.x.cross(b.y).normalized()
+	_manche.global_transform = Transform3D(b.scaled_local(Vector3(1, long, 1)), (de + bout) * 0.5)
+	_manche.visible = true
+	_rouleau.visible = outil == "rouleau"
+	if outil == "rouleau":
+		var long_mur := Vector3.UP.cross(n).normalized() if n != Vector3.ZERO else Vector3.RIGHT
+		var rb := Basis()
+		rb.y = long_mur
+		rb.x = n if n != Vector3.ZERO else Vector3.FORWARD
+		rb.z = rb.x.cross(rb.y).normalized()
+		_rouleau.global_transform = Transform3D(rb, jet + n * 0.05)
+		_mat_rouleau.albedo_color = _graffiti.call("couleur_en_cours")
+
+
 func _apres_squelette() -> void:
+	_outils()
 	if _bombe and _bombe.visible:
 		# la bombe suit la main droite (pose finale, après postures et IK)
 		var main := squelette.global_transform * squelette.get_bone_global_pose(_main_droite)

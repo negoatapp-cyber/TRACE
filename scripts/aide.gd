@@ -67,11 +67,11 @@ func contexte() -> String:
 	if graffiti and graffiti.has_method("_conteneur_proche") and graffiti.call("_conteneur_proche") != null:
 		return "conteneur"
 	if graffiti and not (graffiti.get("_cible") as Dictionary).is_empty():
-		return "mur"
+		return "mur_expert" if graffiti.get("expert") else "mur"
 	return "pied"
 
 
-static func lignes(c: String) -> Array:
+func lignes(c: String) -> Array:
 	match c:
 		"trace":
 			return [["Clic", "peindre (maintenir)"], ["G", "poser le tag"], ["Échap", "laisser tomber"]]
@@ -83,8 +83,8 @@ static func lignes(c: String) -> Array:
 			return [["Maj", "pousser"], ["Espace", "ollie (maintenir, relâcher)"], ["J  K", "kickflip, shove-it"], ["L", "grind"], ["E", "planche dans le dos"]]
 		"conteneur":
 			return [["F", "fouiller : bombes pleines"], ["E", "planche"]]
-		"mur":
-			return [["G", "tag à la main (appui bref)"], ["G", "flop, pièce (maintenir)"], ["C", "changer de bombe"]]
+		"mur", "mur_expert":
+			return [["G", "tag (bref) · flop, pièce (maintenir)"], ["1 – 5", "tag, flop, pièce, perche, rouleau"], ["C", "changer de bombe"], ["M", "mode " + ("expert → simple" if graffiti and graffiti.get("expert") else "simple → expert")]]
 	return [["ZQSD", "marcher"], ["Maj", "courir"], ["Espace", "sauter ; vers un mur : grimper, s'accrocher"], ["E", "monter sur la planche"]]
 
 

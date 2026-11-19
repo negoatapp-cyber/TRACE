@@ -56,6 +56,10 @@ func _ready() -> void:
 	_key("reset", KEY_R)
 	_button("reset", JOY_BUTTON_BACK)
 	_key("style_bd", KEY_B)
+	# Choix direct du graffiti face à un mur : 1 tag, 2 flop, 3 pièce, 4 perche, 5 rouleau.
+	for i in 5:
+		_key("graff_%d" % (i + 1), KEY_1 + i)
+	_key("graff_mode", KEY_M)   # graffiti : mode simple / expert
 
 
 func _ensure(action: StringName) -> void:

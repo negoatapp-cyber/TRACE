@@ -10,7 +10,9 @@ const SAUVEGARDE := "user://graffitis.json"
 ## Le vrai lettrage de Loums, tiré des photos de Louma (gardé en local, hors du dépôt public).
 ## S'il manque, on retombe sur une police simple.
 const LETTRAGE := "res://assets/graffitis/"
-const LARGEUR := {"tag": 0.9, "flop": 2.2, "piece": 3.8}   ## largeur sur le mur (m)
+const LARGEUR := {"tag": 0.9, "flop": 2.2, "piece": 3.8, "perche": 1.3, "rouleau": 5.6}   ## largeur sur le mur (m)
+## Hauteur du centre du graffiti au-dessus des pieds (la perche monte le tag à plus de 4 m).
+const HAUTEUR := {"tag": 1.45, "flop": 1.55, "piece": 1.9, "perche": 4.3, "rouleau": 1.35}
 const NB_TAGS := 4
 const PORTEE := 2.2
 ## Le tag se trace à la main (appui bref sur G). Maintenir G : flop, puis pièce.
@@ -21,7 +23,10 @@ const COULEURS := [Color(0.92, 0.15, 0.45), Color(0.12, 0.12, 0.14), Color(0.95,
 @export var blaze := "LOUMS"
 
 ## Ce que coûte chaque taille, en part d'une bombe pleine.
-const COUT := {"tag": 0.06, "flop": 0.25, "piece": 0.6}
+const COUT := {"tag": 0.06, "flop": 0.25, "piece": 0.6, "perche": 0.08, "rouleau": 0.0}
+var expert := false                 ## mode expert : on trace soi-même sur le calque ; sinon Loums peint tout seul
+const DUREE_SIMPLE := {"tag": 1.6, "perche": 2.4, "flop": 2.0, "piece": 2.0, "rouleau": 4.5}   ## durée d'une couche (s)
+var pot := 1.0                      ## peinture du rouleau (le pot, dans le sac), remplie au conteneur
 const PORTEE_CONTENEUR := 3.5
 
 var ceinture := [0, 4, 3, 1]        ## couleurs des quatre bombes (indices dans COULEURS)
@@ -30,7 +35,7 @@ var bombe := 0                       ## bombe en main
 var couleur := 0
 var tenue := 0.0
 var poses: Array = []       # tout ce qui est sur les murs (sauvegardé)
-var compte := {"tag": 0, "flop": 0, "piece": 0}
+var compte := {"tag": 0, "flop": 0, "piece": 0, "perche": 0, "rouleau": 0}
 
 var _joueur: Player
 var _texte: Label
@@ -73,7 +78,7 @@ func _physics_process(delta: float) -> void:
 	if _trace:
 		_suivre_le_geste(delta)
 		var e: Dictionary = _etapes[_etape_i]
-		_texte.text = "%s   ·   %d/%d : %s" % [NOMS[_trace_g.t], _etape_i + 1, _etapes.size(), e.titre] if _etapes.size() > 1 else "TRACE TON TAG"
+		_texte.text = "%s   ·   %d/%d : %s" % [NOMS[_trace_g.t], _etape_i + 1, _etapes.size(), e.titre] if _etapes.size() > 1 else (("TRACE TON TAG" if expert else "TAG") if _trace_g.t == "tag" else NOMS[_trace_g.t])
 		_barre.visible = false
 		if _trace.fini_de_taper():
 			_etape_finie(_trace.peinture, _trace.qualite())
@@ -91,6 +96,12 @@ func _physics_process(delta: float) -> void:
 		_fouiller()
 	_cible = _mur_devant()
 	var peut := not _cible.is_empty() and _joueur.mode == Player.Mode.WALK and _joueur.is_on_floor()
+	if InputMap.has_action("graff_mode") and Input.is_action_just_pressed("graff_mode"):
+		basculer_mode()
+	for a in RACCOURCIS:
+		if peut and InputMap.has_action(a) and Input.is_action_just_pressed(a):
+			commande_tactile(RACCOURCIS[a])
+			return
 	if peut and Input.is_action_pressed("graff") and reserve[bombe] >= COUT["tag"]:
 		tenue = minf(tenue + delta, PALIERS[1][1] + 0.2)
 		# On ne peut pas choisir plus gros que ce que la bombe contient encore.
@@ -111,7 +122,21 @@ func _physics_process(delta: float) -> void:
 	_afficher(peut)
 
 
-const NOMS := {"tag": "TAG", "flop": "FLOP", "piece": "PIÈCE"}
+const NOMS := {"tag": "TAG", "flop": "FLOP", "piece": "PIÈCE", "perche": "PERCHE", "rouleau": "ROULEAU"}
+## Raccourcis clavier : 1 tag, 2 flop, 3 pièce, 4 perche, 5 rouleau (en plus de G).
+const RACCOURCIS := {"graff_1": "tag", "graff_2": "flop", "graff_3": "piece", "graff_4": "perche", "graff_5": "rouleau"}
+
+
+func couleur_en_cours() -> Color:
+	return COULEURS[int(_trace_g.get("c", couleur)) % COULEURS.size()]
+
+
+## Simple (Loums peint tout seul) ou expert (on trace soi-même sur le calque).
+func basculer_mode() -> void:
+	expert = not expert
+	_message = "Graffiti : mode %s" % ("EXPERT (tu traces toi-même)" if expert else "SIMPLE (Loums peint tout seul)")
+	_message_t = 3.0
+	_sauver()
 
 
 ## Pour les boutons du téléphone.
@@ -130,6 +155,9 @@ func commande_tactile(c: String) -> void:
 		var i := _a_reprendre()
 		if i >= 0:
 			_commencer(poses[i].t, i)
+	elif c == "rouleau" and pot < 0.1:
+		_message = "Pot vide   ·   conteneur derrière la grande barre"
+		_message_t = 3.0
 	elif reserve[bombe] >= COUT[c]:
 		_commencer(c)
 
@@ -206,6 +234,12 @@ func _etapes_de(g: Dictionary, avec_guides := true) -> Array:
 	match g.t:
 		"tag":
 			return [{"nom": "tag", "titre": "le trait", "guide": _masque("tag_%d" % (int(g.v) % NB_TAGS + 1), 450) if G else null, "geste": "trait", "rayon": 7.0, "teinte": c, "largeur": LARGEUR.tag}]
+		"perche":
+			# un tag au bout de la perche : plus gros, et le trait suit la main avec retard (moins précis)
+			return [{"nom": "tag", "titre": "le tag à la perche", "guide": _masque("tag_%d" % (int(g.v) % NB_TAGS + 1), 450) if G else null, "geste": "trait", "rayon": 8.0, "teinte": c, "largeur": LARGEUR.perche, "inertie": 0.12}]
+		"rouleau":
+			# grosses lettres pleines au rouleau, en une passe : on balaie lettre après lettre
+			return [{"nom": "lettres", "titre": "les lettres au rouleau", "guide": _masque("rouleau", 640) if G else null, "geste": "remplir", "rayon": 16.0, "teinte": c, "largeur": LARGEUR.rouleau}]
 		"flop":
 			var f := _masque("flop_fond", 512) if G else null
 			var ct := _masque("flop_contour", 512) if G else null
@@ -233,6 +267,8 @@ func consigne() -> Array:
 	if _trace == null:
 		return []
 	var e: Dictionary = _etapes[_etape_i]
+	if not expert:
+		return [["G", "finir la couche tout de suite"], ["Échap", "s'arrêter là" if _etapes.size() > 1 else "laisser tomber"], ["M", "passer en mode expert (tracer soi-même)"]]
 	var geste := {"trait": "repasser sur le trait (maintenir)", "remplir": "balayer pour remplir (maintenir)", "taper": "taper quand l'anneau se referme"}
 	var suite := "étape suivante" if _etape_i < _etapes.size() - 1 else "poser"
 	return [["Clic", geste[e.geste]], ["G", suite], ["Échap", "s'arrêter là (on reviendra)" if _etapes.size() > 1 else "laisser tomber"]]
@@ -254,7 +290,7 @@ func _commencer(type: String, reprise := -1, variante := -1) -> void:
 		g["a"] = 0.0
 		if variante >= 0:
 			g["v"] = variante
-		if type != "tag":
+		if type != "tag" and type != "perche":
 			g["imgs"] = {}
 			g["e"] = 0
 			g["fini"] = false
@@ -305,11 +341,22 @@ func _lancer_etape() -> void:
 	_trace.name = "Couche_" + e.nom
 	_chantier.add_child(_trace)
 	_trace.preparer(e.guide, e.teinte, e.largeur, e.guide.get_width(), e.rayon, e.geste)
+	_trace.inertie = e.get("inertie", 0.0)
+	if not expert:
+		# le temps de sortir la bombe (ou de prendre la perche dans le dos) avant de peindre
+		var attente := 0.7 if _etape_i == 0 and (_trace_g.t == "perche" or _trace_g.t == "rouleau") else (0.4 if _etape_i == 0 else 0.0)
+		_trace.attente = attente
+		_trace.vertical = _trace_g.t == "rouleau"
+		_trace.lancer_auto(float(DUREE_SIMPLE.get(_trace_g.t, 2.0)))
 	var d: Vector2 = e.get("decalage", Vector2.ZERO)
 	_trace.position = Vector3(d.x, d.y, 0.003 * (_etape_i + 1))
 	_trace.camera = _camera_trace
 	_trace.fini.connect(_etape_finie)
 	_trace.annule.connect(_interrompre)
+
+
+func g_type_bombe(t: String) -> bool:
+	return t != "rouleau"
 
 
 ## Une couche est finie : on l'enregistre, puis on passe à la suivante (ou on pose le graffiti).
@@ -318,7 +365,8 @@ func _etape_finie(img: Image, q: Dictionary) -> void:
 	if q.couverture < 0.05 and e.geste != "taper":
 		_interrompre()
 		return
-	reserve[bombe] = maxf(0.0, reserve[bombe] - clampf(_trace.depose * 0.00007, 0.01, 0.3))
+	if g_type_bombe(_trace_g.t):
+		reserve[bombe] = maxf(0.0, reserve[bombe] - clampf(_trace.depose * 0.00007, 0.01, 0.3))
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path("user://traces"))
 	var chemin := "user://traces/%s_%s_%d_%d.png" % [_trace_g.t, e.nom, Time.get_unix_time_from_system(), randi() % 100000]
 	img.save_png(ProjectSettings.globalize_path(chemin))
@@ -326,13 +374,17 @@ func _etape_finie(img: Image, q: Dictionary) -> void:
 	var notes: Dictionary = g.get("notes", {})
 	notes[e.nom] = snappedf(q.note, 0.01)
 	g["notes"] = notes
-	if g.t == "tag":
+	if g.t == "rouleau":
+		pot = maxf(0.0, pot - clampf(_trace.depose * 0.00002, 0.05, 0.5))
+	if g.t == "tag" or g.t == "perche":
 		g["img"] = chemin
 		g["q"] = snappedf(q.note, 0.01)
 	else:
 		g.imgs[e.nom] = chemin
 		g["e"] = _etape_i + 1
-	_message = "%s %s   ·   %s" % [e.titre.capitalize(), q.mot, ("%d coulure%s" % [q.coulures, "s" if q.coulures > 1 else ""]) if q.coulures > 0 else "%d %%" % int(q.couverture * 100)]
+	if OS.get_cmdline_user_args().has("--debug-graffiti"):
+		print("qualité ", e.nom, " ", q)
+	_message = "%s %s   ·   %s" % [e.titre.substr(0, 1).to_upper() + e.titre.substr(1), q.mot, ("%d coulure%s" % [q.coulures, "s" if q.coulures > 1 else ""]) if q.coulures > 0 else "%d %%" % int(q.couverture * 100)]
 	_message_t = 3.0
 	_trace.figer(_etape_i)
 	_trace = null
@@ -340,7 +392,7 @@ func _etape_finie(img: Image, q: Dictionary) -> void:
 	if _etape_i < _etapes.size():
 		_lancer_etape()
 		return
-	if g.t != "tag":
+	if g.t != "tag" and g.t != "perche":
 		g["fini"] = true
 		var somme := 0.0
 		for k in notes:
@@ -355,7 +407,7 @@ func _etape_finie(img: Image, q: Dictionary) -> void:
 ## au mur tels quels, et un appui bref sur G devant eux les reprend où on les a laissés.
 func _interrompre() -> void:
 	var g := _trace_g
-	if g.t != "tag" and int(g.get("e", 0)) > 0:
+	if g.has("imgs") and int(g.get("e", 0)) > 0:
 		_enregistrer(g)
 		_message = "%s en cours : reviens le finir (G bref devant le mur)" % NOMS[g.t]
 		_message_t = 3.5
@@ -503,7 +555,7 @@ func _dessiner_lettrage(g: Dictionary) -> Node3D:
 		return _dessiner_couches(g)
 	var etape: int = int(g.get("e", 99))   # étapes visibles (aperçu pendant qu'on peint)
 	match g.t:
-		"tag":
+		"tag", "perche":
 			couches = [[g.img if g.has("img") else "tag_%d" % (int(g.get("v", 0)) % NB_TAGS + 1), c]]
 		"flop":
 			couches = [["flop_surcontour", autre], ["flop_contour", contour], ["flop_fond", c], ["flop_lights", lumiere]]
@@ -538,7 +590,7 @@ func _dessiner_couches(g: Dictionary) -> Node3D:
 	var fini: bool = g.get("fini", false)
 	var troisieme: Color = COULEURS[(int(g.c) + 5) % COULEURS.size()]
 	var autre: Color = COULEURS[(int(g.c) + 3) % COULEURS.size()]
-	if fini:
+	if fini and (g.t == "flop" or g.t == "piece"):
 		var auto := _texture("flop_surcontour" if g.t == "flop" else "piece_surcontour2")
 		if auto:
 			racine.add_child(_calque(auto, LARGEUR[g.t], autre if g.t == "flop" else troisieme, 0))
@@ -561,7 +613,7 @@ func _dessiner_couches(g: Dictionary) -> Node3D:
 
 func _placer(n: Node3D, g: Dictionary) -> void:
 	var nn := Vector3(g.nx, 0, g.nz)
-	var h: float = {"tag": 1.45, "flop": 1.55, "piece": 1.9}[g.t]
+	var h: float = HAUTEUR.get(g.t, 1.5)
 	n.transform = Transform3D(Basis.looking_at(-nn, Vector3.UP).rotated(nn, float(g.a)), Vector3(g.x, float(g.y) + h, g.z) + nn * 0.035)
 
 
@@ -631,6 +683,7 @@ func _conteneur_proche() -> Node3D:
 
 ## Au conteneur : quatre bombes pleines, de nouvelles couleurs.
 func _fouiller() -> void:
+	pot = 1.0
 	var depart: int = (int(ceinture[0]) + 1) % COULEURS.size()
 	for i in ceinture.size():
 		ceinture[i] = (depart + i * 2) % COULEURS.size()
@@ -642,7 +695,7 @@ func _fouiller() -> void:
 func _sauver() -> void:
 	var f := FileAccess.open(SAUVEGARDE, FileAccess.WRITE)
 	if f:
-		f.store_string(JSON.stringify({"murs": poses, "ceinture": ceinture, "reserve": reserve}))
+		f.store_string(JSON.stringify({"murs": poses, "ceinture": ceinture, "reserve": reserve, "pot": pot, "expert": expert}))
 
 
 func _charger() -> void:
@@ -654,6 +707,8 @@ func _charger() -> void:
 			ceinture = data.ceinture.map(func(v): return int(v))
 		if data.get("reserve") is Array and data.reserve.size() == 4:
 			reserve = data.reserve.map(func(v): return float(v))
+		pot = float(data.get("pot", 1.0))
+		expert = bool(data.get("expert", false))
 		data = data.get("murs", [])
 	if data is Array:
 		for g in data:
