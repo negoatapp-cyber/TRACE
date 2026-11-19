@@ -57,6 +57,7 @@ func run() -> void:
 	await flips()
 	await grind()
 	await frein()
+	await chute()
 	print("RESULT failures=", failures)
 	quit(failures)
 
@@ -222,3 +223,49 @@ func frein() -> void:
 	check(arriere > 0.35, "frein : le pied traîne derrière le tail (%.2f m)" % arriere)
 	Input.action_release("move_back")
 	await frames(10)
+
+func chute() -> void:
+	placer(57, -45, 0.0)
+	p._set_mode(p.Mode.SKATE)
+	await frames(30)
+	var dir: Vector3 = p.skate.forward()
+	p.skate.speed = 5.0
+	p.global_position.y += 0.4
+	p.velocity = dir * 5.0 + Vector3(0, -1, 0)
+	p.skate.in_air = true
+	p.skate.trick = "Kickflip"
+	p.skate.trick_t = 0.2
+	var b0: Vector3 = p.board.global_position
+	for i in 40:
+		await physics_frame
+		if p.chute_t >= 0.0:
+			break
+	check(p.chute_t >= 0.0 and p.planche_libre and p.mode == p.Mode.WALK, "chute : flip pas fini à la réception → Loums tombe (%s)" % p.skate.last_event)
+	b0 = p.board.global_position
+	var tete_min := 9.0
+	for i in 30:
+		await physics_frame
+		tete_min = minf(tete_min, po.Head.y - p.global_position.y)
+	check(perso.etat == "chute" and tete_min < 0.8, "chute : il est au sol (tête à %.2f m)" % tete_min)
+	await frames(30)
+	var avance: float = (p.board.global_position - b0).dot(dir)
+	check(avance > 0.8, "chute : la planche roule dans le sens du ride (%.2f m)" % avance)
+	var bp: Vector3 = p.board.global_position
+	check(absf(bp.y - 0.085 - q.h(bp.x, bp.z)) < 0.2, "chute : la planche roule au sol")
+	await frames(60)
+	check(p.chute_t < 0.0 and po.Head.y - p.global_position.y > 1.4, "chute : il se relève")
+	var loin: float = Vector2(p.board.global_position.x - p.global_position.x, p.board.global_position.z - p.global_position.z).length()
+	Input.action_press("toggle_board"); await frames(2); Input.action_release("toggle_board")
+	await frames(2)
+	check(loin > 1.6 and p.planche_libre and p.mode == p.Mode.WALK, "chute : trop loin (%.1f m), E ne fait rien" % loin)
+	var bpos: Vector3 = p.board.global_position
+	p.global_position = Vector3(bpos.x, q.h(bpos.x, bpos.z) + 0.1, bpos.z) - dir * 0.9
+	p.velocity = Vector3.ZERO
+	await frames(10)
+	Input.action_press("toggle_board"); await frames(2); Input.action_release("toggle_board")
+	await frames(10)
+	var main: Vector3 = po.RightHand
+	check(not p.planche_libre and p.mode == p.Mode.WALK and p.board.global_position.distance_to(main) < 0.45, "chute : à côté, E ramasse la planche (à la main)")
+	Input.action_press("toggle_board"); await frames(2); Input.action_release("toggle_board")
+	await frames(5)
+	check(p.mode == p.Mode.SKATE, "chute : E encore, il remonte dessus")

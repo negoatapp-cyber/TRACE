@@ -124,6 +124,32 @@ func run() -> void:
 		await frames(10)
 		await figer("06_frein", Vector3(-3.0, 0.9, 1.4))
 		Input.action_release("move_back")
+	if veut("chute"):
+		placer(57, -45, 0.0)
+		p._set_mode(p.Mode.SKATE)
+		await frames(30)
+		var dir: Vector3 = p.skate.forward()
+		p.skate.speed = 5.0
+		p.global_position.y += 0.4
+		p.velocity = dir * 5.0 + Vector3(0, -1, 0)
+		p.skate.in_air = true
+		p.skate.trick = "Kickflip"
+		p.skate.trick_t = 0.2
+		while p.chute_t < 0.0:
+			await physics_frame
+		await frames(12)
+		await figer("07_chute", Vector3(-3.4, 1.0, -0.8), 0.6)
+		await frames(30)
+		await figer("07_chute_sol_planche", Vector3(-4.5, 2.0, 1.5), 0.3)
+		await frames(30)
+		await figer("07_chute_releve", Vector3(-3.4, 1.0, -0.8), 0.7)
+		await frames(40)
+		var bpos: Vector3 = p.board.global_position
+		p.global_position = Vector3(bpos.x, q.h(bpos.x, bpos.z) + 0.1, bpos.z) - dir * 0.9
+		await frames(10)
+		Input.action_press("toggle_board"); await frames(2); Input.action_release("toggle_board")
+		await frames(20)
+		await figer("07_planche_ramassee", Vector3(-3.0, 1.0, -1.2))
 	quit(0)
 
 ## Fige le joueur (plus de physique), laisse la pose se poser, photographie.

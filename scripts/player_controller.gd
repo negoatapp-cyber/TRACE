@@ -23,6 +23,10 @@ var _m_dur := 0.4
 var _m_from := Vector3.ZERO
 var _m_to := Vector3.ZERO
 var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
+const CHUTE_DUREE := 1.6            ## tomber, rester au sol, se relever (s)
+var chute_t := -1.0                 ## secondes depuis la chute, -1 sinon (lu par l'animation)
+var planche_libre := false          ## après une chute, la planche roule seule : il faut aller la chercher
+var _planche_vel := Vector3.ZERO
 
 @onready var camera_pivot: Node3D = $CameraPivot
 @onready var spring_arm: SpringArm3D = $CameraPivot/SpringArm3D
@@ -39,6 +43,7 @@ func _ready() -> void:
 	camera_pivot.top_level = true  # la caméra suit sans hériter des à-coups
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	_set_mode(Mode.WALK)
+	skate.trick_done.connect(_on_trick_done)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -55,8 +60,16 @@ func _unhandled_input(event: InputEvent) -> void:
 func _physics_process(delta: float) -> void:
 	if Input.is_action_just_pressed("reset"):
 		_respawn()
+	if planche_libre:
+		_planche_roule(delta)
+	if chute_t >= 0.0:
+		_chute_step(delta)
+		return
 	if Input.is_action_just_pressed("toggle_board") and is_on_floor() and not skate.grinding:
-		_set_mode(Mode.SKATE if mode == Mode.WALK else Mode.WALK)
+		if planche_libre:
+			_ramasser()
+		else:
+			_set_mode(Mode.SKATE if mode == Mode.WALK else Mode.WALK)
 
 	if _mantling:
 		_mantle_step(delta)
@@ -166,9 +179,79 @@ func _mantle_step(delta: float) -> void:
 		_mantling = false
 
 
+## Figure pas finie à l'atterrissage : Loums tombe, la planche continue sans lui.
+func _on_trick_done(_nom: String, propre: bool) -> void:
+	if not propre and mode == Mode.SKATE:
+		_tomber()
+
+
+func _tomber() -> void:
+	var dir := skate.forward()
+	var v := maxf(absf(skate.vitesse_chute), 2.5)
+	var quoi := skate.last_event
+	_set_mode(Mode.WALK)
+	chute_t = 0.0
+	velocity = dir * v * 0.25
+	planche_libre = true
+	board.visible = true
+	board.top_level = true
+	board.global_transform = Transform3D(Basis(Vector3.UP, skate.heading), global_position + Vector3.UP * 0.085 + dir * 0.4)
+	_planche_vel = dir * v * 0.9
+	skate.last_event = quoi + " · va chercher ta planche (E)"
+
+
+func _chute_step(delta: float) -> void:
+	chute_t += delta
+	velocity.y -= _gravity * delta
+	velocity.x = move_toward(velocity.x, 0.0, 6.0 * delta)
+	velocity.z = move_toward(velocity.z, 0.0, 6.0 * delta)
+	move_and_slide()
+	if chute_t >= CHUTE_DUREE:
+		chute_t = -1.0
+
+
+## La planche seule : elle roule dans la direction du ride, freine, rebondit sur les murs.
+func _planche_roule(delta: float) -> void:
+	var v := _planche_vel.length()
+	if v < 0.01:
+		return
+	var space := get_world_3d().direct_space_state
+	var pos := board.global_position
+	var pas := _planche_vel * delta
+	var q := PhysicsRayQueryParameters3D.create(pos + Vector3.UP * 0.1, pos + Vector3.UP * 0.1 + pas.normalized() * (pas.length() + 0.4))
+	q.exclude = [get_rid()]
+	var mur := space.intersect_ray(q)
+	if not mur.is_empty() and absf(mur.normal.y) < 0.5:
+		var n: Vector3 = mur.normal
+		n.y = 0.0
+		_planche_vel = _planche_vel.bounce(n.normalized()) * 0.4
+		pas = _planche_vel * delta
+	pos += pas
+	var q2 := PhysicsRayQueryParameters3D.create(pos + Vector3.UP * 0.8, pos + Vector3.DOWN * 2.0)
+	q2.exclude = [get_rid()]
+	var sol := space.intersect_ray(q2)
+	if not sol.is_empty():
+		pos.y = sol.position.y + 0.085
+	var dir := _planche_vel.normalized()
+	board.global_transform = Transform3D(Basis(Vector3.UP, atan2(-dir.x, -dir.z)), pos)
+	_planche_vel = _planche_vel.move_toward(Vector3.ZERO, 1.6 * delta)
+
+
+func _ramasser() -> void:
+	var d := Vector2(board.global_position.x - global_position.x, board.global_position.z - global_position.z).length()
+	if d > 1.6:
+		skate.last_event = "Ta planche est là-bas (%d m)" % roundi(d)
+		return
+	planche_libre = false
+	_planche_vel = Vector3.ZERO
+	board.top_level = false
+	board.visible = true
+	skate.last_event = "Planche ramassée"
+
+
 func _set_mode(new_mode: Mode) -> void:
 	mode = new_mode
-	board.visible = mode == Mode.SKATE
+	board.visible = mode == Mode.SKATE or planche_libre
 	if mode == Mode.SKATE:
 		floor_snap_length = 0.35
 		skate.enter(self, visual.rotation.y)
@@ -181,6 +264,10 @@ func _set_mode(new_mode: Mode) -> void:
 
 
 func _respawn() -> void:
+	chute_t = -1.0
+	if planche_libre:
+		planche_libre = false
+		board.top_level = false
 	global_position = spawn_position
 	velocity = Vector3.ZERO
 	skate.grinding = false
@@ -193,6 +280,8 @@ const POP_DUREE := 0.2
 
 ## Rotation de la planche : pop, genoux remontés, flips (purement visuel).
 func _animate_board() -> void:
+	if planche_libre:
+		return
 	board.rotation = Vector3.ZERO
 	board.position = Vector3(0, 0.085, 0)
 	if mode == Mode.SKATE and not skate.in_air:
@@ -222,7 +311,7 @@ func _animate_board() -> void:
 
 func _update_hud() -> void:
 	var kmh := absf(skate.speed) * 3.6 if mode == Mode.SKATE else Vector2(velocity.x, velocity.z).length() * 3.6
-	var state := "À PIED"
+	var state := "CHUTE" if chute_t >= 0.0 else "À PIED"
 	if mode == Mode.SKATE:
 		state = "GRIND" if skate.grinding else ("AIR" if skate.in_air else "SKATE")
 	debug_label.text = "%s   %d km/h\n%s\n\nZQSD bouger · Maj courir / pousser · Espace sauter, grimper / ollie · E planche\nJ kickflip · K shove-it · L grind (maintenir) · R départ · Échap souris\nÀ pied, face à un mur : G graffiti (maintenir) · C couleur · B rendu BD / d'origine" % [

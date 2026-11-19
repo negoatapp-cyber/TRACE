@@ -30,6 +30,7 @@ var _main_droite := -1
 var pose: PoseProcedurale      ## postures calculées (attente debout, planche, ollie, chute…)
 var etat := ""                 ## ce que fait le corps : debout, marche, planche, chute, grimpe, bombe…
 var _t := 0.0
+var _bascule := 0.0            ## chute : tout le corps bascule en avant autour des pieds (rad)
 
 
 func _ready() -> void:
@@ -204,6 +205,8 @@ func _process(delta: float) -> void:
 ## Ce que fait le corps en ce moment.
 func _etat() -> String:
 	var v := Vector2(_joueur.velocity.x, _joueur.velocity.z).length()
+	if _joueur.chute_t >= 0.0:
+		return "chute"
 	if _joueur.mode == Player.Mode.SKATE:
 		return "planche"
 	if not _joueur.is_on_floor() and _clips.has("saut"):
@@ -236,6 +239,8 @@ func _composer(delta: float) -> void:
 			_debout(c)
 		"planche":
 			_sur_planche(c)
+		"chute":
+			_chute(c)
 	# Les poids passent de 0 à 1 en 0,2 s (fondu avec la marche).
 	pose.poids_haut = move_toward(pose.poids_haut, c.haut, delta / 0.2)
 	pose.poids_bas = move_toward(pose.poids_bas, c.bas, delta / 0.2)
@@ -323,9 +328,41 @@ func _sur_planche(c: Dictionary) -> void:
 	c.bd = [yaw * Vector3(-ecart, haut_bras, avant_bras - balance), yaw * Vector3(-ecart * 0.9, bas2, avant_bras + 0.3)]
 
 
+## Chute : il part en avant, se rattrape sur les mains, reste au sol un instant, se relève.
+## (Pas d'animation de chute dans le modèle : tout est calculé.)
+func _chute(c: Dictionary) -> void:
+	var t: float = _joueur.chute_t / Player.CHUTE_DUREE
+	c.haut = 1.0
+	c.bas = 1.0
+	var bascule := 0.0
+	var accroupi := 0.0
+	if t < 0.22:
+		var k := t / 0.22
+		bascule = 1.3 * k * k
+		accroupi = 0.15 * k
+	elif t < 0.6:
+		bascule = 1.3
+		accroupi = 0.15
+	else:
+		var k := (t - 0.6) / 0.4
+		bascule = 1.3 * (1.0 - smoothstep(0.0, 1.0, k))
+		accroupi = 0.15 + 0.25 * sin(PI * k)
+	_bascule = bascule
+	c.bassin = Vector3(0, -_u(accroupi), 0)
+	c.buste = Vector3(0.2 + 0.3 * sin(PI * clampf(t * 1.4, 0.0, 1.0)), 0, 0)
+	c.tete = Vector3(-0.5 * minf(bascule, 1.0), 0, 0)   # il relève la tête
+	# les mains partent devant pour amortir
+	c.bg = [Vector3(0.35, -0.1, 1.0), Vector3(0.2, -0.6, 0.8)]
+	c.bd = [Vector3(-0.35, -0.1, 1.0), Vector3(-0.2, -0.6, 0.8)]
+	c.jg = [Vector3(0.06, -1, 0.25 * minf(accroupi * 5.0, 1.0)), Vector3(0.04, -1, -0.3)]
+	c.jd = [Vector3(-0.06, -1, -0.1), Vector3(-0.04, -1, -0.15)]
+
+
 ## Le squelette vient d'être posé (animations + postures + IK) : la planche suit la main.
 func _apres_squelette() -> void:
-	_porter_planche(_joueur != null and _joueur.mode == Player.Mode.WALK)
+	if _joueur == null or _joueur.planche_libre:
+		return
+	_porter_planche(_joueur.mode == Player.Mode.WALK)
 
 
 ## Sur la planche : de profil, pieds sur les vis, genoux fléchis, penché dans les virages.
@@ -341,6 +378,10 @@ func _posture(delta: float) -> void:
 	var profil := (PI * 0.5 if goofy else -PI * 0.5) * (0.55 if pousse else 1.0)
 	rotation.y = lerp_angle(rotation.y, profil * _poids, minf(1.0, 10.0 * delta))
 	rotation.z = lerpf(rotation.z, -skate.lean * 0.18 * _poids, minf(1.0, 8.0 * delta))
+	# Chute : le corps entier bascule vers l'avant, pivot aux pieds.
+	if _joueur.chute_t < 0.0:
+		_bascule = 0.0
+	rotation.x = lerp_angle(rotation.x, -_bascule, minf(1.0, 20.0 * delta))
 	# Monté sur la planche, un peu accroupi.
 	position.y = lerpf(0.0, 0.03, _poids)
 	if cible_avant:
