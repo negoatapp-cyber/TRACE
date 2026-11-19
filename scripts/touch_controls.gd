@@ -21,17 +21,14 @@ const SENS_CAMERA := 0.0055
 ## dx > 0 : depuis le bord gauche ; dx < 0 : depuis le bord droit.
 ## dy < 0 : depuis le bas (vers le haut) ; dy > 0 : depuis le haut.
 const PLACES := {
-	"A": [150, -150, 82],   # le gros bouton principal
-	"B": [330, -85, 56],
-	"C": [330, -225, 56],
-	"D": [175, -330, 50],
-	"E": [335, -355, 50],
-	"F": [480, -225, 50],
-	"G": [480, -85, 50],
-	"H": [620, -150, 42],
-	"I": [620, -290, 40],
-	"haut": [-60, 55, 34],
-	"haut2": [-150, 55, 34],
+	"A": [180, -180, 118],  # le gros bouton principal
+	"B": [405, -110, 84],
+	"C": [400, -305, 84],
+	"D": [190, -425, 76],
+	"E": [580, -240, 78],
+	"F": [600, -430, 72],
+	"haut": [-80, 80, 58],
+	"haut2": [-215, 80, 58],
 }
 ## [nom, libellé, action, maintenu]. Une action qui commence par « : » est une commande
 ## envoyée au graffiti (choix dans le menu GRAFF).
@@ -68,7 +65,6 @@ const BOUTONS := {
 	"reset": ["DÉPART", "reset", false],
 	"demain": ["DEMAIN", "temps_demain", false],
 }
-var _menu_graff := false
 var _visibles: Array = []    ## [nom, place] des boutons affichés en ce moment
 var _contexte := ""
 
@@ -99,18 +95,12 @@ func _choisir_boutons() -> void:
 	elif j and j.get("mode") == 1:
 		ctx = "skate"
 		liste = [["ollie", "A"], ["pousser", "B"], ["planche", "C"], ["flip", "D"], ["shove", "E"], ["grind", "F"]]
-	elif _menu_graff and g and g.call("peut_graffer"):
-		ctx = "menu_graff"
-		liste = [["tag", "G"], ["flop", "F"], ["piece", "E"], ["perche", "H"], ["rouleau", "A"], ["couleur", "B"], ["fermer", "C"], ["mode", "I"]]
-		if g.call("a_reprendre_ici"):
-			liste.append(["reprendre", "D"])
 	else:
-		_menu_graff = false
 		# face à un rebord qu'il peut attraper, SAUT devient GRIMPER
 		var grimpe: bool = j != null and j.has_method("peut_grimper") and j.call("peut_grimper")
 		liste = [["grimper" if grimpe else "saut", "A"], ["courir", "B"], ["planche", "C"]]
 		if g and g.call("peut_graffer"):
-			liste.append(["graff", "G"])
+			liste.append(["graff", "E"])
 		if g and g.call("_conteneur_proche") != null:
 			liste.append(["fouille", "F"])
 		if cond and cond.has_method("_vehicule_proche") and cond.call("_vehicule_proche") != null:
@@ -271,11 +261,9 @@ func _commande(c: String) -> void:
 	var g: Node = scene.get_node_or_null("Graffiti") if scene else null
 	match c:
 		"menu":
-			_menu_graff = true
-		"fermer":
-			_menu_graff = false
+			if g and g.has_method("ouvrir_choix"):
+				g.call("ouvrir_choix")
 		"tag", "flop", "piece", "perche", "rouleau", "reprendre":
-			_menu_graff = false
 			if g:
 				g.call("commande_tactile", c)
 		"mode":
@@ -319,13 +307,18 @@ func _dessiner() -> void:
 		var c := _centre(b)
 		var r: float = b[6]
 		var on := int(_enfonces.get(b[0], 0)) > 0
-		_canvas.draw_circle(c, r, Color(1, 1, 1, 0.38 if on else 0.14))
-		_canvas.draw_arc(c, r, 0.0, TAU, 40, Color(1, 1, 1, 0.7), 3.0, true)
-		var taille := int(r * 0.34)
+		# un disque sombre sous le texte : lisible sur n'importe quel décor
+		_canvas.draw_circle(c, r, Color(0.98, 0.82, 0.10, 0.85) if on else Color(0.08, 0.06, 0.10, 0.62))
+		_canvas.draw_arc(c, r, 0.0, TAU, 48, Color(1, 1, 1, 0.95), 4.0, true)
 		var t: String = b[1]
+		var taille := int(clampf(r * 0.36, 22.0, 40.0))
 		var w := police.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, taille).x
-		_canvas.draw_string(police, c + Vector2(-w * 0.5, taille * 0.35), t,
-			HORIZONTAL_ALIGNMENT_LEFT, -1, taille, Color(1, 1, 1, 0.95))
+		while w > r * 1.75 and taille > 16:
+			taille -= 2
+			w = police.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, taille).x
+		var pos := c + Vector2(-w * 0.5, taille * 0.36)
+		_canvas.draw_string_outline(police, pos, t, HORIZONTAL_ALIGNMENT_LEFT, -1, taille, 6, Color(0.05, 0.04, 0.07, 0.9))
+		_canvas.draw_string(police, pos, t, HORIZONTAL_ALIGNMENT_LEFT, -1, taille, Color(0.08, 0.06, 0.10) if on else Color(1, 1, 1))
 	if _joy_vu:
 		_canvas.draw_circle(_joy_origine, JOY_RAYON, Color(1, 1, 1, 0.10))
 		_canvas.draw_arc(_joy_origine, JOY_RAYON, 0.0, TAU, 40, Color(1, 1, 1, 0.5), 3.0, true)

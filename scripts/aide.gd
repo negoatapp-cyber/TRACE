@@ -76,16 +76,16 @@ func lignes(c: String) -> Array:
 		"trace":
 			return [["Clic", "peindre (maintenir)"], ["G", "poser le tag"], ["Échap", "laisser tomber"]]
 		"gouttiere":
-			return [["Z  S", "monter, descendre (en haut : passer sur le toit)"], ["Espace", "lâcher"]]
+			return [["↑  ↓", "monter, descendre (en haut : passer sur le toit)"], ["Espace", "lâcher"]]
 		"suspendu":
-			return [["Espace", "se hisser, ou bondir au rebord du dessus"], ["Q  D", "se décaler"], ["S", "lâcher"]]
+			return [["Espace", "se hisser, ou bondir au rebord du dessus"], ["←  →", "se décaler"], ["↓", "lâcher"]]
 		"skate":
-			return [["Maj", "pousser"], ["Espace", "ollie (maintenir, relâcher)"], ["J  K", "kickflip, shove-it"], ["L", "grind"], ["E", "planche dans le dos"]]
+			return [["Maj", "pousser"], ["Espace", "ollie (maintenir, relâcher)"], ["X  C", "kickflip, shove-it"], ["B", "grind"], ["E", "descendre de la planche"]]
 		"conteneur":
 			return [["F", "fouiller : bombes pleines"], ["E", "planche"]]
 		"mur", "mur_expert":
-			return [["G", "tag (bref) · flop, pièce (maintenir)"], ["1 – 5", "tag, flop, pièce, perche, rouleau"], ["C", "changer de bombe"], ["M", "mode " + ("expert → simple" if graffiti and graffiti.get("expert") else "simple → expert")]]
-	return [["ZQSD", "marcher"], ["Maj", "courir"], ["Espace", "sauter ; vers un mur : grimper, s'accrocher"], ["E", "monter sur la planche"], ["N", "au lendemain matin (Maj+N : une semaine)"]]
+			return [["G", "graffiti : choisir quoi peindre"], ["↑ ↓ ← →", "marcher"]]
+	return [["↑ ↓ ← →", "marcher"], ["Maj", "courir"], ["Espace", "sauter ; vers un mur : grimper, s'accrocher"], ["E", "monter sur la planche"], ["N", "au lendemain matin (Maj+N : une semaine)"]]
 
 
 func _remplir(l: Array) -> void:

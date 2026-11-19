@@ -22,6 +22,21 @@ const COULEURS := [Color(0.92, 0.15, 0.45), Color(0.12, 0.12, 0.14), Color(0.95,
 
 @export var blaze := "LOUMS"
 
+## Ce qu'on peut choisir pour chaque graffiti (menu G / bouton GRAFF). Un style de tag = un des tags de Loums ;
+## un style de flop ou de pièce = une palette [fond, contour, surcontour, (2e surcontour)], indices dans COULEURS.
+## (Un nouveau lettrage de flop ou de pièce s'ajoutera ici quand Louma en dessinera un autre.)
+const STYLES := {
+	"tag": [{"nom": "Tag 1", "v": 0}, {"nom": "Tag 2", "v": 1}, {"nom": "Tag 3", "v": 2}, {"nom": "Tag 4", "v": 3}],
+	"flop": [{"nom": "Blanc, contour rouge", "pal": [2, 6, 1]}, {"nom": "Jaune, contour noir", "pal": [4, 1, 7]},
+		{"nom": "Rose, contour noir", "pal": [0, 1, 2]}, {"nom": "Bleu, contour blanc", "pal": [3, 2, 1]}],
+	"piece": [{"nom": "Rose, bleu et jaune", "pal": [0, 1, 3, 4]}, {"nom": "Vert, blanc et rose", "pal": [5, 1, 2, 0]},
+		{"nom": "Rouge, blanc et jaune", "pal": [6, 2, 1, 4]}, {"nom": "Violet, jaune et bleu", "pal": [7, 1, 4, 3]}],
+	"perche": [{"nom": "Tag 1", "v": 0}, {"nom": "Tag 2", "v": 1}, {"nom": "Tag 3", "v": 2}, {"nom": "Tag 4", "v": 3}],
+	"rouleau": [{"nom": "Rose", "pal": [0]}, {"nom": "Bleu", "pal": [3]}, {"nom": "Noir", "pal": [1]}, {"nom": "Jaune", "pal": [4]}],
+}
+const CHOIX := preload("res://scripts/choix_graff.gd")
+var choix: CanvasLayer              ## le menu de choix, ouvert devant un mur
+
 ## Ce que coûte chaque taille, en part d'une bombe pleine.
 const COUT := {"tag": 0.06, "flop": 0.25, "piece": 0.6, "perche": 0.08, "rouleau": 0.0}
 var expert := false                 ## mode expert : on trace soi-même sur le calque ; sinon Loums peint tout seul
@@ -103,27 +118,15 @@ func _physics_process(delta: float) -> void:
 	var peut := not _cible.is_empty() and _joueur.mode == Player.Mode.WALK and _joueur.is_on_floor()
 	if InputMap.has_action("graff_mode") and Input.is_action_just_pressed("graff_mode"):
 		basculer_mode()
+	# G (ou 1 à 5) face à un mur : le menu du graffiti s'ouvre, on choisit quoi peindre et dans quel style.
 	for a in RACCOURCIS:
 		if peut and InputMap.has_action(a) and Input.is_action_just_pressed(a):
-			commande_tactile(RACCOURCIS[a])
+			ouvrir_choix(RACCOURCIS[a])
 			return
-	if peut and Input.is_action_pressed("graff") and reserve[bombe] >= COUT["tag"]:
-		tenue = minf(tenue + delta, PALIERS[1][1] + 0.2)
-		# On ne peut pas choisir plus gros que ce que la bombe contient encore.
-		for p in PALIERS:
-			if reserve[bombe] < COUT[p[0]]:
-				tenue = minf(tenue, p[1] - 0.01)
-				break
-	elif tenue > 0.0:
-		var type := _palier()
-		var a_reprendre := _a_reprendre()
-		if peut and tenue < APPUI_BREF and a_reprendre >= 0:
-			_commencer(poses[a_reprendre].t, a_reprendre)
-		elif peut and tenue < APPUI_BREF:
-			_commencer("tag")
-		elif peut and type != "":
-			_commencer(type)
-		tenue = 0.0
+	if peut and Input.is_action_just_pressed("graff"):
+		ouvrir_choix()
+		return
+	tenue = 0.0
 	_afficher(peut)
 
 
@@ -246,6 +249,18 @@ func _bande(dehors: Image, dedans: Image) -> Image:
 	return r
 
 
+## Les couleurs d'un graffiti : la palette choisie si elle existe, sinon celles tirées de la bombe.
+func teintes(g: Dictionary) -> Dictionary:
+	var c: Color = COULEURS[int(g.c) % COULEURS.size()]
+	var t := {"fond": c, "contour": ENCRE if c.get_luminance() > 0.35 else Color(0.97, 0.96, 0.92),
+		"sur": COULEURS[(int(g.c) + 3) % COULEURS.size()], "sur2": COULEURS[(int(g.c) + 5) % COULEURS.size()]}
+	var pal: Array = g.get("pal", [])
+	var cles := ["fond", "contour", "sur", "sur2"]
+	for i in mini(pal.size(), 4):
+		t[cles[i]] = COULEURS[int(pal[i]) % COULEURS.size()]
+	return t
+
+
 ## Les étapes d'un graffiti, dans l'ordre de la règle (Louma) :
 ##   tag   : un trait ;
 ##   flop  : fond (balayé), contour (tracé) ; le surcontour se fait tout seul ;
@@ -253,9 +268,10 @@ func _bande(dehors: Image, dedans: Image) -> Image:
 ##           surcontour (balayé), signature (petit tag tracé).
 func _etapes_de(g: Dictionary, avec_guides := true) -> Array:
 	var G := avec_guides
-	var c: Color = COULEURS[int(g.c) % COULEURS.size()]
-	var autre: Color = COULEURS[(int(g.c) + 3) % COULEURS.size()]
-	var contour := ENCRE if c.get_luminance() > 0.35 else Color(0.97, 0.96, 0.92)
+	var tt := teintes(g)
+	var c: Color = tt.fond
+	var autre: Color = tt.sur
+	var contour: Color = tt.contour
 	var lumiere := Color(1, 0.99, 0.95)
 	match g.t:
 		"tag":
@@ -302,6 +318,66 @@ func consigne() -> Array:
 
 ## Commence un tag, un flop ou une pièce (ou reprend celui qui est inachevé à l'indice donné).
 ## La caméra se met face au mur, la première couche apparaît en fantôme.
+var _style := {}                    ## le style choisi dans le menu, pour le graffiti qu'on commence
+
+
+## Le choix fait dans le menu : on commence ce graffiti-là, dans ce style-là.
+func choisir(type: String, indice: int) -> void:
+	var liste: Array = STYLES.get(type, [])
+	_style = liste[indice] if indice >= 0 and indice < liste.size() else {}
+	commande_tactile(type)
+	_style = {}
+
+
+func styles_de(t: String) -> Array:
+	return STYLES.get(t, [])
+
+
+func cout_de(t: String) -> float:
+	return float(COUT.get(t, 0.0))
+
+
+func couleurs() -> Array:
+	return COULEURS
+
+
+## Les couches d'un aperçu (menu de choix) : [texture, couleur], du fond vers le dessus.
+func couches_apercu(t: String, style: Dictionary) -> Array:
+	var g := {"t": t, "c": couleur, "v": int(style.get("v", 0))}
+	if style.has("pal"):
+		g["pal"] = style.pal
+		g["c"] = int(style.pal[0])
+	var tt := teintes(g)
+	var noms := []
+	match t:
+		"tag", "perche":
+			noms = [["tag_%d" % (int(g.v) % NB_TAGS + 1), tt.fond]]
+		"rouleau":
+			noms = [["rouleau", tt.fond]]
+		"flop":
+			noms = [["flop_surcontour", tt.sur], ["flop_contour", tt.contour], ["flop_fond", tt.fond], ["flop_lights", Color(1, 0.99, 0.95)]]
+		"piece":
+			noms = [["piece_surcontour2", tt.sur2], ["piece_surcontour", tt.sur], ["piece_contour", tt.contour], ["piece_fond", tt.fond], ["piece_lights", Color(1, 0.99, 0.95)]]
+	var out := []
+	for n in noms:
+		var tex := _texture(n[0])
+		if tex:
+			out.append([tex, n[1]])
+	return out
+
+
+func ouvrir_choix(onglet := "") -> void:
+	if choix == null:
+		choix = CHOIX.new()
+		choix.graffiti = self
+		add_child(choix)
+	choix.ouvrir(onglet)
+
+
+func choix_ouvert() -> bool:
+	return choix != null and choix.visible
+
+
 func _commencer(type: String, reprise := -1, variante := -1) -> void:
 	tenue = 0.0
 	_reprise = reprise
@@ -316,6 +392,12 @@ func _commencer(type: String, reprise := -1, variante := -1) -> void:
 		g["a"] = 0.0
 		if variante >= 0:
 			g["v"] = variante
+		if not _style.is_empty():
+			if _style.has("v"):
+				g["v"] = int(_style.v)
+			if _style.has("pal"):
+				g["pal"] = (_style.pal as Array).duplicate()
+				g["c"] = int(_style.pal[0])
 		if type != "tag" and type != "perche":
 			g["imgs"] = {}
 			g["e"] = 0
@@ -613,13 +695,14 @@ func _calque(tex: Texture2D, largeur: float, teinte: Color, ordre: int) -> Sprit
 ## rendues en aplats avec un trait d'encre. Les couleurs viennent des bombes.
 const ENCRE := Color(0.10, 0.07, 0.12)
 func _dessiner_lettrage(g: Dictionary) -> Node3D:
-	var c: Color = COULEURS[int(g.c) % COULEURS.size()]
-	var autre: Color = COULEURS[(int(g.c) + 3) % COULEURS.size()]
+	var tt := teintes(g)
+	var c: Color = tt.fond
+	var autre: Color = tt.sur
 	var couches := []
 	# Règle du graffiti (Louma) : tag = un trait ; flop = fond, contour, surcontour ;
 	# pièce = fond, contour (sombre ou clair selon le fond), lights, surcontour, puis une signature.
-	var contour := ENCRE if c.get_luminance() > 0.35 else Color(0.97, 0.96, 0.92)
-	var troisieme: Color = COULEURS[(int(g.c) + 5) % COULEURS.size()]
+	var contour: Color = tt.contour
+	var troisieme: Color = tt.sur2
 	var lumiere := Color(1, 0.99, 0.95)
 	if g.has("imgs"):
 		return _dessiner_couches(g)
@@ -658,8 +741,9 @@ func _dessiner_lettrage(g: Dictionary) -> Node3D:
 func _dessiner_couches(g: Dictionary) -> Node3D:
 	var racine := Node3D.new()
 	var fini: bool = g.get("fini", false)
-	var troisieme: Color = COULEURS[(int(g.c) + 5) % COULEURS.size()]
-	var autre: Color = COULEURS[(int(g.c) + 3) % COULEURS.size()]
+	var tt := teintes(g)
+	var troisieme: Color = tt.sur2
+	var autre: Color = tt.sur
 	if fini and (g.t == "flop" or g.t == "piece"):
 		var auto := _texture("flop_surcontour" if g.t == "flop" else "piece_surcontour2")
 		if auto:

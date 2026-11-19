@@ -52,10 +52,18 @@ func run() -> void:
 	p.visual.rotation.y = PI * 0.5
 	await frames(40)
 	check(not g._mur_devant().is_empty(), "un mur est détecté devant le personnage")
-	# Tag tracé à la main : appui bref sur G.
-	Input.action_press("graff"); await frames(8); Input.action_release("graff"); await frames(5)
+	# G ouvre le choix du graffiti (le jeu se met en pause) ; on y voit les styles en vignettes.
+	Input.action_press("graff"); await physics_frame; await physics_frame; Input.action_release("graff"); await frames(3)
+	check(g.choix_ouvert() and paused, "G devant un mur : le choix du graffiti s'ouvre, jeu en pause")
+	check(g.choix._cartes.get_child_count() == 4, "4 styles proposés pour le tag")
+	g.choix._choisir_onglet("flop")
+	check(g.choix._cartes.get_child_count() == 4 and g.choix_ouvert(), "onglet FLOP : 4 palettes au choix")
+	g.choix.fermer()
+	check(not g.choix_ouvert() and not paused, "fermer : le jeu reprend")
+	# Tag tracé à la main (mode expert) : on choisit le tag n°3 dans le menu.
+	g.choisir("tag", 2)
 	var t = g._trace
-	check(t != null, "appui bref : le tag est prêt à être tracé")
+	check(t != null and int(g._trace_g.v) == 2, "le tag choisi (n°3) est prêt à être tracé")
 	if t:
 		t.camera = null
 		t.set_process(false)
@@ -75,7 +83,7 @@ func run() -> void:
 	# Un gribouillis au hasard donne un mauvais tag.
 	p.global_position.z -= 4.0
 	await frames(20)
-	Input.action_press("graff"); await frames(8); Input.action_release("graff"); await frames(5)
+	g.choisir("tag", 0)
 	t = g._trace
 	if t:
 		t.camera = null
@@ -89,8 +97,8 @@ func run() -> void:
 	g.reserve = [1.0, 1.0, 1.0, 1.0]
 	p.global_position.z -= 5.0
 	await frames(20)
-	Input.action_press("graff"); await frames(80); Input.action_release("graff"); await frames(5)
-	check(g._trace != null and g._trace_g.get("t") == "flop", "maintenir ~1 s : un flop commence")
+	g.choisir("flop", 1)
+	check(g._trace != null and g._trace_g.get("t") == "flop" and g._trace_g.get("pal") == [4, 1, 7], "flop choisi dans le menu, palette jaune / noir")
 	if g._trace:
 		for etape in ["fond", "contour"]:
 			t = g._trace
@@ -108,8 +116,8 @@ func run() -> void:
 	p.global_position = Vector3(-24.8, q.h(-24.8, -72) + 0.2, -72); p.velocity = Vector3.ZERO
 	p.visual.rotation.y = PI * 0.5
 	await frames(30)
-	Input.action_press("graff"); await frames(170); Input.action_release("graff"); await frames(5)
-	check(g._trace != null and g._trace_g.get("t") == "piece", "maintenir ~2,6 s : une pièce commence")
+	g.choisir("piece", 0)
+	check(g._trace != null and g._trace_g.get("t") == "piece", "pièce choisie dans le menu")
 	if g._trace:
 		t = g._trace
 		t.camera = null
@@ -124,8 +132,10 @@ func run() -> void:
 		var nb_avant: int = g.poses.size()
 		p.global_position = Vector3(-24.8, q.h(-24.8, -72) + 0.2, -72); p.visual.rotation.y = PI * 0.5
 		await frames(10)
-		Input.action_press("graff"); await frames(6); Input.action_release("graff"); await frames(5)
-		check(g._trace != null and g._etape_i == 1, "appui bref devant la pièce : on reprend au contour")
+		await frames(20)
+		check(g.a_reprendre_ici(), "devant la pièce inachevée : REPRENDRE est proposé")
+		g.commande_tactile("reprendre")
+		check(g._trace != null and g._etape_i == 1, "reprendre : on repart au contour")
 		while g._trace:
 			t = g._trace
 			t.camera = null
@@ -146,8 +156,10 @@ func run() -> void:
 		pc = g.poses[g.poses.size() - 1]
 		check(g.poses.size() == nb_avant and pc.fini and pc.imgs.size() == 5, "pièce reprise et finie : %d couches, note %.2f" % [pc.imgs.size(), float(pc.get("q", 0))])
 	var nb: int = g.poses.size()
-	Input.action_press("graff"); await frames(40); Input.action_release("graff"); await frames(5)
-	check(g.poses.size() == nb and g._trace == null, "un appui moyen (ni bref ni flop) ne pose rien")
+	g.ouvrir_choix("piece")
+	g.choix.fermer()
+	await frames(5)
+	check(g.poses.size() == nb and g._trace == null, "ouvrir puis fermer le choix ne pose rien")
 	# Mode simple : Loums peint tout seul (tag, perche, rouleau, flop).
 	g.expert = false
 	g.reserve = [1.0, 1.0, 1.0, 1.0]

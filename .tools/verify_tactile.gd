@@ -31,15 +31,18 @@ func run() -> void:
 		p.visual.rotation.y = atan2((a[3] as Vector3).x, (a[3] as Vector3).z)
 		await frames(15)
 		check("grimper" in noms(), "face à un rebord : GRIMPER à la place de SAUT %s" % str(noms()))
-	p.global_position = Vector3(-24.2, q.h(-24.2, -100) + 0.2, -100); p.velocity = Vector3.ZERO
+	p.global_position = Vector3(-23.4, q.h(-23.4, -100) + 0.2, -100); p.velocity = Vector3.ZERO
 	p.visual.rotation.y = PI * 0.5
 	await frames(30)
 	check("graff" in noms(), "devant un mur : GRAFF apparaît %s" % str(noms()))
 	t._commande("menu")
 	await frames(3)
-	check("tag" in noms() and "flop" in noms() and "piece" in noms() and not ("saut" in noms()), "GRAFF ouvre ses options %s" % str(noms()))
-	t._commande("tag")
+	check(g.choix_ouvert() and paused and not t.visible, "GRAFF ouvre le choix en grand (boutons du téléphone cachés, jeu en pause)")
+	# toucher une vignette (Godot convertit le toucher en clic ; en test sans écran, on appuie sur le bouton)
+	var carte: Button = g.choix._cartes.get_child(1)
+	carte.pressed.emit()
 	await frames(3)
+	check(not g.choix_ouvert() and not paused and t.visible and g._trace != null and int(g._trace_g.get("v", -1)) == 1, "toucher la 2e vignette : le tag n°2 commence")
 	check(g._trace != null and noms().has("poser") and noms().has("arret"), "TAG : on peint, boutons SUITE et ARRÊT %s" % str(noms()))
 	g._trace.annule.emit()
 	await frames(5)

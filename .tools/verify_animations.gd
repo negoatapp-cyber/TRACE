@@ -308,7 +308,8 @@ func bombe() -> void:
 	var g = level.get_node("Graffiti")
 	check(not g._mur_devant().is_empty(), "bombe : un mur devant")
 	var sol: float = p.global_position.y
-	Input.action_press("graff")
+	g.expert = false
+	g.choisir("flop", 0)   # le choix du menu G : un flop, Loums sort la bombe
 	var ymin := 9.0
 	var ymax := -9.0
 	for i in 28:
@@ -316,7 +317,7 @@ func bombe() -> void:
 		if i > 8:
 			ymin = minf(ymin, po.RightHand.y)
 			ymax = maxf(ymax, po.RightHand.y)
-	check(perso.etat == "bombe" and perso._bombe.visible, "bombe : la bombe est en main dès qu'on tient G")
+	check(perso.etat == "bombe" and perso._bombe.visible, "bombe : la bombe est en main dès que le graffiti commence")
 	check(ymax - ymin > 0.06, "bombe : il secoue la bombe d'abord (%.2f m d'amplitude)" % (ymax - ymin))
 	await frames(40)
 	var cible: Dictionary = g._cible
@@ -334,10 +335,8 @@ func bombe() -> void:
 	for t in traces:
 		etendue = maxf(etendue, (t - traces[0]).length())
 	check(etendue > 0.1, "bombe : petits balayages (%.2f m)" % etendue)
-	Input.action_release("graff")
 	await frames(5)
-	# relâcher G lance le tracé (flop ou pièce) : la bombe reste en main tant qu'on peint
-	check(g._trace != null and perso._bombe.visible, "bombe : G relâché, le tracé commence, bombe en main")
+	check(g._trace != null and perso._bombe.visible, "bombe : la bombe reste en main tant qu'on peint")
 	if g._trace:
 		g._trace.annule.emit()
 	await frames(20)
