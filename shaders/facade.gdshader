@@ -7,6 +7,9 @@ render_mode cull_disabled;
 
 #include "res://shaders/bd_lumiere.gdshaderinc"
 #include "res://shaders/bd_grain.gdshaderinc"
+// La nuit (temps.gd, n°1) : une partie des fenêtres s'allume — lampes chaudes, néons de cuisine,
+// lueur bleue d'une télé — et les cages d'escalier restent éclairées.
+global uniform float nuit;
 
 uniform vec3 mur : source_color = vec3(0.86, 0.84, 0.79);
 uniform vec3 garde_corps : source_color = vec3(0.78, 0.76, 0.72);
@@ -45,7 +48,17 @@ float h21(vec2 p) {
 	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
 }
 
+vec3 fenetre_allumee(vec2 cell) {
+	float a = h21(cell * 3.1 + vec2(7.0, 2.0));
+	if (a > 0.42) return vec3(0.0);
+	float t = h21(cell * 5.3 + vec2(1.0, 9.0));
+	if (t < 0.12) return vec3(0.35, 0.50, 1.0) * 0.8;       // télé
+	if (t < 0.30) return vec3(0.85, 0.95, 0.88);             // néon
+	return vec3(1.0, 0.72, 0.38);                            // lampe
+}
+
 void fragment() {
+	vec3 em = vec3(0.0);
 	vec3 mc = mur;
 	vec3 col = mc;
 	bool encrer = bd_actif > 0.5 && length(VERTEX) < encre_portee;
@@ -88,8 +101,8 @@ void fragment() {
 					}
 				} else {
 					col = mc * 0.42;
-					if (f.x > 0.25 && f.x < 0.75) col = vitre;
-					if (f.x > 0.25 && f.x < 0.75 && h21(cell * 2.3 + 1.0) > 0.8) col = persienne * (0.9 + 0.1 * step(0.5, fract(f.y * 18.0)));
+					if (f.x > 0.25 && f.x < 0.75) { col = vitre; em = fenetre_allumee(cell); }
+					if (f.x > 0.25 && f.x < 0.75 && h21(cell * 2.3 + 1.0) > 0.8) { col = persienne * (0.9 + 0.1 * step(0.5, fract(f.y * 18.0))); em *= 0.15 * step(0.5, fract(f.y * 18.0)); }
 					if (r > 0.82 && f.y > 0.7) col = mix(vec3(0.8, 0.5, 0.2), vec3(0.3, 0.55, 0.4), r2);
 				}
 			} else {
@@ -103,11 +116,12 @@ void fragment() {
 					col = encre;
 				} else if (f.x > 0.22 && f.x < 0.78 && f.y > 0.3 && f.y < 0.8) {
 					col = vitre;
+					em = fenetre_allumee(cell);
 					rough = 0.25;
 					if (r < vie && f.y > 0.3 + 0.5 * r2) col = mix(vec3(0.75, 0.72, 0.65), vec3(0.5, 0.3, 0.25), r2);
 					if (abs(f.x - 0.5) < 0.012) col = mc * 0.9;
 					// Persiennes fermées, au hasard d'un logement à l'autre (lames horizontales).
-					if (h21(cell * 2.3 + 1.0) > 0.78) col = persienne * (0.9 + 0.1 * step(0.5, fract(f.y * 18.0)));
+					if (h21(cell * 2.3 + 1.0) > 0.78) { col = persienne * (0.9 + 0.1 * step(0.5, fract(f.y * 18.0))); em *= 0.15 * step(0.5, fract(f.y * 18.0)); }
 				}
 			}
 		} else {
@@ -127,6 +141,7 @@ void fragment() {
 		col *= bd_texture(monde);
 	}
 	ALBEDO = col;
+	EMISSION = em * nuit * 1.6;
 	ROUGHNESS = rough;
 	if (bd_actif > 0.5) {
 		ROUGHNESS = 1.0;

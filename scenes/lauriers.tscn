@@ -1,4 +1,4 @@
-[gd_scene load_steps=10 format=3]
+[gd_scene load_steps=11 format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/player.tscn" id="1_player"]
 [ext_resource type="Script" path="res://scripts/quartier_reel.gd" id="2_quartier"]
@@ -6,6 +6,7 @@
 [ext_resource type="Script" path="res://scripts/style_bd.gd" id="4_style"]
 [ext_resource type="Script" path="res://scripts/habitants.gd" id="5_habitants"]
 [ext_resource type="Script" path="res://scripts/temps.gd" id="6_temps"]
+[ext_resource type="Script" path="res://scripts/lumieres.gd" id="7_lumieres"]
 
 [sub_resource type="ProceduralSkyMaterial" id="SkyMat"]
 sky_top_color = Color(0.16, 0.38, 0.74, 1)
@@ -76,3 +77,6 @@ script = ExtResource("4_style")
 
 [node name="Habitants" type="Node3D" parent="."]
 script = ExtResource("5_habitants")
+
+[node name="Lumieres" type="Node3D" parent="."]
+script = ExtResource("7_lumieres")
