@@ -89,3 +89,10 @@ traits d'encre sur les silhouettes et les arêtes, cadres de fenêtres encrés, 
 - La palette des sols et des voies est dans `scripts/quartier_reel.gd` (constantes `VOIES`, `ZONES`, `STYLES`).
 
 Captures automatiques : `godot --path . -s .tools/capture.gd -- <dossier> [bd|brut]`.
+
+## Le son
+
+Tous les bruitages (pas, planche, figures, grind, grimpe, graffiti, habitants, scooter, ambiance jour/nuit)
+sont dans `assets/sons/`, fabriqués par `.tools/son_generer.py`, et joués par `scripts/son.gd` (autoload « Son »)
+qui observe le jeu sans toucher au gameplay. Détail, liste des sons et façon de les remplacer par de vrais
+enregistrements : `assets/sons/LISEZMOI.md`. Vérification : `.tools/verify_son.gd`.

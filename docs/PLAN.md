@@ -128,6 +128,7 @@ Le lettrage est dessiné dans le style du jeu (aplats et encre), pas découpé d
 - Loums modélisé et animé : attente, marche, course.
 - Rendu BD (n°2) : aplats en trois tons, encrage, Cyprès à bandes orange, palette « Marseille délavée » ; touche B pour comparer.
 
+- 19.11 soir : la peinture se prend **au snack** du boulevard Lavéran (zone « ravitaillement » de n°2, bouton FOUILLE au téléphone) ; le conteneur du terrain vague reste un bonus. Mission 1 « Premier mur » (n°4, `scripts/mission.gd`) branchée et vérifiée dans le vrai quartier (`.tools/verify_mission.gd`).
 - 19.11 soir : la perche est découpée du modèle (elle quitte le dos quand Loums la prend) ; les trois bandes du pantalon sont effacées de la texture (plus de marque reconnaissable). L'original est gardé en local dans `_sauvegardes/`.
 - J1 en cours : Loums goofy sur la planche (pieds posés par IK sur les vis), poussée au pied en coups successifs, virage penché, planche portée à la main ; bombes à réserve et conteneur ; lettrage LOUMS en tag / flop / pièce.
 

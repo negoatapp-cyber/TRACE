@@ -762,6 +762,11 @@ func _conteneur_proche() -> Node3D:
 		var local := n.to_local(_joueur.global_position)
 		if absf(local.x) < 1.22 + PORTEE_CONTENEUR * 0.5 and absf(local.z) < 3.03 + PORTEE_CONTENEUR * 0.5:
 			return n
+	# le snack (n°2, habillage_laveran) : zone « ravitaillement » de type peinture
+	for z in get_tree().get_nodes_in_group("ravitaillement"):
+		var a := z as Node3D
+		if str(a.get_meta("type", "")) == "peinture" and a.global_position.distance_to(_joueur.global_position) < 4.5:
+			return a
 	return null
 
 
