@@ -210,7 +210,7 @@ func _try_mantle() -> bool:
 	var feet := global_position
 	var hit := {}
 	for hgt in [0.3, 0.9, 1.5]:
-		var q := PhysicsRayQueryParameters3D.create(feet + Vector3.UP * hgt, feet + Vector3.UP * hgt + fwd * 0.9)
+		var q := PhysicsRayQueryParameters3D.create(feet + Vector3.UP * hgt, feet + Vector3.UP * hgt + fwd * 1.2)
 		q.exclude = [get_rid()]
 		hit = space.intersect_ray(q)
 		if not hit.is_empty() and absf(hit.normal.y) < 0.4:

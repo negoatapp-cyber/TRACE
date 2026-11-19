@@ -114,6 +114,26 @@ func _physics_process(delta: float) -> void:
 const NOMS := {"tag": "TAG", "flop": "FLOP", "piece": "PIÈCE"}
 
 
+## Pour les boutons du téléphone.
+func peut_graffer() -> bool:
+	return _trace == null and not _cible.is_empty() and _joueur.mode == Player.Mode.WALK and _joueur.is_on_floor()
+
+
+func a_reprendre_ici() -> bool:
+	return _a_reprendre() >= 0
+
+
+func commande_tactile(c: String) -> void:
+	if not peut_graffer():
+		return
+	if c == "reprendre":
+		var i := _a_reprendre()
+		if i >= 0:
+			_commencer(poses[i].t, i)
+	elif reserve[bombe] >= COUT[c]:
+		_commencer(c)
+
+
 ## Un flop ou une pièce inachevés, sur le mur qu'on regarde : un appui bref les reprend.
 func _a_reprendre() -> int:
 	if _cible.is_empty():

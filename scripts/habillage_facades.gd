@@ -78,7 +78,7 @@ func _batiment(nom: String, hauteur: float, style: String, poly: PackedVector2Ar
 			continue
 		var d := (b - a) / long
 		var n := _normale_dehors(a, b, poly)
-		if style in AVEC_BALCONS and long >= 8.0:
+		if style in AVEC_BALCONS and long >= 15.0:  # pas de balcons sur les pignons
 			_balcons(corps, a, d, n, u, long, moy, niveaux, etage, travee, garde)
 		elif style in AVEC_DALLES:
 			_dalles(a, b, d, n, long, moy, niveaux, etage, mur.darkened(0.08))
@@ -122,9 +122,9 @@ func _balcons(corps: StaticBody3D, a: Vector2, d: Vector2, n: Vector2, u0: float
 			if k < PRISES_BASSES or colonne:
 				var cs := CollisionShape3D.new()
 				var sh := BoxShape3D.new()
-				sh.size = Vector3(larg, GARDE_CORPS + 0.16, BALCON_PROFOND)
+				sh.size = Vector3(larg, GARDE_CORPS + 0.06, BALCON_PROFOND)
 				cs.shape = sh
-				cs.transform = Transform3D(base, o + base.z * (BALCON_PROFOND * 0.5) + Vector3.UP * (GARDE_CORPS * 0.5 - 0.08))
+				cs.transform = Transform3D(base, o + base.z * (BALCON_PROFOND * 0.5) + Vector3.UP * (GARDE_CORPS * 0.5 - 0.13))
 				corps.add_child(cs)
 				n_prises += 1
 

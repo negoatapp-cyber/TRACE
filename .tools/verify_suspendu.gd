@@ -22,7 +22,7 @@ func run() -> void:
 		if not (corps is StaticBody3D):
 			continue
 		for cs in corps.get_children():
-			if cs is CollisionShape3D and cs.shape is BoxShape3D and absf((cs.shape as BoxShape3D).size.y - 1.16) < 0.02:
+			if cs is CollisionShape3D and cs.shape is BoxShape3D and (cs.shape as BoxShape3D).size.y > 0.95 and (cs.shape as BoxShape3D).size.y < 1.3 and absf((cs.shape as BoxShape3D).size.z - 1.1) < 0.05:
 				formes.append(cs)
 	check(formes.size() > 20, "des balcons grimpables (%d)" % formes.size())
 	if formes.is_empty():

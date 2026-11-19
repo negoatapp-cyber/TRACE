@@ -436,6 +436,12 @@ func _facades(batiments: Array) -> void:
 	f.set("habillage", self)
 	add_child(f)
 	f.call("construire", batiments)
+	var g := Node3D.new()
+	g.set_script(load("res://scripts/habillage_toits.gd"))
+	g.name = "AccesToits"
+	g.set("habillage", self)
+	add_child(g)
+	g.call("construire", batiments, Q.epoque)
 
 
 # ───────────────────────── vieux graffitis, affiches, effacements ─────────────────────────
