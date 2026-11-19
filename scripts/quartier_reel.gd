@@ -188,7 +188,7 @@ func _terrain() -> void:
 	m.albedo_color = Color(0.56, 0.54, 0.48)
 	m.roughness = 0.95
 	m.cull_mode = BaseMaterial3D.CULL_DISABLED
-	_corps("Terrain", st.commit(), m, faces)
+	_corps("Terrain", st.commit(), m, faces).add_to_group("terrain")
 
 
 # ───────────────────────── bâtiments ─────────────────────────
@@ -250,7 +250,12 @@ func _batiment(nom: String, hauteur: float, style: String, poly: PackedVector2Ar
 	sm.set_shader_parameter("vie", s[2])
 	sm.set_shader_parameter("etage", s[3])
 	sm.set_shader_parameter("travee", s[4])
-	_corps(nom, st.commit(), sm, faces)
+	var b := _corps(nom, st.commit(), sm, faces)
+	b.add_to_group("batiment")
+	b.set_meta("style", style)
+	b.set_meta("hauteur", hauteur)
+	if style == "lycee":
+		b.add_to_group("lycee")
 
 
 # ───────────────────────── voies, zones, murs ─────────────────────────
@@ -283,7 +288,9 @@ func _voie(type: String, pts: PackedVector2Array) -> void:
 		for p in [g[k], d[k], d[k + 1], g[k], d[k + 1], g[k + 1]]:
 			st.set_normal(Vector3.UP)
 			st.add_vertex(p)
-	_decor("Voie", st.commit(), _mat(v[1]))
+	var n := _decor("Voie", st.commit(), _mat(v[1]))
+	n.add_to_group("sol_voie")
+	n.set_meta("type", type)
 
 
 func _zone(type: String, poly: PackedVector2Array) -> void:
@@ -310,7 +317,9 @@ func _zone(type: String, poly: PackedVector2Array) -> void:
 			z += pas
 		x += pas
 	if not vide:
-		_decor("Zone_" + type, st.commit(), _mat(c))
+		var n := _decor("Zone_" + type, st.commit(), _mat(c))
+		n.add_to_group("sol_zone")
+		n.set_meta("type", type)
 
 
 ## Le skatepark en béton rose au pied de la barre (il existe aujourd'hui, pas en 2008-2013).
@@ -410,6 +419,9 @@ func _voiture(x: float, z: float, angle: float, c: Color, epave := false) -> voi
 	cab.material_override = _mat(Color(0.10, 0.09, 0.08) if epave else Color(0.12, 0.15, 0.2))
 	cab.position = Vector3(0, 0.64, -0.2)
 	v.add_child(cab)
+	v.add_to_group("voiture")
+	if epave:
+		v.add_to_group("epave")
 
 
 ## Remplit un parking de voitures d'époque (formes simples, aucune marque).
@@ -464,7 +476,7 @@ func _friche(poly: PackedVector2Array) -> void:
 			_boite("Rocher", p.x, p.y, Vector3(r * 1.4, r, r * 1.1), Color(0.62, 0.60, 0.56), _rng.randf() * TAU, 0.15)
 		else:
 			var haut := _rng.randf_range(4.5, 8.0)
-			_boite("Tronc", p.x, p.y, Vector3(0.3, haut * 0.6, 0.3), Color(0.30, 0.25, 0.20))
+			_boite("Tronc", p.x, p.y, Vector3(0.3, haut * 0.6, 0.3), Color(0.30, 0.25, 0.20)).add_to_group("arbre")
 			var f := MeshInstance3D.new()
 			var s := SphereMesh.new()
 			s.radius = haut * 0.38
@@ -473,6 +485,7 @@ func _friche(poly: PackedVector2Array) -> void:
 			f.material_override = _mat(Color(0.28, 0.42, 0.22))
 			f.position = Vector3(p.x, y + haut * 0.78, p.y)
 			f.name = "Feuillage"
+			f.add_to_group("arbre")
 			add_child(f, true)
 
 
@@ -496,6 +509,7 @@ func _mur(pts: PackedVector2Array) -> void:
 		mi.material_override = _mat(Color(0.74, 0.72, 0.67))
 		body.add_child(mi)
 		body.name = "Mur"
+		body.add_to_group("mur")
 		body.transform = Transform3D(Basis(x, z.cross(x), z), (a + b) * 0.5 + Vector3(0, 0.5, 0))
 		add_child(body, true)
 
@@ -526,6 +540,7 @@ func _grindable(type: String, haut: float, pts: PackedVector2Array) -> void:
 		r.color = Color(0.35, 0.36, 0.38) if type == "rail" else Color(0.78, 0.76, 0.71)
 		r.transform = Transform3D(Basis(x, z.cross(x), z), a - Vector3(0, 0.05, 0))
 		r.name = "Rail" if type == "rail" else "Muret"
+		r.add_to_group("rail" if type == "rail" else "muret")
 		add_child(r, true)
 
 
@@ -715,7 +730,7 @@ func _tri(st: SurfaceTool, faces: PackedVector3Array, p0: Vector3, p1: Vector3, 
 
 
 ## Volume solide : maillage + collision calquée sur ses triangles.
-func _corps(nom: String, mesh: Mesh, m: Material, faces: PackedVector3Array) -> void:
+func _corps(nom: String, mesh: Mesh, m: Material, faces: PackedVector3Array) -> StaticBody3D:
 	var body := StaticBody3D.new()
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
@@ -729,12 +744,14 @@ func _corps(nom: String, mesh: Mesh, m: Material, faces: PackedVector3Array) -> 
 	body.add_child(cs)
 	body.name = nom
 	add_child(body, true)
+	return body
 
 
-func _decor(nom: String, mesh: Mesh, m: Material) -> void:
+func _decor(nom: String, mesh: Mesh, m: Material) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
 	mi.material_override = m
 	mi.name = nom
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mi, true)
+	return mi
