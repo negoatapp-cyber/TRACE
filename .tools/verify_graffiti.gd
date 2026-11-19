@@ -84,29 +84,66 @@ func run() -> void:
 		t.annule.emit()
 		await frames(3)
 		check(g._trace == null, "Échap annule le tracé")
+	# Flop : maintenir ~1,3 s, puis fond balayé et contour tracé.
+	g.reserve = [1.0, 1.0, 1.0, 1.0]
 	p.global_position.z -= 5.0
 	await frames(20)
-	for essai in [["flop", 120], ["piece", 440]]:
-		Input.action_press("graff")
-		await frames(essai[1])
-		Input.action_release("graff")
-		await frames(5)
-		check(g.compte[essai[0]] == 1, "%s posé" % essai[0])
-		p.global_position.z -= 9.0
-		await frames(20)
-	check(g.poses.size() == 3 and FileAccess.file_exists("user://graffitis.json"), "3 graffitis sauvegardés (%d)" % g.poses.size())
-	# Pièce interrompue puis reprise (bombes pleines, autre endroit du mur).
+	Input.action_press("graff"); await frames(80); Input.action_release("graff"); await frames(5)
+	check(g._trace != null and g._trace_g.get("t") == "flop", "maintenir ~1 s : un flop commence")
+	if g._trace:
+		for etape in ["fond", "contour"]:
+			t = g._trace
+			t.camera = null
+			t.set_process(false)
+			var qf: Dictionary = await tracer(t, true)
+			check(qf.couverture > 0.5, "flop, %s : %d %% couvert" % [etape, int(qf.couverture * 100)])
+			g._etape_finie(t.peinture, t.qualite())
+			await frames(3)
+		var f: Dictionary = g.poses[g.poses.size() - 1]
+		check(g._trace == null and f.t == "flop" and f.fini and f.imgs.size() == 2, "flop posé, deux couches enregistrées")
+		check(g.get_node_or_null("Graff_flop") != null or g.compte.flop >= 1, "flop dessiné au mur")
+	# Pièce : maintenir ~2,8 s ; on fait le fond, on s'arrête, on revient la finir.
 	g.reserve = [1.0, 1.0, 1.0, 1.0]
 	p.global_position = Vector3(-24.8, q.h(-24.8, -72) + 0.2, -72); p.velocity = Vector3.ZERO
 	p.visual.rotation.y = PI * 0.5
 	await frames(30)
-	Input.action_press("graff"); await frames(290); Input.action_release("graff"); await frames(5)
-	var derniere: Dictionary = g.poses[g.poses.size() - 1]
-	check(derniere.t == "piece" and int(derniere.e) < 5, "pièce interrompue à l'étape %d" % int(derniere.get("e", -1)))
-	var avant: int = g.poses.size()
-	Input.action_press("graff"); await frames(200); Input.action_release("graff"); await frames(5)
-	derniere = g.poses[g.poses.size() - 1]
-	check(g.poses.size() == avant and int(derniere.e) == 5, "pièce reprise et finie (étape %d, %d graffitis)" % [int(derniere.get("e", -1)), g.poses.size()])
+	Input.action_press("graff"); await frames(170); Input.action_release("graff"); await frames(5)
+	check(g._trace != null and g._trace_g.get("t") == "piece", "maintenir ~2,6 s : une pièce commence")
+	if g._trace:
+		t = g._trace
+		t.camera = null
+		t.set_process(false)
+		await tracer(t, true)
+		g._etape_finie(t.peinture, t.qualite())
+		await frames(3)
+		g._trace.annule.emit()
+		await frames(3)
+		var pc: Dictionary = g.poses[g.poses.size() - 1]
+		check(g._trace == null and pc.t == "piece" and not pc.fini and int(pc.e) == 1, "pièce interrompue après le fond (étape %d)" % int(pc.get("e", -1)))
+		var nb_avant: int = g.poses.size()
+		p.global_position = Vector3(-24.8, q.h(-24.8, -72) + 0.2, -72); p.visual.rotation.y = PI * 0.5
+		await frames(10)
+		Input.action_press("graff"); await frames(6); Input.action_release("graff"); await frames(5)
+		check(g._trace != null and g._etape_i == 1, "appui bref devant la pièce : on reprend au contour")
+		while g._trace:
+			t = g._trace
+			t.camera = null
+			t.set_process(false)
+			if t.mode == "taper":
+				# les lights : taper chaque cible quand elle s'allume
+				for i in 20:
+					if t.fini_de_taper():
+						break
+					t.curseur = t._cibles[t._cible_i][0]
+					t.appuye = true; t.peindre(1.0 / 60.0)
+					t.appuye = false; t.peindre(1.0 / 60.0)
+				check(t.qualite().note > 0.9, "lights tapées en rythme : %d %%" % int(t.qualite().note * 100))
+			else:
+				await tracer(t, true)
+			g._etape_finie(t.peinture, t.qualite())
+			await frames(3)
+		pc = g.poses[g.poses.size() - 1]
+		check(g.poses.size() == nb_avant and pc.fini and pc.imgs.size() == 5, "pièce reprise et finie : %d couches, note %.2f" % [pc.imgs.size(), float(pc.get("q", 0))])
 	var nb: int = g.poses.size()
 	Input.action_press("graff"); await frames(40); Input.action_release("graff"); await frames(5)
 	check(g.poses.size() == nb and g._trace == null, "un appui moyen (ni bref ni flop) ne pose rien")

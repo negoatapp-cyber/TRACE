@@ -5,16 +5,28 @@ extends Node3D
 ## trop lent ou immobile, la peinture s'accumule et coule. À la fin, on mesure la qualité :
 ## ce qui couvre le tag, ce qui déborde, les coulures.
 ##
-## Image de travail à demi-résolution du tag (450 px pour 0,9 m : 2 mm par pixel).
+## Le même outil sert à chaque couche d'un graffiti, avec trois gestes :
+##   « trait »   : on repasse sur un trait (tag, contour, signature) ;
+##   « remplir » : on balaie une surface au jet large (fond d'un flop ou d'une pièce, surcontour) ;
+##   « taper »   : des points lumineux s'allument l'un après l'autre, on tape dessus en rythme (lights).
+## Image de travail : 450 px pour un tag de 0,9 m (2 mm par pixel), un peu plus pour les grandes pièces.
 
 signal fini(image: Image, qualite: Dictionary)
 signal annule
 
-const LARGEUR_PX := 450
-const RAYON := 7.0            ## rayon du jet, en pixels (1,4 cm)
-const DEBIT := 43.0           ## peinture déposée : ~1 en un passage à 400 px/s (0,8 m/s)
 const SEUIL_COULURE := 3.2    ## au-delà, la peinture coule
-const PAS := 2.5              ## espacement des impacts le long du geste (px)
+const LIGHT_DUREE := 0.85     ## temps pour taper un point lumineux (s)
+
+var mode := "trait"
+var RAYON := 7.0              ## rayon du jet, en pixels (1,4 cm pour un tag)
+var DEBIT := 43.0             ## peinture déposée : ~1 en un passage à 400 px/s
+var PAS := 2.5                ## espacement des impacts le long du geste (px)
+var _cibles: Array = []       ## mode « taper » : [centre, liste de pixels] de chaque point lumineux
+var _cible_i := -1
+var _cible_t := 0.0
+var _touches := 0
+var _anneau: Sprite3D
+var _avait_appuye := false
 
 var largeur_m := 0.9
 var guide: Image              ## le tag de Loums, en masque (alpha)
@@ -25,20 +37,27 @@ var _h := 0
 var _tex: ImageTexture
 var _calque_peinture: Sprite3D
 var _fantome: Sprite3D
-var _precedent := Vector2(-1, -1)
+var _precedent := Vector2(-1000, -1000)   ## -1000 : pas de geste en cours
 var _coulures: Array = []     ## [x, y, longueur, vitesse]
 var _sale := false
 var camera: Camera3D
 var appuye := false           ## bouton de peinture maintenu (souris, ou forcé par les tests)
-var curseur := Vector2(-1, -1)   ## position du jet sur l'image (px), -1 si hors du tag
+var curseur := Vector2(-1000, -1000)   ## position du jet sur l image (px), -1000 si inconnue
 var depose := 0.0             ## peinture dépensée (pour la réserve de la bombe)
 var age := 0.0                ## depuis quand on est devant le tag (Loums secoue la bombe au début)
 
 
-func preparer(tag: Image, teinte: Color, largeur: float) -> void:
+func preparer(tag: Image, teinte: Color, largeur: float, px := 450, rayon := 7.0, geste := "trait", fantome := 0.28) -> void:
 	largeur_m = largeur
+	mode = geste
+	RAYON = rayon
+	DEBIT = 300.0 / rayon
+	PAS = maxf(2.0, rayon * 0.35)
 	guide = tag.duplicate()
-	guide.resize(LARGEUR_PX, int(round(tag.get_height() * float(LARGEUR_PX) / tag.get_width())), Image.INTERPOLATE_BILINEAR)
+	if guide.is_compressed():
+		guide.decompress()
+	guide.convert(Image.FORMAT_RGBA8)
+	guide.resize(px, int(round(tag.get_height() * float(px) / tag.get_width())), Image.INTERPOLATE_BILINEAR)
 	_w = guide.get_width()
 	_h = guide.get_height()
 	_charge = PackedFloat32Array()
@@ -47,8 +66,110 @@ func preparer(tag: Image, teinte: Color, largeur: float) -> void:
 	peinture.fill(Color(1, 1, 1, 0))
 	_tex = ImageTexture.create_from_image(peinture)
 	# Le fantôme : le tag de Loums, pâle, comme une esquisse à la craie.
-	_fantome = _sprite(ImageTexture.create_from_image(guide), Color(1, 1, 1, 0.28), 0)
+	_fantome = _sprite(ImageTexture.create_from_image(guide), Color(1, 1, 1, fantome), 0)
 	_calque_peinture = _sprite(_tex, teinte, 1)
+	if mode == "taper":
+		_fantome.modulate.a = 0.12
+		_preparer_cibles()
+
+
+## Fige la couche une fois finie : plus de fantôme, plus d'entrée, la peinture reste visible
+## sous les couches suivantes.
+func figer(ordre: int) -> void:
+	set_process(false)
+	set_process_input(false)
+	set_process_unhandled_input(false)
+	_fantome.visible = false
+	if _anneau:
+		_anneau.visible = false
+	_calque_peinture.render_priority = ordre
+	_calque_peinture.position.z = ordre * 0.002
+
+
+## Lights : chaque tache lumineuse du lettrage devient une cible (les plus grosses d'abord ;
+## les petites éclaboussures suivent la cible la plus proche).
+func _preparer_cibles() -> void:
+	var vu := PackedByteArray()
+	vu.resize(_w * _h)
+	var taches: Array = []
+	for y in _h:
+		for x in _w:
+			if vu[y * _w + x] == 1 or guide.get_pixel(x, y).a < 0.5:
+				continue
+			var pile := [Vector2i(x, y)]
+			vu[y * _w + x] = 1
+			var pts: Array = []
+			var somme := Vector2.ZERO
+			while not pile.is_empty():
+				var p: Vector2i = pile.pop_back()
+				pts.append(p)
+				somme += Vector2(p)
+				for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+					var q: Vector2i = p + d
+					if q.x >= 0 and q.y >= 0 and q.x < _w and q.y < _h and vu[q.y * _w + q.x] == 0 and guide.get_pixel(q.x, q.y).a >= 0.5:
+						vu[q.y * _w + q.x] = 1
+						pile.append(q)
+			taches.append([somme / pts.size(), pts])
+	taches.sort_custom(func(a, b): return a[1].size() > b[1].size())
+	var grosses := taches.slice(0, mini(8, taches.size()))
+	for t in taches.slice(grosses.size()):
+		var meilleure: Array = grosses[0]
+		for gr in grosses:
+			if (gr[0] as Vector2).distance_to(t[0]) < (meilleure[0] as Vector2).distance_to(t[0]):
+				meilleure = gr
+		meilleure[1].append_array(t[1])
+	# de gauche à droite, comme on lit le blaze
+	grosses.sort_custom(func(a, b): return a[0].x < b[0].x)
+	_cibles = grosses
+	_cible_i = 0 if not _cibles.is_empty() else -1
+	_cible_t = 0.0
+	var anneau := Image.create(64, 64, false, Image.FORMAT_RGBA8)
+	for y in 64:
+		for x in 64:
+			var d := Vector2(x - 31.5, y - 31.5).length()
+			anneau.set_pixel(x, y, Color(1, 1, 0.85, clampf(1.0 - absf(d - 26.0) / 4.0, 0.0, 1.0)))
+	_anneau = Sprite3D.new()
+	_anneau.texture = ImageTexture.create_from_image(anneau)
+	_anneau.shaded = false
+	_anneau.render_priority = 3
+	_anneau.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_anneau)
+
+
+func _taper(delta: float) -> void:
+	if _cible_i < 0 or _cible_i >= _cibles.size():
+		if _anneau:
+			_anneau.visible = false
+		return
+	var c: Array = _cibles[_cible_i]
+	var centre: Vector2 = c[0]
+	_cible_t += delta
+	# l'anneau se resserre : on tape quand il touche la tache
+	var k := clampf(_cible_t / LIGHT_DUREE, 0.0, 1.0)
+	_anneau.visible = true
+	_anneau.position = Vector3((centre.x - _w * 0.5) * largeur_m / _w, -(centre.y - _h * 0.5) * largeur_m / _w, 0.006)
+	_anneau.pixel_size = largeur_m / _w * lerpf(1.6, 0.45, k)
+	var tape := appuye and not _avait_appuye
+	_avait_appuye = appuye
+	if tape and curseur.distance_to(centre) < 45.0:
+		for p in c[1]:
+			peinture.set_pixel(p.x, p.y, Color(1, 1, 1, 1))
+		_sale = true
+		_touches += 1
+		depose += 3.0
+		_suivante()
+	elif _cible_t > LIGHT_DUREE:
+		_suivante()
+
+
+func _suivante() -> void:
+	_cible_i += 1
+	_cible_t = 0.0
+
+
+## Mode « taper » : toutes les cibles sont passées.
+func fini_de_taper() -> bool:
+	return mode == "taper" and _cible_i >= _cibles.size()
 
 
 func _sprite(t: Texture2D, c: Color, ordre: int) -> Sprite3D:
@@ -106,14 +227,14 @@ func _unhandled_input(event: InputEvent) -> void:
 ## Où tombe le curseur de la souris sur le tag (en pixels de l'image).
 func point_souris() -> Vector2:
 	if camera == null:
-		return Vector2(-1, -1)
+		return Vector2(-1000, -1000)
 	var m := _doigt if TouchControls.actif else get_viewport().get_mouse_position()
 	var o := camera.project_ray_origin(m)
 	var d := camera.project_ray_normal(m)
 	var plan := Plane(global_transform.basis.z, global_position)
 	var hit = plan.intersects_ray(o, d)
 	if hit == null:
-		return Vector2(-1, -1)
+		return Vector2(-1000, -1000)
 	return vers_image(hit)
 
 
@@ -137,6 +258,12 @@ func _process(delta: float) -> void:
 
 ## Avance la bombe d'une image : dépose la peinture entre la position précédente et le curseur.
 func peindre(delta: float) -> void:
+	if mode == "taper":
+		_taper(delta)
+		if _sale:
+			_tex.update(peinture)
+			_sale = false
+		return
 	var dedans := curseur.x > -RAYON and curseur.y > -RAYON and curseur.x < _w + RAYON and curseur.y < _h + RAYON
 	if appuye and dedans and delta > 0.0:
 		var depart := _precedent if _precedent.x >= -RAYON else curseur
@@ -150,7 +277,7 @@ func peindre(delta: float) -> void:
 		depose += quantite * n
 		_precedent = curseur
 	else:
-		_precedent = Vector2(-1, -1)
+		_precedent = Vector2(-1000, -1000)
 	_faire_couler(delta)
 	if _sale:
 		_tex.update(peinture)
@@ -200,6 +327,11 @@ func _faire_couler(delta: float) -> void:
 
 ## Ce qu'on retient du tag : couverture du tracé, débordement, coulures, et une note de 0 à 1.
 func qualite() -> Dictionary:
+	if mode == "taper":
+		var n := float(maxi(1, _cibles.size()))
+		var note_l := float(_touches) / n
+		return {"couverture": note_l, "debordement": 0.0, "coulures": 0, "note": note_l,
+			"mot": "propre" if note_l >= 0.7 else ("correct" if note_l >= 0.45 else "raté")}
 	var dans := 0
 	var couvert := 0
 	var peint := 0

@@ -14,7 +14,7 @@ const LARGEUR := {"tag": 0.9, "flop": 2.2, "piece": 3.8}   ## largeur sur le mur
 const NB_TAGS := 4
 const PORTEE := 2.2
 ## Le tag se trace à la main (appui bref sur G). Maintenir G : flop, puis pièce.
-const PALIERS := [["flop", 1.0], ["piece", 3.8]]
+const PALIERS := [["flop", 1.0], ["piece", 2.6]]
 const APPUI_BREF := 0.35
 const COULEURS := [Color(0.92, 0.15, 0.45), Color(0.12, 0.12, 0.14), Color(0.95, 0.95, 0.92), Color(0.15, 0.55, 0.95), Color(0.98, 0.82, 0.10), Color(0.25, 0.75, 0.35), Color(0.80, 0.15, 0.15), Color(0.55, 0.30, 0.80)]
 
@@ -40,15 +40,14 @@ var _cible := {}
 var _jauges: HBoxContainer
 var _textures := {}
 var _noeuds := {}              ## indice dans poses -> nœud dessiné
-var _apercu: Node3D            ## ce que le joueur est en train de peindre
-var _apercu_cle := ""
-var _reprise := -1             ## indice d'une pièce inachevée qu'on reprend
-const PIECE_DEBUT := 3.8       ## au-delà, on commence une pièce
-const PIECE_PAS := 0.8         ## durée de chaque étape de la pièce
+var _reprise := -1             ## indice (dans poses) d'un flop ou d'une pièce inachevés qu'on reprend
+var _chantier: Node3D          ## le graffiti en cours : une couche par étape
+var _etapes: Array = []
+var _etape_i := 0
 ## Chargés par chemin (et non par nom de classe) : le jeu marche même lancé sans passer par l'éditeur.
 const TRACE_TAG := preload("res://scripts/trace_tag.gd")
 const AIDE := preload("res://scripts/aide.gd")
-var _trace: TRACE_TAG          ## tag en cours de tracé à la main
+var _trace: TRACE_TAG          ## la couche en cours de tracé à la main
 var _trace_g := {}
 var _camera_trace: Camera3D
 var _attendre_relache := false
@@ -73,8 +72,11 @@ func _physics_process(delta: float) -> void:
 	_message_t = maxf(0.0, _message_t - delta)
 	if _trace:
 		_suivre_le_geste(delta)
-		_texte.text = "TRACE TON TAG"
+		var e: Dictionary = _etapes[_etape_i]
+		_texte.text = "%s   ·   %d/%d : %s" % [NOMS[_trace_g.t], _etape_i + 1, _etapes.size(), e.titre] if _etapes.size() > 1 else "TRACE TON TAG"
 		_barre.visible = false
+		if _trace.fini_de_taper():
+			_etape_finie(_trace.peinture, _trace.qualite())
 		return
 	if _attendre_relache:
 		if Input.is_action_pressed("graff"):
@@ -89,67 +91,39 @@ func _physics_process(delta: float) -> void:
 		_fouiller()
 	_cible = _mur_devant()
 	var peut := not _cible.is_empty() and _joueur.mode == Player.Mode.WALK and _joueur.is_on_floor()
-	if peut and Input.is_action_just_pressed("graff"):
-		_reprise = _piece_a_reprendre()
-		if _reprise >= 0:
-			tenue = PIECE_DEBUT + int(poses[_reprise].get("e", 0)) * PIECE_PAS + 0.01
 	if peut and Input.is_action_pressed("graff") and reserve[bombe] >= COUT["tag"]:
-		tenue += delta
-		# On ne peut pas dépasser ce que la bombe contient encore.
-		for e in PALIERS:
-			if reserve[bombe] < COUT[e[0]]:
-				tenue = minf(tenue, e[1] - 0.01)
+		tenue = minf(tenue + delta, PALIERS[1][1] + 0.2)
+		# On ne peut pas choisir plus gros que ce que la bombe contient encore.
+		for p in PALIERS:
+			if reserve[bombe] < COUT[p[0]]:
+				tenue = minf(tenue, p[1] - 0.01)
 				break
-		if _etape() >= 5 and tenue >= PIECE_DEBUT + 5 * PIECE_PAS + 0.3:
-			_poser()
 	elif tenue > 0.0:
-		if tenue < APPUI_BREF and peut and _reprise < 0:
-			_commencer_trace()
-		elif peut or not _cible.is_empty():
-			_poser()
+		var type := _palier()
+		var a_reprendre := _a_reprendre()
+		if peut and tenue < APPUI_BREF and a_reprendre >= 0:
+			_commencer(poses[a_reprendre].t, a_reprendre)
+		elif peut and tenue < APPUI_BREF:
+			_commencer("tag")
+		elif peut and type != "":
+			_commencer(type)
 		tenue = 0.0
-		_reprise = -1
-	_maj_apercu()
 	_afficher(peut)
 
 
-## Étape de la pièce : 0 esquisse, 1 fond, 2 contour, 3 lights, 4 surcontour, 5 signature.
-func _etape() -> int:
-	return clampi(int((tenue - PIECE_DEBUT) / PIECE_PAS), 0, 5)
+const NOMS := {"tag": "TAG", "flop": "FLOP", "piece": "PIÈCE"}
 
 
-## Une pièce inachevée, à soi, sur le mur qu'on regarde : on peut la reprendre.
-func _piece_a_reprendre() -> int:
+## Un flop ou une pièce inachevés, sur le mur qu'on regarde : un appui bref les reprend.
+func _a_reprendre() -> int:
 	if _cible.is_empty():
 		return -1
 	var p: Vector3 = _cible.position
 	for i in range(poses.size() - 1, -1, -1):
 		var g: Dictionary = poses[i]
-		if g.t == "piece" and int(g.get("e", 5)) < 5 and Vector2(g.x - p.x, g.z - p.z).length() < 2.5:
+		if g.has("imgs") and not g.get("fini", true) and Vector2(g.x - p.x, g.z - p.z).length() < 2.5:
 			return i
 	return -1
-
-
-## Montre en direct ce qu'on est en train de peindre.
-func _maj_apercu() -> void:
-	var type := _palier()
-	var cle := ""
-	if tenue > 0.0 and type != "" and not _cible.is_empty():
-		cle = "%s_%d_%d" % [type, _etape() if type == "piece" else 0, couleur]
-	if cle == _apercu_cle:
-		return
-	_apercu_cle = cle
-	if _apercu:
-		_apercu.queue_free()
-		_apercu = null
-	if cle == "":
-		return
-	var g := _nouveau(type)
-	g["e"] = _etape()
-	_apercu = _dessiner_lettrage(g)
-	if _apercu:
-		_placer(_apercu, g)
-		add_child(_apercu)
 
 
 func _palier() -> String:
@@ -175,32 +149,122 @@ func _mur_devant() -> Dictionary:
 	return hit
 
 
-## Appui bref sur G : la caméra se met face au mur, le tag de Loums apparaît en fantôme,
-## et le joueur le repasse à la souris.
-func _commencer_trace(variante := -1) -> void:
-	tenue = 0.0
-	var v := randi() % NB_TAGS if variante < 0 else variante
-	var modele := _texture("tag_%d" % (v + 1))
-	if modele == null:
-		return
-	var img := modele.get_image()
+## Le masque d'une couche du lettrage, à la résolution de travail.
+func _masque(nom: String, px: int) -> Image:
+	var t := _texture(nom)
+	if t == null:
+		return null
+	var img := t.get_image()
 	if img.is_compressed():
 		img.decompress()
-	var g := _nouveau("tag")
-	g["v"] = v
-	g["a"] = 0.0
+	img.convert(Image.FORMAT_RGBA8)
+	img.resize(px, int(round(img.get_height() * float(px) / img.get_width())), Image.INTERPOLATE_BILINEAR)
+	return img
+
+
+## La bande entre deux masques (ex. le contour = la forme du contour moins le fond).
+func _bande(dehors: Image, dedans: Image) -> Image:
+	var r := dehors.duplicate()
+	for y in r.get_height():
+		for x in r.get_width():
+			if dedans.get_pixel(x, y).a > 0.5:
+				r.set_pixel(x, y, Color(1, 1, 1, 0))
+	return r
+
+
+## Les étapes d'un graffiti, dans l'ordre de la règle (Louma) :
+##   tag   : un trait ;
+##   flop  : fond (balayé), contour (tracé) ; le surcontour se fait tout seul ;
+##   pièce : esquisse (déjà là), fond (balayé), contour (tracé), lights (tapées en rythme),
+##           surcontour (balayé), signature (petit tag tracé).
+func _etapes_de(g: Dictionary, avec_guides := true) -> Array:
+	var G := avec_guides
+	var c: Color = COULEURS[int(g.c) % COULEURS.size()]
+	var autre: Color = COULEURS[(int(g.c) + 3) % COULEURS.size()]
+	var contour := ENCRE if c.get_luminance() > 0.35 else Color(0.97, 0.96, 0.92)
+	var lumiere := Color(1, 0.99, 0.95)
+	match g.t:
+		"tag":
+			return [{"nom": "tag", "titre": "le trait", "guide": _masque("tag_%d" % (int(g.v) % NB_TAGS + 1), 450) if G else null, "geste": "trait", "rayon": 7.0, "teinte": c, "largeur": LARGEUR.tag}]
+		"flop":
+			var f := _masque("flop_fond", 512) if G else null
+			var ct := _masque("flop_contour", 512) if G else null
+			return [
+				{"nom": "fond", "titre": "le fond", "guide": f, "geste": "remplir", "rayon": 12.0, "teinte": c, "largeur": LARGEUR.flop},
+				{"nom": "contour", "titre": "le contour", "guide": _bande(ct, f) if G else null, "geste": "trait", "rayon": 7.0, "teinte": contour, "largeur": LARGEUR.flop},
+			]
+		"piece":
+			var f := _masque("piece_fond", 600) if G else null
+			var ct := _masque("piece_contour", 600) if G else null
+			var sc := _masque("piece_surcontour", 600) if G else null
+			return [
+				{"nom": "fond", "titre": "le fond", "guide": f, "geste": "remplir", "rayon": 11.0, "teinte": c, "largeur": LARGEUR.piece},
+				{"nom": "contour", "titre": "le contour", "guide": _bande(ct, f) if G else null, "geste": "trait", "rayon": 6.0, "teinte": contour, "largeur": LARGEUR.piece},
+				{"nom": "lights", "titre": "les lights", "guide": _masque("piece_lights", 600) if G else null, "geste": "taper", "rayon": 6.0, "teinte": lumiere, "largeur": LARGEUR.piece},
+				{"nom": "surcontour", "titre": "le surcontour", "guide": _bande(sc, ct) if G else null, "geste": "remplir", "rayon": 10.0, "teinte": autre, "largeur": LARGEUR.piece},
+				{"nom": "signature", "titre": "la signature", "guide": _masque("tag_4", 300) if G else null, "geste": "trait", "rayon": 4.0, "teinte": ENCRE,
+					"largeur": LARGEUR.piece * 0.22, "decalage": Vector2(LARGEUR.piece * 0.42, -0.62)},
+			]
+	return []
+
+
+## Ce que le joueur doit faire à l'étape en cours (pour l'aide à l'écran).
+func consigne() -> Array:
+	if _trace == null:
+		return []
+	var e: Dictionary = _etapes[_etape_i]
+	var geste := {"trait": "repasser sur le trait (maintenir)", "remplir": "balayer pour remplir (maintenir)", "taper": "taper quand l'anneau se referme"}
+	var suite := "étape suivante" if _etape_i < _etapes.size() - 1 else "poser"
+	return [["Clic", geste[e.geste]], ["G", suite], ["Échap", "s'arrêter là (on reviendra)" if _etapes.size() > 1 else "laisser tomber"]]
+
+
+## Commence un tag, un flop ou une pièce (ou reprend celui qui est inachevé à l'indice donné).
+## La caméra se met face au mur, la première couche apparaît en fantôme.
+func _commencer(type: String, reprise := -1, variante := -1) -> void:
+	tenue = 0.0
+	_reprise = reprise
+	var g: Dictionary
+	if reprise >= 0:
+		g = (poses[reprise] as Dictionary).duplicate(true)
+		var vieux: Node = _noeuds.get(reprise)
+		if vieux:
+			vieux.visible = false
+	else:
+		g = _nouveau(type)
+		g["a"] = 0.0
+		if variante >= 0:
+			g["v"] = variante
+		if type != "tag":
+			g["imgs"] = {}
+			g["e"] = 0
+			g["fini"] = false
 	_trace_g = g
-	_trace = TRACE_TAG.new()
-	_trace.name = "TraceTag"
-	add_child(_trace)
-	_trace.preparer(img, COULEURS[couleur], LARGEUR.tag)
-	_placer(_trace, g)
+	_etapes = _etapes_de(g)
+	if _etapes.is_empty() or _etapes[0].guide == null:
+		_trace_g = {}
+		return
+	_etape_i = int(g.get("e", 0))
+	_chantier = Node3D.new()
+	_chantier.name = "Chantier"
+	add_child(_chantier)
+	_placer(_chantier, g)
+	# Une pièce commence avec son esquisse au mur ; les couches déjà faites (reprise) sont là.
+	if type == "piece":
+		var esq := _texture("piece_esquisse")
+		if esq:
+			_chantier.add_child(_calque(esq, LARGEUR.piece, Color(0.2, 0.2, 0.22, 0.55), -1))
+	for i in _etape_i:
+		var deja := _texture(g.imgs.get(_etapes[i].nom, ""))
+		if deja:
+			var sp := _calque(deja, _etapes[i].largeur, _etapes[i].teinte, i)
+			var d: Vector2 = _etapes[i].get("decalage", Vector2.ZERO)
+			sp.position += Vector3(d.x, d.y, 0)
+			_chantier.add_child(sp)
 	var n := Vector3(g.nx, 0, g.nz)
 	var droite := (-n).cross(Vector3.UP).normalized()
-	var centre := _trace.global_position
-	# Loums se met un peu à gauche du tag, face au mur, le bras vers la peinture.
-	var sol := Vector3(g.x, float(g.y), g.z)
-	_joueur.global_position = sol + n * 0.55 - droite * 0.38
+	var centre := _chantier.global_position
+	var l: float = LARGEUR[type]
+	_joueur.global_position = Vector3(g.x, float(g.y), g.z) + n * 0.55 - droite * 0.38
 	_joueur.velocity = Vector3.ZERO
 	_joueur.visual.rotation.y = atan2(n.x, n.z)
 	_joueur.set_physics_process(false)
@@ -208,13 +272,96 @@ func _commencer_trace(variante := -1) -> void:
 	_camera_trace = Camera3D.new()
 	_camera_trace.fov = 55.0
 	add_child(_camera_trace)
-	_camera_trace.global_position = centre + n * 1.45 + droite * 0.55 + Vector3.UP * 0.2
+	_camera_trace.global_position = centre + n * (0.95 * l + 0.6) + droite * (0.15 * l + 0.4) + Vector3.UP * 0.2
 	_camera_trace.look_at(centre, Vector3.UP)
 	_camera_trace.make_current()
-	_trace.camera = _camera_trace
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	_trace.fini.connect(_finir_trace)
-	_trace.annule.connect(_sortir_trace)
+	_lancer_etape()
+
+
+func _lancer_etape() -> void:
+	var e: Dictionary = _etapes[_etape_i]
+	_trace = TRACE_TAG.new()
+	_trace.name = "Couche_" + e.nom
+	_chantier.add_child(_trace)
+	_trace.preparer(e.guide, e.teinte, e.largeur, e.guide.get_width(), e.rayon, e.geste)
+	var d: Vector2 = e.get("decalage", Vector2.ZERO)
+	_trace.position = Vector3(d.x, d.y, 0.003 * (_etape_i + 1))
+	_trace.camera = _camera_trace
+	_trace.fini.connect(_etape_finie)
+	_trace.annule.connect(_interrompre)
+
+
+## Une couche est finie : on l'enregistre, puis on passe à la suivante (ou on pose le graffiti).
+func _etape_finie(img: Image, q: Dictionary) -> void:
+	var e: Dictionary = _etapes[_etape_i]
+	if q.couverture < 0.05 and e.geste != "taper":
+		_interrompre()
+		return
+	reserve[bombe] = maxf(0.0, reserve[bombe] - clampf(_trace.depose * 0.00007, 0.01, 0.3))
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path("user://traces"))
+	var chemin := "user://traces/%s_%s_%d_%d.png" % [_trace_g.t, e.nom, Time.get_unix_time_from_system(), randi() % 100000]
+	img.save_png(ProjectSettings.globalize_path(chemin))
+	var g := _trace_g
+	var notes: Dictionary = g.get("notes", {})
+	notes[e.nom] = snappedf(q.note, 0.01)
+	g["notes"] = notes
+	if g.t == "tag":
+		g["img"] = chemin
+		g["q"] = snappedf(q.note, 0.01)
+	else:
+		g.imgs[e.nom] = chemin
+		g["e"] = _etape_i + 1
+	_message = "%s %s   ·   %s" % [e.titre.capitalize(), q.mot, ("%d coulure%s" % [q.coulures, "s" if q.coulures > 1 else ""]) if q.coulures > 0 else "%d %%" % int(q.couverture * 100)]
+	_message_t = 3.0
+	_trace.figer(_etape_i)
+	_trace = null
+	_etape_i += 1
+	if _etape_i < _etapes.size():
+		_lancer_etape()
+		return
+	if g.t != "tag":
+		g["fini"] = true
+		var somme := 0.0
+		for k in notes:
+			somme += float(notes[k])
+		g["q"] = snappedf(somme / maxf(1.0, notes.size()), 0.01)
+		_message = "%s posé   ·   %s" % [NOMS[g.t], "propre" if g.q >= 0.7 else ("correct" if g.q >= 0.45 else "raté")]
+	_enregistrer(g)
+	_sortir_trace()
+
+
+## Échap (ou une couche laissée vide) : un tag est abandonné ; un flop ou une pièce restent
+## au mur tels quels, et un appui bref sur G devant eux les reprend où on les a laissés.
+func _interrompre() -> void:
+	var g := _trace_g
+	if g.t != "tag" and int(g.get("e", 0)) > 0:
+		_enregistrer(g)
+		_message = "%s en cours : reviens le finir (G bref devant le mur)" % NOMS[g.t]
+		_message_t = 3.5
+	elif _reprise >= 0:
+		var vieux: Node = _noeuds.get(_reprise)
+		if vieux:
+			vieux.visible = true
+	_sortir_trace()
+
+
+func _enregistrer(g: Dictionary) -> void:
+	if _reprise >= 0:
+		var vieux: Node = _noeuds.get(_reprise)
+		if vieux:
+			vieux.queue_free()
+		poses[_reprise] = g
+		_dessiner(g, _reprise)
+	else:
+		poses.append(g)
+		_dessiner(g, poses.size() - 1)
+	_sauver()
+
+
+## Compatibilité : l'ancien nom, encore utilisé par les captures.
+func _commencer_trace(variante := -1) -> void:
+	_commencer("tag", -1, variante)
 
 
 ## Pendant le tracé, Loums se déplace le long du mur pour garder la bombe à portée de main :
@@ -243,28 +390,16 @@ func point_du_jet() -> Vector3:
 
 
 func _finir_trace(img: Image, q: Dictionary) -> void:
-	if q.couverture < 0.05:
-		_sortir_trace()
-		return
-	reserve[bombe] = maxf(0.0, reserve[bombe] - COUT.tag * clampf(_trace.depose / 900.0, 0.3, 3.0))
-	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path("user://traces"))
-	var chemin := "user://traces/tag_%d_%d.png" % [Time.get_unix_time_from_system(), randi() % 100000]
-	img.save_png(ProjectSettings.globalize_path(chemin))
-	var g := _trace_g.duplicate()
-	g["img"] = chemin
-	g["q"] = snappedf(q.note, 0.01)
-	poses.append(g)
-	_dessiner(g, poses.size() - 1)
-	_sauver()
-	_message = "Tag %s   ·   %d %% du trait couvert%s" % [q.mot, int(q.couverture * 100), ("   ·   %d coulure%s" % [q.coulures, "s" if q.coulures > 1 else ""]) if q.coulures > 0 else ""]
-	_message_t = 3.5
-	_sortir_trace()
+	_etape_finie(img, q)
 
 
 func _sortir_trace() -> void:
-	if _trace:
-		_trace.queue_free()
-		_trace = null
+	_trace = null
+	if _chantier:
+		_chantier.queue_free()
+		_chantier = null
+	_etapes = []
+	_reprise = -1
 	if _camera_trace:
 		_camera_trace.clear_current(true)
 		_camera_trace.queue_free()
@@ -285,8 +420,6 @@ func _nouveau(type: String) -> Dictionary:
 	n.y = 0.0
 	n = n.normalized()
 	var p: Vector3 = _cible.position
-	if _reprise >= 0:
-		return poses[_reprise].duplicate()
 	return {
 		"t": type, "c": couleur, "b": blaze,
 		"x": p.x, "y": _joueur.global_position.y, "z": p.z,
@@ -295,36 +428,9 @@ func _nouveau(type: String) -> Dictionary:
 	}
 
 
-func _poser() -> void:
-	var type := _palier()
-	var etape := _etape()
-	tenue = 0.0
-	if type == "" or _cible.is_empty():
-		_reprise = -1
-		return
-	var cout: float = COUT[type]
-	if type == "piece":
-		var avant := int(poses[_reprise].get("e", -1)) if _reprise >= 0 else -1
-		cout = COUT.piece * float(etape - avant) / 6.0
-	reserve[bombe] = maxf(0.0, reserve[bombe] - cout)
-	var g := _nouveau(type)
-	if type == "piece":
-		g["e"] = etape
-	if _reprise >= 0:
-		# On reprend la pièce : on remplace l'ancienne version.
-		var vieux: Node = _noeuds.get(_reprise)
-		if vieux:
-			vieux.queue_free()
-		poses[_reprise] = g
-		_dessiner(g, _reprise)
-	else:
-		poses.append(g)
-		_dessiner(g, poses.size() - 1)
-	_reprise = -1
-	_sauver()
-
-
 func _texture(nom: String) -> Texture2D:
+	if nom == "":
+		return null
 	if not _textures.has(nom):
 		var tex: Texture2D = null
 		if nom.begins_with("user://"):
@@ -373,6 +479,8 @@ func _dessiner_lettrage(g: Dictionary) -> Node3D:
 	var contour := ENCRE if c.get_luminance() > 0.35 else Color(0.97, 0.96, 0.92)
 	var troisieme: Color = COULEURS[(int(g.c) + 5) % COULEURS.size()]
 	var lumiere := Color(1, 0.99, 0.95)
+	if g.has("imgs"):
+		return _dessiner_couches(g)
 	var etape: int = int(g.get("e", 99))   # étapes visibles (aperçu pendant qu'on peint)
 	match g.t:
 		"tag":
@@ -400,6 +508,34 @@ func _dessiner_lettrage(g: Dictionary) -> Node3D:
 			var sp := _calque(sig, LARGEUR.piece * 0.22, ENCRE, k + 1)
 			sp.position += Vector3(LARGEUR.piece * 0.42, -0.62, 0)
 			racine.add_child(sp)
+	return racine
+
+
+## Un flop ou une pièce peints à la main : les couches enregistrées, dans l'ordre de la peinture,
+## avec le surcontour automatique (flop) ou le second surcontour (pièce) une fois fini.
+func _dessiner_couches(g: Dictionary) -> Node3D:
+	var racine := Node3D.new()
+	var fini: bool = g.get("fini", false)
+	var troisieme: Color = COULEURS[(int(g.c) + 5) % COULEURS.size()]
+	var autre: Color = COULEURS[(int(g.c) + 3) % COULEURS.size()]
+	if fini:
+		var auto := _texture("flop_surcontour" if g.t == "flop" else "piece_surcontour2")
+		if auto:
+			racine.add_child(_calque(auto, LARGEUR[g.t], autre if g.t == "flop" else troisieme, 0))
+	elif g.t == "piece":
+		var esq := _texture("piece_esquisse")
+		if esq:
+			racine.add_child(_calque(esq, LARGEUR.piece, Color(0.2, 0.2, 0.22, 0.55), 0))
+	var k := 1
+	for e in _etapes_de(g, false):
+		var t := _texture(g.imgs.get(e.nom, ""))
+		if t == null:
+			continue
+		var sp := _calque(t, e.largeur, e.teinte, k)
+		var d: Vector2 = e.get("decalage", Vector2.ZERO)
+		sp.position += Vector3(d.x, d.y, 0)
+		racine.add_child(sp)
+		k += 1
 	return racine
 
 
@@ -521,7 +657,7 @@ func _interface() -> void:
 	_texte.add_theme_constant_override("outline_size", 4)
 	boite.add_child(_texte)
 	_barre = ProgressBar.new()
-	_barre.max_value = PIECE_DEBUT + 5 * PIECE_PAS
+	_barre.max_value = PALIERS[1][1]
 	_barre.show_percentage = false
 	_barre.custom_minimum_size = Vector2(340, 10)
 	boite.add_child(_barre)
@@ -565,8 +701,8 @@ func _afficher(peut: bool) -> void:
 		var p := _palier()
 		var noms := {"": "…", "tag": "TAG", "flop": "FLOP", "piece": "PIÈCE"}
 		var etapes := ["esquisse", "fond", "contour", "lights", "surcontour", "signature"]
-		if p == "piece":
-			_texte.text = "PIÈCE : %s   (relâche pour t'arrêter, reviens la finir)" % etapes[_etape()]
+		if p != "":
+			_texte.text = "%s   (relâche pour commencer)" % noms[p]
 		else:
 			_texte.text = "%s   (relâche pour poser)" % noms[p] if p != "" else "maintiens pour un flop · relâche vite pour tracer un tag"
 	elif _conteneur_proche():

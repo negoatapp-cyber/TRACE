@@ -335,6 +335,11 @@ func bombe() -> void:
 		etendue = maxf(etendue, (t - traces[0]).length())
 	check(etendue > 0.1, "bombe : petits balayages (%.2f m)" % etendue)
 	Input.action_release("graff")
+	await frames(5)
+	# relâcher G lance le tracé (flop ou pièce) : la bombe reste en main tant qu'on peint
+	check(g._trace != null and perso._bombe.visible, "bombe : G relâché, le tracé commence, bombe en main")
+	if g._trace:
+		g._trace.annule.emit()
 	await frames(20)
-	check(not perso._bombe.visible and perso.etat != "bombe", "bombe : G relâché, la bombe disparaît")
+	check(not perso._bombe.visible and perso.etat != "bombe", "bombe : tracé abandonné, la bombe disparaît")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path("user://graffitis.json"))

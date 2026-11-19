@@ -41,10 +41,13 @@ func _process(delta: float) -> void:
 		_boite.visible = false
 		return
 	var c := contexte()
+	if c == "trace" and graffiti:
+		var lc: Array = graffiti.call("consigne")
+		c = "trace:" + str(lc)
 	if c != _contexte:
 		_contexte = c
 		_depuis = 0.0
-		_remplir(lignes(c))
+		_remplir(graffiti.call("consigne") if c.begins_with("trace:") else lignes(c))
 	_depuis += delta
 	_boite.visible = not _masquee
 	var a := 1.0 if _depuis < PALE_APRES else lerpf(1.0, PALE, clampf((_depuis - PALE_APRES) / 1.0, 0.0, 1.0))
@@ -82,7 +85,8 @@ func _remplir(l: Array) -> void:
 		n.queue_free()
 	for paire in l:
 		_boite.add_child(_ligne(paire[0], paire[1]))
-	_boite.add_child(_ligne("H", "aide", true))
+	var v := str(ProjectSettings.get_setting("application/config/version", ""))
+	_boite.add_child(_ligne("H", "aide" + ("   ·   version " + v if v != "" else ""), true))
 
 
 func _ligne(touche: String, action: String, discret := false) -> Control:
