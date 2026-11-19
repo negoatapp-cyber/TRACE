@@ -30,6 +30,8 @@ var _main_droite := -1
 var pose: PoseProcedurale      ## postures calculées (attente debout, planche, ollie, chute…)
 var etat := ""                 ## ce que fait le corps : debout, marche, planche, chute, grimpe, bombe…
 var _t := 0.0
+var _graffiti: Node              ## lu seulement (tenue de G, mur visé) pour le geste de la bombe
+var _bombe: MeshInstance3D       ## la bombe dans la main droite
 var _bascule := 0.0            ## chute : tout le corps bascule en avant autour des pieds (rad)
 
 
@@ -157,6 +159,25 @@ func _preparer_ik() -> void:
 	squelette.add_child(pose)
 	squelette.move_child(pose, ik.get_index())
 	squelette.skeleton_updated.connect(_apres_squelette)
+	_preparer_bombe()
+
+
+## Une bombe de peinture tenue dans la main droite, visible seulement quand il peint.
+func _preparer_bombe() -> void:
+	_bombe = MeshInstance3D.new()
+	var cyl := CylinderMesh.new()
+	var s := 1.0 / maxf(modele.scale.x, 0.001)
+	cyl.top_radius = 0.033 * s
+	cyl.bottom_radius = 0.033 * s
+	cyl.height = 0.2 * s
+	_bombe.mesh = cyl
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.75, 0.75, 0.78)
+	m.metallic = 0.6
+	_bombe.material_override = m
+	_bombe.visible = false
+	_bombe.top_level = true
+	add_child(_bombe)
 
 
 ## Où est le pied arrière pendant une poussée (repère de la planche).
@@ -207,6 +228,10 @@ func _etat() -> String:
 	var v := Vector2(_joueur.velocity.x, _joueur.velocity.z).length()
 	if _joueur.chute_t >= 0.0:
 		return "chute"
+	if _joueur._mantling:
+		return "grimpe"
+	if _joueur.mode == Player.Mode.WALK and _tenue_bombe() > 0.0:
+		return "bombe"
 	if _joueur.mode == Player.Mode.SKATE:
 		return "planche"
 	if not _joueur.is_on_floor() and _clips.has("saut"):
@@ -241,15 +266,23 @@ func _composer(delta: float) -> void:
 			_sur_planche(c)
 		"chute":
 			_chute(c)
-	# Les poids passent de 0 à 1 en 0,2 s (fondu avec la marche).
-	pose.poids_haut = move_toward(pose.poids_haut, c.haut, delta / 0.2)
-	pose.poids_bas = move_toward(pose.poids_bas, c.bas, delta / 0.2)
-	var k := 1.0 - exp(-14.0 * delta)
+		"grimpe":
+			_grimpe(c)
+		"bombe":
+			_geste_bombe(c)
+	if _bombe:
+		_bombe.visible = etat == "bombe"
+	# Les poids passent de 0 à 1 en 0,2 s (fondu avec la marche) ; plus vite pour grimper.
+	var fondu: float = c.get("fondu", 0.2)
+	pose.poids_haut = move_toward(pose.poids_haut, c.haut, delta / fondu)
+	pose.poids_bas = move_toward(pose.poids_bas, c.bas, delta / fondu)
+	var k := 1.0 - exp(-float(c.get("vif", 14.0)) * delta)
 	pose.bassin = pose.bassin.lerp(c.bassin, k)
 	pose.bassin_rot = pose.bassin_rot.lerp(c.bassin_rot, k)
 	pose.buste = pose.buste.lerp(c.buste, k)
 	pose.tete = pose.tete.lerp(c.tete, k)
 	pose.respiration = lerpf(pose.respiration, c.souffle, k)
+	pose.poing_d = move_toward(pose.poing_d, 1.0 if etat == "bombe" else 0.0, delta / 0.15)
 	for i in 2:
 		pose.bras_g[i] = pose.bras_g[i].lerp(c.bg[i], k)
 		pose.bras_d[i] = pose.bras_d[i].lerp(c.bd[i], k)
@@ -358,8 +391,77 @@ func _chute(c: Dictionary) -> void:
 	c.jd = [Vector3(-0.06, -1, -0.1), Vector3(-0.04, -1, -0.15)]
 
 
+## Grimper : les bras vont chercher le rebord, puis poussent dessus pendant qu'il se hisse.
+func _grimpe(c: Dictionary) -> void:
+	c.haut = 1.0
+	c.bas = 1.0
+	c.fondu = 0.06
+	c.vif = 30.0
+	var t: float = _joueur._m_t
+	var ry: float = _joueur.visual.rotation.y
+	var avant := Vector3(-sin(ry), 0.0, -cos(ry))
+	var rebord: Vector3 = _joueur._m_to - avant * 0.12
+	var inv := squelette.global_transform.affine_inverse()
+	for cote in ["Left", "Right"]:
+		var epaule := pose.origine_repos(cote + "Arm")
+		var ecart := 0.12 if cote == "Left" else -0.12
+		var vers: Vector3 = inv * (rebord) - epaule
+		vers.x += ecart / maxf(modele.scale.x, 0.001)
+		var d := vers.normalized()
+		var bras: Array[Vector3] = [d + Vector3(0, -0.1, 0), d + Vector3(0, 0.05, 0.1)]
+		if cote == "Left":
+			c.bg = bras
+		else:
+			c.bd = bras
+	c.buste = Vector3(0.15 + 0.35 * t, 0, 0)
+	c.tete = Vector3(-0.3 * (1.0 - t), 0, 0)
+	# un genou monte pour prendre appui
+	c.jg = [Vector3(0.05, -0.55, 0.8), Vector3(0.03, -1, 0.05)]
+	c.jd = [Vector3(-0.03, -1, -0.15), Vector3(-0.02, -1, -0.25)]
+
+
+func _tenue_bombe() -> float:
+	if _graffiti == null:
+		_graffiti = _joueur.get_node_or_null("../Graffiti")
+		if _graffiti == null:
+			return 0.0
+	return float(_graffiti.get("tenue"))
+
+
+## La bombe : 0,5 s à la secouer devant soi, puis le bras droit monte vers le mur,
+## la main à la hauteur du graffiti, en petits balayages.
+func _geste_bombe(c: Dictionary) -> void:
+	_debout(c)
+	c.vif = 40.0
+	var t := _tenue_bombe()
+	if t < 0.5:
+		var secoue := sin(t * TAU * 7.0)
+		c.bd = [Vector3(-0.25, -0.55, 0.75), Vector3(-0.1, 0.15 + 0.75 * secoue, 1.0)]
+		c.buste = Vector3(0.05, 0, 0)
+		c.tete = Vector3(0.25, 0, 0)
+		return
+	var cible: Dictionary = _graffiti.get("_cible")
+	if cible.is_empty():
+		return
+	var n: Vector3 = cible.normal
+	n.y = 0.0
+	n = n.normalized()
+	var long_mur := Vector3.UP.cross(n).normalized()
+	var balai := long_mur * sin(t * 4.0) * 0.2 + Vector3.UP * sin(t * 2.7) * 0.12
+	var point: Vector3 = cible.position + balai + n * 0.05
+	var inv := squelette.global_transform.affine_inverse()
+	var d: Vector3 = (inv * point - pose.origine_repos("RightArm")).normalized()
+	c.bd = [d + Vector3(0, -0.2, 0), d]
+	c.buste = Vector3(-0.03, -0.12, 0)
+	c.tete = Vector3(-0.05, -0.1, 0)
+
+
 ## Le squelette vient d'être posé (animations + postures + IK) : la planche suit la main.
 func _apres_squelette() -> void:
+	if _bombe and _bombe.visible:
+		# la bombe suit la main droite (pose finale, après postures et IK)
+		var main := squelette.global_transform * squelette.get_bone_global_pose(_main_droite)
+		_bombe.global_transform = main * Transform3D(Basis(), Vector3(0, 0.07, 0.035) / maxf(modele.scale.x, 0.001))
 	if _joueur == null or _joueur.planche_libre:
 		return
 	_porter_planche(_joueur.mode == Player.Mode.WALK)
@@ -429,11 +531,14 @@ func _porter_planche(a_pied: bool) -> void:
 	if not a_pied:
 		return
 	planche.visible = true
-	var main: Vector3 = (squelette.global_transform * squelette.get_bone_global_pose(_main_droite)).origin
+	# Quand la main droite tient la bombe, la planche passe dans la main gauche.
+	var gauche := etat == "bombe"
+	var os_main := squelette.find_bone("mixamorig_LeftHand") if gauche else _main_droite
+	var main: Vector3 = (squelette.global_transform * squelette.get_bone_global_pose(os_main)).origin
 	# Planche verticale le long de la jambe, grip contre la cuisse, tenue par le nose.
 	var vis := get_parent() as Node3D
 	var b := vis.global_basis
-	var droite := b.x.normalized()
+	var droite := b.x.normalized() * (-1.0 if gauche else 1.0)
 	var haut := b.y.normalized()
 	var avant := -b.z.normalized()
 	var base := Basis(avant, -droite, haut).orthonormalized()   # X planche, Y = normale du plateau, Z = long

@@ -15,6 +15,8 @@ var bassin_rot := Vector3.ZERO ## tangage / lacet / roulis du bassin (rad)
 var buste := Vector3.ZERO      ## x = penché en avant, y = tourné vers sa gauche, z = roulis (rad)
 var tete := Vector3.ZERO       ## x = baisse la tête, y = regarde à gauche (rad)
 var respiration := 0.0         ## amplitude du souffle (rad sur le haut du buste)
+var poing_d := 0.0             ## 1 = doigts de la main droite refermés (tenir la bombe)
+var axe_doigts := Vector3.RIGHT
 ## Bras : [direction du bras, direction de l'avant-bras]
 var bras_g: Array[Vector3] = [Vector3(0.15, -1, 0), Vector3(0.1, -1, 0.3)]
 var bras_d: Array[Vector3] = [Vector3(-0.15, -1, 0), Vector3(-0.1, -1, 0.3)]
@@ -29,6 +31,7 @@ var _rest_o := {}     ## os -> origine globale au repos
 var _rest_l := {}     ## os -> Quaternion local au repos
 var _idx := {}        ## nom court -> index
 var _doigts := []     ## index des doigts (ramenés au repos, mains détendues)
+var _doigts_d := []   ## ceux de la main droite (hors pouce)
 
 const NOMS := ["Hips", "Spine", "Spine1", "Spine2", "Neck", "Head",
 	"LeftShoulder", "LeftArm", "LeftForeArm", "LeftHand",
@@ -50,7 +53,16 @@ func _preparer(sk: Skeleton3D) -> void:
 		var nom := sk.get_bone_name(i)
 		if ("Hand" in nom and nom != "mixamorig_LeftHand" and nom != "mixamorig_RightHand"):
 			_doigts.append(i)
+			if nom.begins_with("mixamorig_RightHand") and not "Thumb" in nom:
+				_doigts_d.append(i)
 	_pret = true
+
+
+## Position de repos d'un os (repère du squelette), p. ex. "RightArm" pour l'épaule droite.
+func origine_repos(nom: String) -> Vector3:
+	if not _pret or not _idx.has(nom):
+		return Vector3.ZERO
+	return _rest_o[_idx[nom]]
 
 
 func _process_modification_with_delta(delta: float) -> void:
@@ -112,7 +124,10 @@ func _process_modification_with_delta(delta: float) -> void:
 		_chaine(sk, g, r_buste, q_ep, [_idx[cote + "Arm"], _idx[cote + "ForeArm"], _idx[cote + "Hand"]], cibles, wh)
 	for i in _doigts:
 		var cur := sk.get_bone_pose_rotation(i)
-		sk.set_bone_pose_rotation(i, cur.slerp(_rest_l[i], wh))
+		var voulu: Quaternion = _rest_l[i]
+		if poing_d > 0.0 and i in _doigts_d:
+			voulu = voulu * Quaternion(axe_doigts, 1.1 * poing_d)
+		sk.set_bone_pose_rotation(i, cur.slerp(voulu, wh))
 
 	# Jambes (debout).
 	if wb > 0.0:

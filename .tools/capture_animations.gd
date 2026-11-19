@@ -150,6 +150,38 @@ func run() -> void:
 		Input.action_press("toggle_board"); await frames(2); Input.action_release("toggle_board")
 		await frames(20)
 		await figer("07_planche_ramassee", Vector3(-3.0, 1.0, -1.2))
+	if veut("grimpe"):
+		placer(47, -282.35, 0.0)
+		p.global_position.y += 0.1
+		await frames(40)
+		Input.action_press("jump"); await frames(1); Input.action_release("jump")
+		while not p._mantling:
+			await physics_frame
+		await frames(5)
+		await figer("08_grimpe_attrape", Vector3(-2.6, 0.9, 1.2), 1.0)
+		await frames(13)
+		await figer("08_grimpe_pousse", Vector3(-2.6, 1.2, 1.2), 1.0)
+		await frames(30)
+	if veut("bombe"):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path("user://graffitis.json"))
+		placer(-24.2, -100, PI * 0.5)
+		p.global_position.y += 0.1
+		await frames(40)
+		Input.action_press("graff")
+		await frames(14)
+		await figer("09_bombe_secoue", Vector3(-1.8, 1.3, 1.6), 1.1)
+		await frames(50)
+		await figer("09_bombe_peint", Vector3(-2.0, 1.3, 2.2), 1.2)
+		p.set_physics_process(false)
+		var sk: Skeleton3D = perso.squelette
+		var mg: Vector3 = (sk.global_transform * sk.get_bone_global_pose(sk.find_bone("mixamorig_RightHand"))).origin
+		cam.global_position = mg + p.visual.global_basis * Vector3(0.9, 0.2, -0.45)
+		cam.look_at(mg)
+		await photo("09_bombe_main")
+		p.set_physics_process(true)
+		Input.action_release("graff")
+		await frames(10)
+		DirAccess.remove_absolute(ProjectSettings.globalize_path("user://graffitis.json"))
 	quit(0)
 
 ## Fige le joueur (plus de physique), laisse la pose se poser, photographie.

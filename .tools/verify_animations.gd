@@ -58,6 +58,8 @@ func run() -> void:
 	await grind()
 	await frein()
 	await chute()
+	await grimpe()
+	await bombe()
 	print("RESULT failures=", failures)
 	quit(failures)
 
@@ -269,3 +271,71 @@ func chute() -> void:
 	Input.action_press("toggle_board"); await frames(2); Input.action_release("toggle_board")
 	await frames(5)
 	check(p.mode == p.Mode.SKATE, "chute : E encore, il remonte dessus")
+
+func grimpe() -> void:
+	# même mur que verify_grimpe : 1,4 m, au nord du quartier
+	placer(47, -282.35, 0.0)
+	p.global_position.y += 0.1
+	await frames(40)
+	Input.action_press("jump"); await frames(1); Input.action_release("jump")
+	var vu := false
+	var meilleur := 9.0
+	var devant := 0.0
+	var rebord := Vector3.ZERO
+	for i in 40:
+		await physics_frame
+		if not p._mantling:
+			if vu: break
+			continue
+		vu = true
+		var avant := Vector3(-sin(p.visual.rotation.y), 0, -cos(p.visual.rotation.y))
+		rebord = p._m_to - avant * 0.12
+		var d: float = minf(po.LeftHand.distance_to(rebord), po.RightHand.distance_to(rebord))
+		if d < meilleur:
+			meilleur = d
+			devant = (po.RightHand - po.Hips).dot(avant)
+	check(vu and p.climbs >= 1, "grimpe : il se hisse")
+	check(meilleur < 0.3, "grimpe : les mains vont au rebord (%.2f m)" % meilleur)
+	check(devant > 0.25, "grimpe : bras tendus vers l'avant (%.2f m devant le bassin)" % devant)
+	await frames(30)
+
+func bombe() -> void:
+	# au pied de la façade est de la barre, face au mur (comme verify_graffiti)
+	DirAccess.remove_absolute(ProjectSettings.globalize_path("user://graffitis.json"))
+	placer(-24.2, -100, PI * 0.5)
+	p.global_position.y += 0.1
+	await frames(40)
+	var g = level.get_node("Graffiti")
+	check(not g._mur_devant().is_empty(), "bombe : un mur devant")
+	var sol: float = p.global_position.y
+	Input.action_press("graff")
+	var ymin := 9.0
+	var ymax := -9.0
+	for i in 28:
+		await physics_frame
+		if i > 8:
+			ymin = minf(ymin, po.RightHand.y)
+			ymax = maxf(ymax, po.RightHand.y)
+	check(perso.etat == "bombe" and perso._bombe.visible, "bombe : la bombe est en main dès qu'on tient G")
+	check(ymax - ymin > 0.06, "bombe : il secoue la bombe d'abord (%.2f m d'amplitude)" % (ymax - ymin))
+	await frames(40)
+	var cible: Dictionary = g._cible
+	var n: Vector3 = cible.normal
+	var main: Vector3 = po.RightHand
+	var epaule: Vector3 = po.RightArm
+	var h_main: float = main.y - sol
+	check(absf(main.y - cible.position.y) < 0.3, "bombe : main à hauteur du graffiti (%.2f m, mur visé à %.2f m)" % [h_main, cible.position.y - sol])
+	check((main - cible.position).dot(n) < (epaule - cible.position).dot(n) - 0.3, "bombe : bras tendu vers le mur")
+	var traces := []
+	for i in 30:
+		await physics_frame
+		traces.append(po.RightHand)
+	var etendue := 0.0
+	for t in traces:
+		etendue = maxf(etendue, (t - traces[0]).length())
+	check(etendue > 0.1, "bombe : petits balayages (%.2f m)" % etendue)
+	check(p.board.global_position.distance_to(po.LeftHand) < 0.45, "bombe : la planche passe dans la main gauche")
+	Input.action_release("graff")
+	await frames(20)
+	check(not perso._bombe.visible and perso.etat != "bombe", "bombe : G relâché, la bombe disparaît")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path("user://graffitis.json"))
