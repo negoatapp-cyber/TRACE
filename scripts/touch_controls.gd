@@ -298,10 +298,9 @@ func _axe(action: String, force: float) -> void:
 func _dessiner() -> void:
 	var police := ThemeDB.fallback_font
 	if _canvas.size.y > _canvas.size.x:
+		# petit rappel discret en haut à gauche, sous « À pied » (Louma, 19.11 : il gênait au milieu)
 		var m := "Tourne ton téléphone en paysage"
-		var w0 := police.get_string_size(m, HORIZONTAL_ALIGNMENT_LEFT, -1, 40).x
-		_canvas.draw_string(police, Vector2((_canvas.size.x - w0) * 0.5, _canvas.size.y * 0.5), m,
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 40, Color(1, 1, 1, 0.9))
+		_canvas.draw_string(police, Vector2(16.0, 88.0), m, HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color(1, 1, 1, 0.75))
 	for v in _visibles:
 		var b := _bouton(v)
 		var c := _centre(b)
