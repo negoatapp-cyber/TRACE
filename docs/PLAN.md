@@ -56,7 +56,7 @@ Chaque geste a une commande, une durée, une animation et un effet. Les animatio
 | Geste | Commande | Ce qu'on voit | Effet |
 |---|---|---|---|
 | Sortir la planche | E, à pied | Il pose la planche au sol devant lui, met le pied avant dessus et monte (0,4 s). | Passe en mode skate. |
-| Rouler | — | Pieds sur les vis des trucks, genoux fléchis, épaules dans l'axe, regard devant. Pied gauche devant (regular) par défaut, goofy en option. | — |
+| Rouler | — | Pieds sur les vis des trucks, genoux fléchis, de profil. **Loums est goofy** : pied droit devant, il regarde vers sa gauche. | — |
 | Pousser | Maj, ou stick vers l'avant | Le pied arrière quitte la planche, frappe le sol et revient (cycle de 0,7 s). | Une impulsion à chaque poussée, et non une accélération continue. |
 | Tourner | Stick gauche-droite | Le corps se penche et la planche bascule de quelques degrés vers l'intérieur. | Virage plus serré à faible vitesse. |
 | Freiner | Stick arrière | Le pied arrière traîne au sol. | Ralentit. |
@@ -67,6 +67,16 @@ Chaque geste a une commande, une durée, une animation et un effet. Les animatio
 | Ranger la planche | E en skate | Il saute, attrape la planche par le tail et la porte à la main. | Passe en mode à pied, planche en main droite. |
 
 ### 4.2 Le graffiti
+
+**Les règles du graffiti (données par Louma).** Les lettres LOUMS doivent toujours se lire, liées entre elles.
+
+| Taille | Couches |
+|---|---|
+| **Tag** | Une signature, un seul trait. Ça va vite. |
+| **Flop** | Fond + contour + surcontour (deux ou trois couches). |
+| **Pièce** | Fond + contour (sombre ou clair selon le fond) + lights (touches lumineuses) + surcontour. Plus grosse, souvent signée d'un petit tag. |
+
+Le lettrage est dessiné dans le style du jeu (aplats et encre), pas découpé dans des photos. Les photos de Louma servent de référence pour le trait et l'esprit. Le tag reprend son vrai trait. L'outil `.tools/lettrage.py` fabrique les couches ; le jeu les teinte avec les couleurs des bombes. Les images restent en local (`assets/graffitis/`).
 
 **L'équipement est visible sur lui :** quatre bombes à la ceinture, la perche dans le dos. Le rouleau et le pot sont dans le sac et ne sortent que pour s'en servir.
 
@@ -80,7 +90,7 @@ Chaque geste a une commande, une durée, une animation et un effet. Les animatio
 
 **Les règles du graffiti :**
 
-- Chaque bombe a une réserve et le pot de peinture aussi. Quand c'est vide, il faut en trouver d'autres. Le circuit pour en récupérer est à définir avec Louma.
+- Chaque bombe a une réserve et le pot de peinture aussi. Quand c'est vide, il faut aller **au conteneur posé derrière la grande barre des Lauriers** (côté terrain vague) et fouiller (F) : quatre bombes pleines, de nouvelles couleurs.
 - Plus on reste longtemps devant un mur, plus on s'expose. Un habitant qui passe le voit, et c'est le lien avec J2.
 - Les graffitis vieillissent : ils se salissent, se font recouvrir par d'autres ou effacer. C'est noté dans la bible visuelle (« un mur se remplit par couches »).
 - C change de couleur, c'est-à-dire de bombe.
@@ -95,10 +105,10 @@ Chaque geste a une commande, une durée, une animation et un effet. Les animatio
 
 ## 5. Les décisions qui attendent Louma
 
-1. **Regular ou goofy** pour Loums.
+1. ~~Regular ou goofy~~ → **goofy** (19.11).
 2. **Comment on trace un graffiti.** Le simple maintien de G (comme aujourd'hui), ou un geste guidé : on suit au stick le tracé du blaze, et la qualité dépend de la précision.
-3. **Le blaze de Loums** et le style de ses lettres. Il faut un modèle de lettrage (dessin ou police) pour remplacer la police standard.
-4. **Comment on récupère des bombes et de la peinture** dans le jeu.
+3. ~~Le blaze~~ → **LOUMS**, d'après ses tags, flops et pièces en photo (19.11). Le lettrage reste à affiner avec lui.
+4. ~~Où récupérer la peinture~~ → **un conteneur derrière la grande barre** (19.11).
 5. **La date visée** pour la démo.
 
 ## 6. Où on en est (19.11.2026)
@@ -114,9 +124,11 @@ Chaque geste a une commande, une durée, une animation et un effet. Les animatio
 - Loums modélisé et animé : attente, marche, course.
 - Rendu BD (n°2) : aplats en trois tons, encrage, Cyprès à bandes orange, palette « Marseille délavée » ; touche B pour comparer.
 
+- J1 en cours : Loums goofy sur la planche (pieds posés par IK sur les vis), poussée au pied en coups successifs, virage penché, planche portée à la main ; bombes à réserve et conteneur ; lettrage LOUMS en tag / flop / pièce.
+
 **Suivant (n°1) :** J1, dans cet ordre :
 
-1. Loums sur la planche : posture, pieds sur les vis, poussée animée, virage penché, planche portée à la main.
+1. ~~Loums sur la planche~~ (fait le 19.11, à valider manette en main).
 2. Ollie chargé, flips, 50-50 et chute avec planche à récupérer.
 3. Graffiti : bombes à la ceinture, perche dans le dos, geste de la bombe, étapes de la pièce, perche, rouleau, réserves.
 4. Animation de la grimpe.

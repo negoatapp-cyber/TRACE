@@ -8,7 +8,8 @@ extends Node
 signal trick_done(trick_name: String, clean: bool)
 
 @export_group("Roulage")
-@export var push_accel := 7.0        ## m/s² quand on pousse
+@export var push_kick := 2.2         ## m/s gagnés par poussée (un coup de pied)
+@export var push_cycle := 0.7        ## durée d'une poussée (s) : lever, frapper, revenir
 @export var max_push_speed := 8.5    ## on ne dépasse pas ça en poussant seul
 @export var max_speed := 14.0        ## plafond (pentes, kickers)
 @export var rolling_friction := 0.5  ## perte de vitesse en roue libre
@@ -34,6 +35,9 @@ var trick := ""          ## figure en cours
 var trick_t := 0.0       ## 0 → 1 pendant un flip
 var grinding := false
 var last_event := ""     ## affiché dans le HUD
+var push_phase := -1.0   ## 0 → 1 pendant une poussée, -1 sinon (lu par l'animation)
+var lean := 0.0          ## inclinaison dans les virages, -1 → 1 (lu par l'animation)
+const PUSH_CONTACT := Vector2(0.25, 0.6)  ## part du cycle où le pied touche le sol
 
 var _rail: Rail
 var _rail_dir := 1.0
@@ -49,6 +53,8 @@ func enter(p: CharacterBody3D, yaw: float) -> void:
 	trick = ""
 	trick_t = 0.0
 	grinding = false
+	push_phase = -1.0
+	lean = 0.0
 
 
 func forward() -> Vector3:
@@ -70,13 +76,23 @@ func step(p: CharacterBody3D, delta: float) -> void:
 		var speed_ratio := absf(speed) / max_speed
 		heading += steer * turn_rate * delta * clampf(1.2 - speed_ratio, 0.45, 1.2)
 
-		if Input.is_action_pressed("push") or input.y < -0.5:
-			if speed < max_push_speed:
-				speed += push_accel * delta
+		# Pousser : des coups de pied, pas une accélération continue.
+		var veut_pousser := Input.is_action_pressed("push") or input.y < -0.5
+		if veut_pousser and push_phase < 0.0 and speed < max_push_speed:
+			push_phase = 0.0
+		if push_phase >= 0.0:
+			var avant := push_phase
+			push_phase += delta / push_cycle
+			var dans := clampf(push_phase, PUSH_CONTACT.x, PUSH_CONTACT.y) - clampf(avant, PUSH_CONTACT.x, PUSH_CONTACT.y)
+			if dans > 0.0 and speed < max_push_speed:
+				speed = minf(speed + push_kick * dans / (PUSH_CONTACT.y - PUSH_CONTACT.x), max_push_speed)
+			if push_phase >= 1.0:
+				push_phase = 0.0 if veut_pousser and speed < max_push_speed else -1.0
 		elif input.y > 0.5:
 			speed = move_toward(speed, 0.0, brake_decel * delta)
 		else:
 			speed = move_toward(speed, 0.0, rolling_friction * delta)
+		lean = lerpf(lean, steer * clampf(absf(speed) / 6.0, 0.0, 1.0), minf(1.0, 8.0 * delta))
 
 		# Pente : la gravité accélère ou freine le long du cap.
 		var n := p.get_floor_normal()
@@ -93,6 +109,8 @@ func step(p: CharacterBody3D, delta: float) -> void:
 			trick = "Ollie"
 			trick_t = 1.0
 	else:
+		if p.velocity.y > 1.0:
+			push_phase = -1.0   # un vrai saut interrompt la poussée ; une bosse non
 		if not in_air:
 			in_air = true  # on a roulé hors d'un rebord
 		heading += steer * turn_rate * air_turn * delta

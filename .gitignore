@@ -11,6 +11,7 @@ export_presets.cfg
 !.tools/verify_graffiti.gd
 !.tools/verify_grimpe.gd
 !.tools/verify_personnage.gd
+!.tools/verify_skate_pose.gd
 !.tools/capture.gd
 
 # Fichiers locaux à ne jamais publier (dépôt public)
@@ -25,3 +26,6 @@ export_presets.cfg
 # Modèles 3D des personnages (licence Meshy privée) : gardés en local, jamais dans le dépôt public
 assets/personnages/*
 !assets/personnages/LISEZMOI.md
+# Le lettrage de Loums (photos de Louma) : local seulement
+assets/graffitis/*
+!assets/graffitis/LISEZMOI.md

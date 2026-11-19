@@ -192,6 +192,9 @@ func _respawn() -> void:
 ## Rotation de la planche pendant les flips (purement visuel).
 func _animate_board() -> void:
 	board.rotation = Vector3.ZERO
+	board.position = Vector3(0, 0.085, 0)
+	if mode == Mode.SKATE and not skate.in_air:
+		board.rotation.z = -skate.lean * 0.12   # la planche bascule dans le virage
 	if mode != Mode.SKATE or skate.trick_t >= 1.0:
 		return
 	match skate.trick:

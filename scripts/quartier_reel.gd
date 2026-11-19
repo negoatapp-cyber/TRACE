@@ -105,6 +105,7 @@ func _ready() -> void:
 			"W": _mur_boulevard(_pts(c[1]))
 			"T": _treillis(float(c[1]), _pts(c[2]))
 			"H": _halle(_pts(c[1])[0], float(c[2]), float(c[3]))
+			"K": _conteneur(_pts(c[1])[0], float(c[2]), c[3])
 	_horizon()
 	_limites()
 	_etiquette()
@@ -684,6 +685,33 @@ func _halle(centre: Vector2, rayon: float, angle_deg: float) -> void:
 	corps.transform = Transform3D(base, Vector3(centre.x, y + rayon * 0.5, centre.y))
 	corps.name = "HalleCollision"
 	add_child(corps, true)
+
+
+## Un conteneur maritime de 20 pieds, rouillé, porte entrouverte. Groupe « conteneur ».
+func _conteneur(p: Vector2, angle_deg: float, nom: String) -> void:
+	var a := deg_to_rad(angle_deg)
+	var c := _boite("Conteneur", p.x, p.y, Vector3(2.44, 2.59, 6.06), Color(0.55, 0.24, 0.16), a, 0.1)
+	c.add_to_group("conteneur")
+	c.add_to_group("mur")
+	c.set_meta("nom", nom)
+	# Nervures sur les flancs, porte côté terrain vague.
+	for i in 9:
+		var z := -2.6 + i * 0.65
+		for sx in [-1.0, 1.0]:
+			var n := MeshInstance3D.new()
+			var bm := BoxMesh.new()
+			bm.size = Vector3(0.06, 2.4, 0.12)
+			n.mesh = bm
+			n.material_override = _mat(Color(0.47, 0.20, 0.13))
+			n.position = Vector3(sx * 1.24, 0, z)
+			c.add_child(n)
+	var porte := MeshInstance3D.new()
+	var pm := BoxMesh.new()
+	pm.size = Vector3(1.15, 2.4, 0.06)
+	porte.mesh = pm
+	porte.material_override = _mat(Color(0.50, 0.22, 0.15))
+	porte.transform = Transform3D(Basis(Vector3.UP, 1.1), Vector3(1.45, 0, 3.4))
+	c.add_child(porte)
 
 
 func _horizon() -> void:

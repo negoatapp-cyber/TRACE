@@ -14,6 +14,7 @@ extends Node
 ##   L      grind (maintenir)    bouton épaule droite
 ##   G      graffiti (maintenir) bouton épaule gauche
 ##   C      changer de couleur   croix haut
+##   F      fouiller (conteneur) croix bas
 ##   R      revenir au départ    Select
 ##   B      rendu BD / d'origine —
 ##   Échap  libérer la souris
@@ -50,6 +51,8 @@ func _ready() -> void:
 	_button("graff", JOY_BUTTON_LEFT_SHOULDER)
 	_key("graff_color", KEY_C)
 	_button("graff_color", JOY_BUTTON_DPAD_UP)
+	_key("fouiller", KEY_F)
+	_button("fouiller", JOY_BUTTON_DPAD_DOWN)
 	_key("reset", KEY_R)
 	_button("reset", JOY_BUTTON_BACK)
 	_key("style_bd", KEY_B)
