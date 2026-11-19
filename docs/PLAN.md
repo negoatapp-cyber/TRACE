@@ -49,9 +49,11 @@ Plusieurs conversations Claude travaillent en parallèle. Pour ne pas se marcher
 4. **Rien de privé dans le dépôt**, qui est public : ni le PDF de vie, ni les planches, ni les photos personnelles (`*.jpg` à la racine), ni le modèle de Loums et ses textures (`assets/personnages/` reste en local, licence Meshy privée), ni de vraies personnes.
 5. Le lieu est réel et les habitants sont fictifs. Aucune marque réelle visible.
 
+**La version téléphone.** Elle est en ligne sur https://trace-opal-nu.vercel.app (projet Vercel « trace »). N°1 la met à jour après chaque étape jouable : export Web depuis le dépôt (préréglage `export_presets.cfg`), dépôt du résultat sur la branche `web` de GitHub, puis déploiement Vercel de cette branche. Pas de déploiement automatique à chaque modification, pour limiter la consommation Vercel.
+
 ## 4. Fiche des gestes (J1)
 
-Chaque geste a une commande, une durée, une animation et un effet. Les animations viennent de la bibliothèque Meshy quand elle a le bon mouvement. Sinon, Loums est posé par le code : rotation des os du squelette et pieds calés par cinématique inverse.
+Chaque geste a une commande, une durée, une animation et un effet. **Décision du 19.11 :** le corps calculé par le code fait « marshmallow ». On passe à de la vraie capture de mouvement, filmée par Louma lui-même et convertie par IA (vidéo → mouvement 3D), avec Sleeping Dogs et Getting Up comme références de fluidité. Le code ne fait plus que caler les pieds et les mains sur le décor. Les animations viennent de la bibliothèque Meshy quand elle a le bon mouvement. Sinon, Loums est posé par le code : rotation des os du squelette et pieds calés par cinématique inverse.
 
 ### 4.1 Le skate
 
