@@ -9,13 +9,17 @@
 # M|points                           (mur ou muret)
 # Z|type|nom|contour                 (zone : terrain, parking, skatepark…)
 # A|x0|z0|pas|colonnes|altitudes…    (grille d'altitudes, ligne par ligne du nord au sud)
-# Un champ final @avant ou @apres réserve la ligne à une époque : avant = 2008-2013, apres = aujourd'hui.
+# Un champ final @avant ou @apres réserve la ligne à une époque : avant = 2014-2015 (avant la démolition de la tour Cyprès B), apres = aujourd'hui.
 
 # ── Les Lauriers : la grande barre courbe, d'un seul tenant (état d'origine, d'après la photo de Louma : 14 niveaux)
 B|Grande barre des Lauriers|40|barre_lauriers|-26.0,-60.8 -25.0,-92.8 -24.0,-125.0 -35.9,-157.1 -48.9,-193.1 -68.5,-246.0 -67.0,-292.8 -79.0,-293.2 -80.5,-244.0 -60.1,-188.9 -47.1,-152.9 -36.0,-123.0 -37.0,-93.2 -38.0,-61.2|@avant
 B|Grande barre des Lauriers|40|barre_renovee|-26.0,-60.8 -25.0,-92.8 -24.0,-125.0 -35.9,-157.1 -48.9,-193.1 -68.5,-246.0 -67.0,-292.8 -79.0,-293.2 -80.5,-244.0 -60.1,-188.9 -47.1,-152.9 -36.0,-123.0 -37.0,-93.2 -38.0,-61.2|@apres
 # ── Les Cyprès, le long de la rue de Marathon
-B|Les Cyprès|45|tour_grise|33,-31 45,-30 49,-94 37,-95 33,-31
+B|Cyprès A|36|tour_grise|33,-31 45,-30 49,-94 37,-95 33,-31
+# ── La tour Cyprès B : 21 étages, 115 logements, construite en 1968, démolie le 21 juillet 2016.
+#    Emplacement APPROXIMATIF : les sources disent « rue d'Entremont », à l'endroit de l'actuelle place des Écoles.
+#    Contour et couleur estimés — à corriger avec Louma.
+B|Tour Cyprès B|62|tour_ocre|-17,-33 7,-33 7,-11 -17,-11 -17,-33|@avant
 # ── Les Genêts, au sud de la rue de Marathon
 B|Les Genêts|36|tour_ocre|12,144 23,145 25,110 19,109 19,111 7,109 6,144 12,144
 # ── Les Peupliers : trois plots
@@ -70,7 +74,7 @@ B|Résidence|12|recent|-38,331 -25,325 -35,303 -55,312 -52,319 -63,324 -62,328 -
 # ── Voies
 R|b|Boulevard Lavéran|150,-321 149,-302 147,-264 145,-206 140,-112 133,52 138,82 147,100 241,212 280,255 286,258
 R|r|Rue de Marathon|140,-112 74,-106 66,-100 61,-87 52,82 48,93 35,101 -34,97 -120,90
-R|r|Rue Alida Rouffe|57,-10 -15,-31 -53,-42 -58,-57 -55,-112 -120,-252 -123,-261 -131,-268 -151,-275
+R|r|Rue Alida Rouffe|57,-10 -15,-31 -53,-42 -58,-57 -55,-112 -120,-252 -123,-261 -131,-268 -151,-275|@apres
 R|r|Rue d'Entremont|-11,-105 56,-103 66,-100
 R|r|Rue Henriette Hoffer|147,-248 46,-270 -9,-263 -17,-257 -20,-245 -10,-163 -15,-31
 R|r|Rue Raymonde Martin|-167,17 -161,-2 -151,-275 -147,-341

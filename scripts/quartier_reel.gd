@@ -39,7 +39,7 @@ const ZONES := {
 	"friche": Color(0.60, 0.55, 0.42),
 }
 
-## "avant" = le quartier de 2008-2013, "apres" = aujourd'hui. Touche T pour passer de l'un à l'autre.
+## "avant" = le quartier de 2014-2015, "apres" = aujourd'hui. Touche T pour passer de l'un à l'autre.
 static var epoque := "avant"
 
 var gx := PackedFloat32Array()
@@ -103,7 +103,7 @@ func _unhandled_input(event: InputEvent) -> void:
 func _etiquette() -> void:
 	var couche := CanvasLayer.new()
 	var texte := Label.new()
-	texte.text = ("Époque : 2008-2013" if epoque == "avant" else "Époque : aujourd'hui") + "   ·   T pour changer"
+	texte.text = ("Époque : 2014-2015" if epoque == "avant" else "Époque : aujourd'hui") + "   ·   T pour changer"
 	texte.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	texte.position = Vector2(16, -44)
 	texte.add_theme_font_size_override("font_size", 18)
