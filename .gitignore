@@ -12,6 +12,7 @@ export_presets.cfg
 !.tools/verify_grimpe.gd
 !.tools/verify_personnage.gd
 !.tools/verify_skate_pose.gd
+!.tools/lettrage.py
 !.tools/capture.gd
 
 # Fichiers locaux à ne jamais publier (dépôt public)
