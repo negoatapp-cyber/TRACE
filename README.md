@@ -1,6 +1,6 @@
 # TRACE
 
-Jeu en monde ouvert sur la construction de l'identité. Moteur : **Godot 4.7** (GDScript, physique Jolt).
+Jeux dans Marseille hommage à la rue et aux quartiers detruits à travers le graff le skate et la délinquance la carte necessite une attention particulière. Moteur : **Godot 4.7** (GDScript, physique Jolt).
 
 ## Phase 1 : « Le geste »
 
