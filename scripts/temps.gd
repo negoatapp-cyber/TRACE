@@ -1,9 +1,9 @@
 extends Node
 ## TRACE — le temps qui passe (J3).
 ## Une horloge de jeu : 1 minute de jeu par seconde réelle (une heure en une minute), qui commence
-## le lundi 15 septembre 2014 à 16 h 30, à la sortie du lycée. Le soleil tourne, la lumière change,
+## le lundi 16 septembre 2013 à 16 h 30, à la sortie du lycée. Le soleil tourne, la lumière change,
 ## la nuit tombe ; les jours et les semaines passent (N : au lendemain matin, Maj+N : une semaine).
-## Les graffitis vieillissent ; la tour Cyprès B est démolie le 21 juillet 2016.
+## Les graffitis vieillissent en jours de jeu. Le calendrier du décor reste en 2013.
 ##
 ## Pour n°2 (lumière, ciel, fenêtres allumées…) : la variable globale de shader « nuit » (0 le jour,
 ## 1 en pleine nuit) et le signal heure_changee.
@@ -13,8 +13,8 @@ signal jour_change(jour: int)
 
 const SAUVEGARDE := "user://temps.json"
 const MINUTES_PAR_SECONDE := 1.0
-const DEBUT := {"year": 2014, "month": 9, "day": 15, "hour": 16, "minute": 30}
-const DEMOLITION_CYPRES := {"year": 2016, "month": 7, "day": 21}
+const DEBUT := {"year": 2013, "month": 9, "day": 16, "hour": 16, "minute": 30}
+const ANNEE_EN_SECONDES := 365 * 86400
 const JOURS := ["Lun.", "Mar.", "Mer.", "Jeu.", "Ven.", "Sam.", "Dim."]
 const MOIS := ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."]
 
@@ -28,6 +28,7 @@ var _ciel: ProceduralSkyMaterial
 var _base := {}
 var _texte: Label
 var _debut_unix := 0
+var _janvier := Time.get_unix_time_from_datetime_dict({"year": 2013, "month": 1, "day": 1})
 
 
 func _ready() -> void:
@@ -93,13 +94,12 @@ func _process(delta: float) -> void:
 		_jour = j
 		jour_change.emit(j)
 		_sauver()
-		_verifier_demolition()
 	heure_changee.emit(minutes)
 	_eclairer()
-	_texte.text = "Diderot   ·   2012–2013" if visite_archive else date_texte()
+	_texte.text = "Diderot   ·   2013" if visite_archive else date_texte()
 
 
-## Le nombre de jours depuis le 15 septembre 2014.
+## Le nombre de jours depuis le 16 septembre 2013.
 func jour() -> int:
 	return int(floor((minutes + DEBUT.hour * 60.0 + DEBUT.minute) / 1440.0))
 
@@ -110,7 +110,8 @@ func heure() -> float:
 
 
 func date() -> Dictionary:
-	return Time.get_datetime_dict_from_unix_time(_debut_unix + int(minutes * 60.0))
+	var depuis_janvier := _debut_unix - _janvier + int(minutes * 60.0)
+	return Time.get_datetime_dict_from_unix_time(_janvier + posmod(depuis_janvier, ANNEE_EN_SECONDES))
 
 
 func date_texte() -> String:
@@ -170,17 +171,6 @@ func _eclairer() -> void:
 		RenderingServer.global_shader_parameter_set("nuit", n)
 
 
-## La tour Cyprès B tombe le 21 juillet 2016 : si on a passé cette date, le quartier est reconstruit sans elle.
-func _verifier_demolition() -> void:
-	var Q = load("res://scripts/quartier_reel.gd")
-	var dem := Time.get_unix_time_from_datetime_dict(DEMOLITION_CYPRES)
-	var tombee: bool = _debut_unix + int(minutes * 60.0) >= dem
-	if tombee and not Q.demolies.has("Tour Cyprès B"):
-		Q.demolies.append("Tour Cyprès B")
-		_sauver()
-		get_tree().reload_current_scene.call_deferred()
-
-
 func _interface() -> void:
 	var couche := CanvasLayer.new()
 	couche.layer = 4
@@ -209,6 +199,3 @@ func _charger() -> void:
 	var d = JSON.parse_string(FileAccess.get_file_as_string(SAUVEGARDE))
 	if d is Dictionary:
 		minutes = float(d.get("minutes", 0.0))
-	var Q = load("res://scripts/quartier_reel.gd")
-	if _debut_unix + int(minutes * 60.0) >= Time.get_unix_time_from_datetime_dict(DEMOLITION_CYPRES) and not Q.demolies.has("Tour Cyprès B"):
-		Q.demolies.append("Tour Cyprès B")

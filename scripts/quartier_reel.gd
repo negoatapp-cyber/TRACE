@@ -55,10 +55,8 @@ const ZONES := {
 	"friche": Color(0.78, 0.68, 0.48),
 }
 
-## "avant" = le quartier de 2014-2015, "apres" = aujourd'hui. Touche T pour passer de l'un à l'autre.
-static var epoque := "avant"
-## Bâtiments déjà démolis à la date du jeu (temps.gd) : la tour Cyprès B après le 21 juillet 2016.
-static var demolies: Array = []
+## Variante historique du relevé utilisée pour les Lauriers en 2013.
+const EPOQUE := "avant"
 
 var gx := PackedFloat32Array()
 var gz := PackedFloat32Array()
@@ -80,11 +78,9 @@ func _ready() -> void:
 			continue
 		var c := l.split("|")
 		if c[c.size() - 1].begins_with("@"):
-			if c[c.size() - 1].substr(1) != epoque:
+			if c[c.size() - 1].substr(1) != EPOQUE:
 				continue
 			c.remove_at(c.size() - 1)
-		if c[0] == "B" and demolies.has(c[1]):
-			continue
 		match c[0]:
 			"B": batiments.append(c)
 			"R": voies.append(c)
@@ -134,17 +130,10 @@ func _ready() -> void:
 		joueur.position = Vector3(DEPART.x, h(DEPART.x, DEPART.y) + 0.1, DEPART.y)
 
 
-func _unhandled_input(event: InputEvent) -> void:
-	if get_parent().has_meta("diderot_archives"): return
-	if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_T:
-		epoque = "apres" if epoque == "avant" else "avant"
-		get_tree().reload_current_scene()
-
-
 func _etiquette() -> void:
 	var couche := CanvasLayer.new()
 	var texte := Label.new()
-	texte.text = ("Époque : 2014-2015" if epoque == "avant" else "Époque : aujourd'hui") + "   ·   T pour changer"
+	texte.text = "Les Lauriers  ·  2013"
 	if get_parent().has_meta("diderot_archives"):
 		texte.text = "Boulevard Lavéran  ·  Façade ancienne"
 	texte.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)

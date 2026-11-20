@@ -1,11 +1,13 @@
 extends CanvasLayer
 ## Le retour à la carte reste disponible dans les trois scènes, y compris au toucher.
+var depart_cypres := OS.get_cmdline_user_args().has("cypres")
 var retour := Button.new()
 
 const DEPARTS := [
 	["Rue de Marathon", Vector2(57,-45), 0.],
 	["Impasse · escalier", Vector2(-15,23), 0.],
 	["Boulevard Lavéran · Diderot", Vector2(136,55), -2.8],
+	["Tour B · Les Cyprès", Vector2(13,-104), deg_to_rad(168.)],
 ]
 var depart := OptionButton.new()
 func _ready() -> void:
@@ -36,12 +38,16 @@ func _aller(i: int) -> void:
 	joueur._respawn()
 	joueur.camera_pivot.rotation.y=DEPARTS[i-1][2]
 	joueur.visual.rotation.y=DEPARTS[i-1][2]
+	joueur.spring_arm.rotation.x = 0.22 if i == 4 else -0.10
 	depart.select(0)
 	if not TouchControls.actif: Input.mouse_mode=Input.MOUSE_MODE_CAPTURED
 
 func _process(_dt: float) -> void:
 	var sc := get_tree().current_scene
 	depart.visible = sc!=null and sc.name=="Lauriers"
+	if depart.visible and depart_cypres:
+		depart_cypres = false
+		_aller(4)
 	retour.visible = sc!=null and (sc.name!="Marseille" or is_instance_valid(sc.get("acteur")))
 
 func _input(e: InputEvent) -> void:

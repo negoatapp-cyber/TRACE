@@ -6,15 +6,21 @@ Le départ historique du boulevard Lavéran, ses références, les éléments es
 
 ## Ce que représente la carte
 
-Les 16 arrondissements et les 111 quartiers de la commune partagent le même relief IGN, la même projection, les mêmes règles de hauteur et le même découpage pour les bâtiments et la voirie. Dans l’atlas et en exploration libre, le bâti décrit l’état de la cartographie en novembre 2026. Le bouton **Les Lauriers · 2014** ouvre la scène historique du jeu.
+Les 16 arrondissements et les 111 quartiers de la commune partagent le même relief IGN, la même projection, les mêmes règles de hauteur et le même découpage pour les bâtiments et la voirie. Dans l’atlas et en exploration libre, le bâti décrit l’état de la cartographie en novembre 2026. Le bouton **Les Lauriers · 2013** ouvre la scène historique du jeu. La tour Cyprès B reste présente après une avance du temps ou la reprise d’une sauvegarde. Le calendrier revient à janvier 2013 après décembre. L’âge des graffitis continue en jours cumulés. La position et la hauteur de la tour restent celles estimées dans le relevé.
 
 | Périmètre | Géométrie livrée | Usage |
 | --- | --- | --- |
 | Commune, îles comprises | 285 806 polygones de bâtiments, 53 516 lignes de voirie après découpe communale, 1 049 tuiles contenant des vecteurs | Carte d’ensemble en relief, zoom, sélection de chacun des 111 quartiers, exploration à pied ou en skate sur les tuiles proches |
-| Malpassé, secteur prioritaire | Grille locale IGN de 400 × 600 m, soit 0,24 km². Rue de Marathon, impasse et plateau, barre des Lauriers, boulevard Lavéran et façades de Diderot | Trottoirs, loggias, mobilier, murets, rails, escaliers et courses à hauteur humaine. Trois départs et retour à la carte |
+| Malpassé, secteur prioritaire | Grille locale IGN de 400 × 600 m, soit 0,24 km². Rue de Marathon, impasse et plateau, barre des Lauriers, boulevard Lavéran et façades de Diderot | Trottoirs, loggias, mobilier, murets, rails, escaliers et courses à hauteur humaine. Quatre départs et retour à la carte |
 | Cour de test | Îlot gris historique du dépôt, géométrie fictive | Réglage reproductible du contrôleur, kicker, rail et ledge |
 
 Les 53 516 lignes correspondent à 53 282 identifiants de voies OSM. Une voie peut produire plusieurs morceaux à la limite communale. Le stockage en tuiles contient 65 121 polylignes après découpe supplémentaire. Le petit complément OSM de Planier ajoute sept bâtiments à l’extrait BBBike, dont la limite ouest passait à l’est de l’île. Le nombre de bâtiments mesure des polygones OSM, pas un décompte cadastral de propriétés.
+
+## Parcours de contrôle des Lauriers en 2013
+
+Dans Godot 4.7.2 à 60 pas physiques par seconde, Loums part au pied de l’escalier de l’impasse PAIX. À pied, il rejoint la rue de Marathon et poursuit vers l’est, soit 100,8 m parcourus dans le plan horizontal. Le retour en skate, avec poussées, virages et freinage, couvre 94,8 m et se termine à moins de 2,2 m du départ, au sol. Le changement de mode se fait sur place. Ces valeurs décrivent le parcours du personnage dans la maquette.
+
+Le test d’horloge reprend une sauvegarde de 1 300 jours de jeu écoulés. Il retrouve la tour, l’année 2013 et l’âge cumulé. La capture du point de départ « Tour B · Les Cyprès » a été prise dans Godot depuis la rue d’Entremont. Le raccord jusqu’au boulevard Lavéran reste à tester en un seul trajet depuis Marathon.
 
 ## Projet repris
 

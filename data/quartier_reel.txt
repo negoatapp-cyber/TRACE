@@ -9,7 +9,7 @@
 # M|points                           (mur ou muret)
 # Z|type|nom|contour                 (zone : terrain, parking, skatepark…)
 # A|x0|z0|pas|colonnes|altitudes…    (grille d'altitudes, ligne par ligne du nord au sud)
-# Un champ final @avant ou @apres réserve la ligne à une époque : avant = 2014-2015 (avant la démolition de la tour Cyprès B), apres = aujourd'hui.
+# Un champ final @avant ou @apres réserve la ligne à une époque : avant = variante retenue pour 2013, avec la tour Cyprès B ; apres = état ultérieur conservé dans les données.
 
 # ── Les Lauriers : la grande barre courbe, d'un seul tenant (état d'origine, d'après la photo de Louma : 14 niveaux)
 B|Grande barre des Lauriers|40|barre_lauriers|-26.0,-60.8 -25.0,-92.8 -24.0,-125.0 -35.9,-157.1 -48.9,-193.1 -68.5,-246.0 -67.0,-292.8 -79.0,-293.2 -80.5,-244.0 -60.1,-188.9 -47.1,-152.9 -36.0,-123.0 -37.0,-93.2 -38.0,-61.2|@avant

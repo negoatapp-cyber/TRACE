@@ -1,16 +1,9 @@
 extends Node3D
 ## Visite de la façade ancienne, indépendante de la chronologie sauvegardée de TRACE.
-const Q := preload("res://scripts/quartier_reel.gd")
-var periode: String
-var disparus: Array
 var mission_active: bool
 var mission_visible: bool
 
 func _enter_tree() -> void:
-	periode = Q.epoque
-	disparus = Q.demolies
-	Q.epoque = "avant"
-	Q.demolies = []
 	var mission = get_node("/root/Mission")
 	mission_active = mission.is_processing()
 	mission_visible = mission.visible
@@ -27,8 +20,6 @@ func _ready() -> void:
 	p.spring_arm.rotation.x = -0.04
 
 func _exit_tree() -> void:
-	Q.epoque = periode
-	Q.demolies = disparus
 	var mission = get_node_or_null("/root/Mission")
 	if mission:
 		mission.set_process(mission_active)

@@ -41,11 +41,9 @@ func _ready() -> void:
 			continue
 		var c := l.split("|")
 		if c[c.size() - 1].begins_with("@"):
-			if c[c.size() - 1].substr(1) != Q.epoque:
+			if c[c.size() - 1].substr(1) != Q.EPOQUE:
 				continue
 			c.remove_at(c.size() - 1)
-		if c[0] == "B" and Q.demolies.has(c[1]):
-			continue   # démoli à la date du jeu (temps.gd, n°1)
 		match c[0]:
 			"B": batiments.append(c)
 			"R": voies.append(c)
@@ -78,7 +76,7 @@ func _ready() -> void:
 	lv.name = "BoulevardLaveran"
 	lv.set("habillage", self)
 	add_child(lv)
-	lv.call("construire", batiments, voies, ly.get("portes_monde"), Q.epoque)
+	lv.call("construire", batiments, voies, ly.get("portes_monde"), Q.EPOQUE)
 	_mur_paix()
 	# le ciel peint et la lumière de chaque heure (scripts/ciel.gd)
 	var ciel: Node = preload("res://scripts/ciel.gd").new()
@@ -295,9 +293,7 @@ func _reserver(p: Vector2, r: float) -> void:
 
 
 func _pied_des_cypres() -> void:
-	# La tour n'existe qu'en 2014-2015 (démolie en 2016) : son entrée aussi.
-	if Q.epoque == "avant":
-		_entree_tour(CYPRES_B_ENTREE, PI)
+	_entree_tour(CYPRES_B_ENTREE, PI)
 	# Voitures garées le long de la rue de Marathon, côté Cyprès.
 	var a: Vector2 = MARATHON[0]
 	var b: Vector2 = MARATHON[1]
@@ -313,20 +309,19 @@ func _pied_des_cypres() -> void:
 		t += 5.2
 	_aire_d_essai()
 	# Scooters et conteneurs devant la tour, bancs et lampadaire sur la place.
-	if Q.epoque == "avant":
-		var e := CYPRES_B_ENTREE
-		_scooter(e + Vector2(6.2, -2.4), 1.2)
-		_scooter(e + Vector2(7.0, -2.0), 1.35)
-		_scooter(e + Vector2(-7.4, -2.6), -0.3)
-		for k in 4:
-			_conteneur_pose(e + Vector2(-10.5 - k * 1.45, -1.2), Vector2(1, 0))
-		_banc(e + Vector2(3.5, -8.0), Vector2(1, 0))
-		_banc(e + Vector2(-3.5, -8.0), Vector2(1, 0))
-		_lampadaire(e + Vector2(0.0, -10.5), Vector2(0, -1))
-		for k in 6:
-			_potelet(e + Vector2(-3.75 + k * 1.5, -6.2))
-		for p in [e + Vector2(-14.0, -8.0), e + Vector2(13.0, -9.0), e + Vector2(-15.0, 12.0)]:
-			_pin(p)
+	var e := CYPRES_B_ENTREE
+	_scooter(e + Vector2(6.2, -2.4), 1.2)
+	_scooter(e + Vector2(7.0, -2.0), 1.35)
+	_scooter(e + Vector2(-7.4, -2.6), -0.3)
+	for k in 4:
+		_conteneur_pose(e + Vector2(-10.5 - k * 1.45, -1.2), Vector2(1, 0))
+	_banc(e + Vector2(3.5, -8.0), Vector2(1, 0))
+	_banc(e + Vector2(-3.5, -8.0), Vector2(1, 0))
+	_lampadaire(e + Vector2(0.0, -10.5), Vector2(0, -1))
+	for k in 6:
+		_potelet(e + Vector2(-3.75 + k * 1.5, -6.2))
+	for p in [e + Vector2(-14.0, -8.0), e + Vector2(13.0, -9.0), e + Vector2(-15.0, 12.0)]:
+		_pin(p)
 
 
 ## Au point de départ : une voiture et un scooter garés, qu'on peut conduire (conduite.gd).
@@ -927,7 +922,7 @@ func _facades(batiments: Array) -> void:
 	g.name = "AccesToits"
 	g.set("habillage", self)
 	add_child(g)
-	g.call("construire", batiments, Q.epoque)
+	g.call("construire", batiments, Q.EPOQUE)
 	var pl := Node3D.new()
 	pl.set_script(load("res://scripts/habillage_place.gd"))
 	pl.name = "PlaceDuJardin"

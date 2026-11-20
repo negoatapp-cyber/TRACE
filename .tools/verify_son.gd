@@ -329,13 +329,6 @@ func quartier() -> void:
 		c._descendre()
 		await frames(10)
 		vu("coupe_scooter", "couper le moteur")
-	# la démolition de la tour
-	Son.journal.clear()
-	var Q = load("res://scripts/quartier_reel.gd")
-	Q.demolies.append("Tour test")
-	await frames(60)
-	vu("demolition", "la tour tombe")
-	Q.demolies.erase("Tour test")
 	root.remove_child(level)
 	level.free()
 	await frames(5)

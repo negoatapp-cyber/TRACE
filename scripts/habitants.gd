@@ -85,7 +85,7 @@ func _routes() -> Array:
 	var f := FileAccess.open("res://data/quartier_reel.txt", FileAccess.READ)
 	if f == null:
 		return routes
-	var epoque: String = str(quartier.get("epoque")) if quartier else "avant"
+	var epoque: String = preload("res://scripts/quartier_reel.gd").EPOQUE
 	while not f.eof_reached():
 		var l := f.get_line().strip_edges()
 		if not l.begins_with("R|"):

@@ -20,7 +20,7 @@ Sous Linux ou macOS, depuis la racine du projet :
 | Lieu ou mode | Commandes |
 | --- | --- |
 | Atlas communal | Glisser ou utiliser les flèches pour déplacer la vue. Molette ou boutons **+ / −** pour zoomer. Sélectionner un quartier, puis **Explorer ici** pour descendre dans une rue. Q/E physiques pour pivoter |
-| Les Lauriers · 2014 | **Points de départ** donne accès à la rue de Marathon, à l’escalier de l’impasse et au boulevard Lavéran devant Diderot. Échap libère la souris pour sélectionner un départ |
+| Les Lauriers · 2013 | **Points de départ** donne accès à la rue de Marathon, à l’escalier de l’impasse, au boulevard Lavéran devant Diderot et à la vue sur la tour B depuis la rue d’Entremont. Échap libère la souris pour sélectionner un départ |
 | À pied | Flèches ou ZQSD, Maj pour courir, Espace pour sauter ou franchir un rebord compatible. La caméra se règle à la souris |
 | En skate | E pour poser la planche ou descendre. Maj ou avant pour pousser, gauche/droite pour tourner, arrière pour freiner. Maintenir puis relâcher Espace pour l’ollie |
 | Navigation | R ramène au départ sélectionné. F1 ou le bouton **Atlas** ramène à la carte. **Tester Loums** ouvre la cour de test |

@@ -78,8 +78,6 @@ var _p_vit := 0.0
 var _p_cabre := 0.0
 var _hab_etat := {}
 var _amb_t := 6.0
-var _dem_n := -1
-var _dem_t := 0.0
 
 # --- le sol sous les pieds ----------------------------------------------------------------------
 var _sol_prep := false
@@ -309,12 +307,10 @@ func _v(o: Object, nom: String, def: Variant) -> Variant:
 	return def if r == null else r
 
 
-func _input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_T:
-		jouer("ui_bascule", -8)   # T : l'époque (avant / aujourd'hui)
-
-
 func _process(delta: float) -> void:
+	# Godot détache la scène avant de libérer le joueur et ses voisins.
+	if is_instance_valid(_j) and not _j.is_inside_tree():
+		return
 	_t += delta
 	_retrouver(delta)
 	for id in _boucles:
@@ -326,7 +322,6 @@ func _process(delta: float) -> void:
 	_habitants()
 	_vehicule()
 	_ambiance(delta)
-	_demolition()
 	_lisser(delta)
 	_differes(delta)
 	_silence = false
@@ -846,20 +841,6 @@ func _ambiance(delta: float) -> void:
 		else:
 			jouer_3d("sirene_loin", jp + sol * 80.0, -10.0, 1.0, 40.0)
 
-
-## La tour Cyprès B tombe le 21 juillet 2016 : le boum traverse le rechargement de la scène (Son survit).
-func _demolition() -> void:
-	if _t - _dem_t < 0.5:
-		return
-	_dem_t = _t
-	var Q = load("res://scripts/quartier_reel.gd")
-	var nb: int = (Q.demolies as Array).size()
-	if _dem_n < 0:
-		_dem_n = nb
-	elif nb > _dem_n:
-		_dem_n = nb
-		_silence = false
-		jouer("demolition", 0.0)
 
 func _exit_tree() -> void:
 	for voix in _pool:
