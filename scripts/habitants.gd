@@ -234,7 +234,13 @@ func creer_personnage(nom: String, taille := 1.75) -> Node3D:
 	var boite := AABB()
 	var premier := true
 	for mi in m.find_children("*", "MeshInstance3D", true, false):
-		var b := (m.global_transform.affine_inverse() * (mi as MeshInstance3D).global_transform) * (mi as MeshInstance3D).get_aabb()
+		# Le modèle n'est pas encore dans la scène. Ramener chaque boîte dans son repère local.
+		var noeud := mi as Node3D
+		var relative := Transform3D.IDENTITY
+		while noeud != m:
+			relative = noeud.transform * relative
+			noeud = noeud.get_parent_node_3d()
+		var b := relative * (mi as MeshInstance3D).get_aabb()
 		boite = b if premier else boite.merge(b)
 		premier = false
 	if not premier and boite.size.y > 0.0:
