@@ -32,9 +32,33 @@ func run() -> void:
 	check(tombes == 0, "aucun ne passe sous le sol (%d)" % tombes)
 	# Le gardien voit Loums peindre et vient le faire partir.
 	var gardien = null
+	var voisine = null
 	for h in hab.habitants:
 		if h.role == "gardien":
 			gardien = h
+		if h.role == "voisine":
+			voisine = h
+	# sa ronde ne traverse aucun mur : rayon à hauteur de poitrine entre chaque point
+	var espace := (level as Node3D).get_world_3d().direct_space_state
+	var murs := 0
+	for k in range(1, gardien.route.size()):
+		var a: Vector3 = gardien.route[k - 1] + Vector3.UP * 1.2
+		var b: Vector3 = gardien.route[k] + Vector3.UP * 1.2
+		var rq := PhysicsRayQueryParameters3D.create(a, b)
+		rq.exclude = [gardien.get_rid(), p.get_rid()]
+		var hit := espace.intersect_ray(rq)
+		if not hit.is_empty() and not (hit.collider is CharacterBody3D):
+			murs += 1
+			print("   mur sur la ronde : ", hit.collider.name, " ", hit.position)
+	check(murs == 0, "la ronde du gardien ne traverse aucun mur")
+	check(voisine.etat == "reste" and voisine.global_position.distance_to(voisine.route[0]) < 1.0, "la voisine reste à son poste")
+	# il parcourt vraiment sa ronde (il n'est pas coincé contre un mur)
+	var bout := 0.0
+	var d0: Vector3 = gardien.global_position
+	for i in 1200:
+		await physics_frame
+		bout = maxf(bout, gardien.global_position.distance_to(d0))
+	check(bout > 15.0, "le gardien avance le long de la barre (%.0f m parcourus)" % bout)
 	g.expert = true   # le tracé reste ouvert tant qu'on ne pose pas
 	p.global_position = Vector3(-23.4, q.h(-23.4, -100) + 0.2, -100); p.velocity = Vector3.ZERO
 	p.visual.rotation.y = PI * 0.5

@@ -28,6 +28,8 @@ const CASTING := {
 	"jeune": ["06_jeune_couronne", "07_jeune_chaine", "08_jeune_doudoune"],
 	"passant": ["05_jeune_casquette", "09_jeune_capuche", "10_jeune_kaki"],
 }
+const RONDE_GARDIEN := [Vector2(-18.0, -66.0), Vector2(-17.5, -84.0), Vector2(-17.5, -104.0), Vector2(-17.0, -124.0)]
+const POSTE_VOISINE := Vector2(-19.5, -112.0)
 const AVEC_FIGURANTS := false   ## passants et bande de jeunes (capsules sans but) : coupés pour l'instant
 const TAILLES := {"jeune": 1.68, "patron": 1.66, "voisine": 1.64}
 const TENUES := {
@@ -139,14 +141,14 @@ func _peupler() -> void:
 		var r := _trottoir(pts, 1.0 if _rng.randf() < 0.5 else -1.0, maxi(0, debut - 1), 4)
 		if r.size() >= 2:
 			_ajouter("passant", r, _rng.randf_range(1.0, 1.4))
-	# voisines et gardien : autour de la grande barre (parking devant, terrain vague derrière)
-	var tour_barre := [Vector2(-5, -150), Vector2(-40, -118), Vector2(-70, -132), Vector2(-60, -160), Vector2(-25, -175), Vector2(-5, -150)]
+	# le gardien : sa ronde longe la façade est de la grande barre (le trottoir devant les entrées), aller-retour,
+	# à 6 m du mur ; il s'arrête un moment à chaque bout pour regarder.
 	var r_gardien := PackedVector3Array()
-	for p in tour_barre:
+	for p in RONDE_GARDIEN:
 		r_gardien.append(Vector3(p.x, _h(p.x, p.y), p.y))
 	_ajouter("gardien", r_gardien, 1.1)
-	# la voisine : postée au pied de la barre (elle ne fait plus d'allers-retours), elle voit et elle prévient
-	var pv: Vector2 = tour_barre[1] + Vector2(3, 4)
+	# la voisine : devant l'entrée de la barre, elle ne bouge pas ; elle voit et elle prévient
+	var pv: Vector2 = POSTE_VOISINE
 	var hv := _ajouter("voisine", PackedVector3Array([Vector3(pv.x, _h(pv.x, pv.y), pv.y)]), 0.0)
 	hv.etat = "reste"
 	hv.rotation.y = -PI * 0.5
@@ -364,12 +366,12 @@ func _physics_process(delta: float) -> void:
 						if h.i >= h.route.size() or h.i < 0:
 							h.sens = -h.sens
 							h.i = clampi(h.i + 2 * h.sens, 0, h.route.size() - 1)
-							h.pause = _rng.randf_range(1.0, 4.0)
+							h.pause = _rng.randf_range(3.0, 6.0)
 			"regarde":
 				h.pause -= delta
 				_tourner_vers(h, joueur.global_position, delta)
 				if h.pause <= 0.0:
-					h.etat = "marche"
+					h.etat = "marche" if h.route.size() >= 2 else "reste"
 			"va_vers":
 				cible = joueur.global_position
 				v = 2.3
@@ -396,6 +398,12 @@ func _physics_process(delta: float) -> void:
 			if h.bloque_t > 1.5 and h.etat == "marche":
 				h.sens = -h.sens
 				h.i = clampi(h.i + h.sens, 0, maxi(h.route.size() - 1, 0))
+				h.bloque_t = 0.0
+			elif h.bloque_t > 1.0 and h.etat == "va_vers":
+				# un mur entre lui et Loums : il ne pousse pas contre, il crie et reprend sa ronde
+				_dire(h, "Je t'ai vu, toi !")
+				h.etat = "regarde"
+				h.pause = 2.0
 				h.bloque_t = 0.0
 		else:
 			h.bloque_t = 0.0
