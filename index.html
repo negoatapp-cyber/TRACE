@@ -92,6 +92,23 @@ body {
 		</style>
 		<link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png" />
 <link rel="apple-touch-icon" href="index.apple-touch-icon.png"/>
+<script>
+/* TRACE : débloque le son sur téléphone. Les navigateurs gardent l'audio coupé tant que la personne n'a pas touché la page ;
+   on relance TOUS les contextes audio créés par le jeu à chaque toucher / retour sur l'onglet. */
+(function(){
+  var C = window.AudioContext || window.webkitAudioContext; if (!C) return;
+  var all = [];
+  function W(){ var c = new (Function.prototype.bind.apply(C, [null].concat([].slice.call(arguments))))(); all.push(c); return c; }
+  W.prototype = C.prototype;
+  window.AudioContext = W; if (window.webkitAudioContext) window.webkitAudioContext = W;
+  function go(){ for (var i = 0; i < all.length; i++) { try { if (all[i].state !== 'running') all[i].resume(); } catch(e){} } }
+  ['touchstart','touchend','pointerdown','pointerup','mousedown','mouseup','click','keydown'].forEach(function(e){
+    document.addEventListener(e, go, {capture:true, passive:true});
+  });
+  document.addEventListener('visibilitychange', function(){ if (!document.hidden) go(); });
+  setInterval(go, 1500);
+})();
+</script>
 
 	</head>
 	<body>
@@ -111,7 +128,7 @@ body {
 
 		<script src="index.js"></script>
 		<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":82581604,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":82581700,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
 const GODOT_THREADS_ENABLED = false;
 const engine = new Engine(GODOT_CONFIG);
 
