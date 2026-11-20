@@ -78,7 +78,6 @@ func _ready() -> void:
 	add_child(lv)
 	lv.call("construire", batiments, voies, ly.get("portes_monde"), Q.epoque)
 	_mur_paix()
-	_horizon()
 	# le ciel peint et la lumière de chaque heure (scripts/ciel.gd)
 	var ciel: Node = preload("res://scripts/ciel.gd").new()
 	ciel.name = "Ciel"
@@ -124,14 +123,10 @@ func _sol() -> void:
 ## Copie d'un modèle de assets/decor/, ou null si le fichier manque (on garde alors les formes simples).
 func _modele(nom: String) -> Node3D:
 	if not _modeles.has(nom):
-		_modeles[nom] = null
 		var chemin := DECOR % nom
-		if ResourceLoader.exists(chemin):
-			var ps := load(chemin) as PackedScene
-			if ps:
-				_modeles[nom] = ps.instantiate()
-	var m = _modeles[nom]
-	return (m as Node3D).duplicate() if m else null
+		_modeles[nom] = load(chemin) if ResourceLoader.exists(chemin) else null
+	var scene := _modeles[nom] as PackedScene
+	return scene.instantiate() as Node3D if scene else null
 
 
 ## Remplace l'apparence d'un corps (ses boîtes) par un modèle, en gardant sa collision.
@@ -576,11 +571,17 @@ func _mur_paix() -> void:
 	var pente := atan2(hm, prof)
 	var rampe := StaticBody3D.new()
 	var cs := CollisionShape3D.new()
-	var sh := BoxShape3D.new()
-	sh.size = Vector3(le, 0.2, lg)
-	cs.shape = sh
+	# La semelle continue sous la rue : aucune arête verticale à franchir à la première marche.
+	var forme := ConvexPolygonShape3D.new()
+	var sommets := PackedVector3Array()
+	var entree_z := zf+2.0
+	var entree_y := minf(h(xe,entree_z)-0.15,yr-2.0*tan(pente))
+	for bord in [x_esc_g,x_esc_d]:
+		for zy in [[entree_z,entree_y],[zf,yr],[z_haut,yt],[z_haut,entree_y-1.0],[entree_z,entree_y-1.0]]:
+			sommets.append(Vector3(bord,zy[1],zy[0]))
+	forme.points=sommets
+	cs.shape=forme
 	rampe.add_child(cs)
-	rampe.transform = Transform3D(Basis(Vector3.RIGHT, pente), Vector3(xe, yr + hm * 0.5 - 0.1, zf - prof * 0.5))
 	rampe.name = "Rampe_grand_escalier"
 	add_child(rampe)
 	# une seule main courante fine, côté gauche, contre le pignon
@@ -908,60 +909,6 @@ func _lampadaire_boule(p: Vector2) -> void:
 func _potelet_blanc(p: Vector2) -> void:
 	var b := _boite("Potelet_blanc", p.x, p.y, Vector3(0.12, 1.0, 0.12), Color(0.92, 0.91, 0.88))
 	b.add_to_group("mobilier")
-
-
-## L'horizon : les quartiers nord tout autour, en silhouettes simples (pavillons à toits de tuiles,
-## petits immeubles, quelques tours), pour que la cité ne flotte plus au milieu d'une plaine vide.
-## Rien n'y est jouable : pas de collision, pas d'ombre, un seul objet par type.
-func _horizon() -> void:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 1313
-	var centre := Vector2(40.0, 20.0)
-	var murs := []
-	var toits := []
-	var teintes_mur := [Color(0.93, 0.89, 0.80), Color(0.90, 0.84, 0.72), Color(0.95, 0.93, 0.88), Color(0.88, 0.78, 0.62), Color(0.92, 0.80, 0.70)]
-	var tuile := Color(0.78, 0.45, 0.32)
-	for i in 2600:
-		var a := rng.randf() * TAU
-		var r := sqrt(rng.randf_range(430.0 * 430.0, 1300.0 * 1300.0))
-		var p := centre + Vector2(cos(a), sin(a)) * r
-		var y := h(p.x, p.y)
-		var rot := Basis(Vector3.UP, a + rng.randf_range(-0.3, 0.3))
-		var t := rng.randf()
-		var c: Color = teintes_mur[rng.randi() % teintes_mur.size()]
-		if t < 0.8:
-			# pavillon : un cube et un toit de tuiles
-			var taille := Vector3(rng.randf_range(7, 11), rng.randf_range(4.5, 7.0), rng.randf_range(6, 9))
-			murs.append([Transform3D(rot * Basis.from_scale(taille), Vector3(p.x, y + taille.y * 0.5 - 0.3, p.y)), c])
-			toits.append([Transform3D(rot * Basis.from_scale(Vector3(taille.x + 0.6, 0.9, taille.z + 0.6)), Vector3(p.x, y + taille.y, p.y)), tuile.darkened(rng.randf() * 0.15)])
-		elif t < 0.97:
-			var taille := Vector3(rng.randf_range(18, 40), rng.randf_range(10, 16), rng.randf_range(10, 13))
-			murs.append([Transform3D(rot * Basis.from_scale(taille), Vector3(p.x, y + taille.y * 0.5 - 0.3, p.y)), c])
-		else:
-			var taille := Vector3(rng.randf_range(14, 20), rng.randf_range(30, 50), rng.randf_range(14, 20))
-			murs.append([Transform3D(rot * Basis.from_scale(taille), Vector3(p.x, y + taille.y * 0.5 - 0.3, p.y)), c])
-	for lot in [["Horizon_murs", murs], ["Horizon_toits", toits]]:
-		var liste: Array = lot[1]
-		var mm := MultiMesh.new()
-		mm.transform_format = MultiMesh.TRANSFORM_3D
-		mm.use_colors = true
-		var cube := BoxMesh.new()
-		mm.mesh = cube
-		mm.instance_count = liste.size()
-		for i in liste.size():
-			mm.set_instance_transform(i, liste[i][0])
-			mm.set_instance_color(i, liste[i][1])
-		var mi := MultiMeshInstance3D.new()
-		mi.multimesh = mm
-		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		var m := ShaderMaterial.new()
-		m.shader = preload("res://shaders/bd_toon.gdshader")
-		m.set_shader_parameter("couleur_instance", true)
-		m.set_shader_parameter("grain", 0.3)
-		mi.material_override = m
-		mi.name = lot[0]
-		add_child(mi)
-	print("Horizon : %d silhouettes" % murs.size())
 
 
 # ───────────────────────── façades en relief et toits ─────────────────────────

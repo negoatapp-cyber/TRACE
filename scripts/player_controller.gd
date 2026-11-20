@@ -6,6 +6,7 @@ extends CharacterBody3D
 
 enum Mode { WALK, SKATE }
 
+@export var chute_limite := -20.0
 @export var walk_speed := 3.2
 @export var run_speed := 6.2        ## en maintenant Maj
 @export var walk_accel := 25.0
@@ -20,6 +21,7 @@ enum Mode { WALK, SKATE }
 @export var camera_vitesse_min := 1.0  ## en dessous (m/s), pas de suivi : on peut tourner autour de lui
 
 var _camera_libre := 0.0
+var _saut_en_attente := 0.0
 
 var mode: Mode = Mode.WALK
 var spawn_position := Vector3.ZERO
@@ -68,6 +70,7 @@ func _ready() -> void:
 	spawn_position = global_position
 	spring_arm.add_excluded_object(get_rid())
 	spring_arm.rotation.x = -0.35
+	camera_pivot.global_position = global_position + Vector3.UP * 1.5
 	camera_pivot.top_level = true  # la caméra suit sans hériter des à-coups
 	add_to_group("player")
 	if not TouchControls.actif:
@@ -137,8 +140,12 @@ func _physics_process(delta: float) -> void:
 
 	if not (mode == Mode.SKATE and skate.grinding):
 		move_and_slide()
+		# Une tangente qui monte de quelques millimètres désactive le snap implicite.
+		# Garder l'appui des roues pendant le roulage, relâcher pour tous les vrais pops.
+		if mode == Mode.SKATE and not skate.in_air and not Input.is_action_pressed("grind") and not is_on_floor():
+			apply_floor_snap()
 
-	if global_position.y < -20.0:
+	if global_position.y < chute_limite:
 		_respawn()
 
 
@@ -186,6 +193,10 @@ func move_input_world() -> Vector3:
 
 
 func _walk(delta: float) -> void:
+	# Accepte une pression juste avant la réception sans redéclencher si Espace reste tenue.
+	_saut_en_attente = maxf(0.0, _saut_en_attente-delta)
+	if Input.is_action_just_pressed("jump"):
+		_saut_en_attente = 0.105
 	var dir := move_input_world()
 	if not is_on_floor():
 		velocity.y -= _gravity * delta
@@ -193,7 +204,8 @@ func _walk(delta: float) -> void:
 		var vers_le_mur := move_input_world().length() > 0.3 or Input.is_action_pressed("jump")
 		if vers_le_mur and velocity.y < 2.0 and (_try_mantle() or _try_accrocher() or _try_gouttiere()):
 			return
-	elif Input.is_action_just_pressed("jump"):
+	elif _saut_en_attente > 0.0:
+		_saut_en_attente = 0.0
 		if _try_gouttiere() or _try_mantle():
 			return
 		velocity.y = jump_velocity
@@ -562,12 +574,14 @@ func _set_mode(new_mode: Mode) -> void:
 
 
 func _respawn() -> void:
+	_saut_en_attente = 0.0
 	chute_t = -1.0
 	transition = ""
 	if planche_libre:
 		planche_libre = false
 		board.top_level = false
 	global_position = spawn_position
+	camera_pivot.global_position = spawn_position + Vector3.UP * 1.5
 	velocity = Vector3.ZERO
 	skate.grinding = false
 	_mantling = false

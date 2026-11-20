@@ -97,7 +97,9 @@ func step(p: CharacterBody3D, delta: float) -> void:
 		heading += steer * turn_rate * delta * clampf(1.2 - speed_ratio, 0.45, 1.2)
 
 		# Pousser : des coups de pied, pas une accélération continue.
-		var veut_pousser := (Input.is_action_pressed("push") or input.y < -0.5) and charge < 0.0
+		if input.y > 0.5:
+			push_phase = -1.0
+		var veut_pousser := (Input.is_action_pressed("push") or input.y < -0.5) and input.y <= 0.5 and charge < 0.0
 		if veut_pousser and push_phase < 0.0 and speed < max_push_speed:
 			push_phase = 0.0
 		if push_phase >= 0.0:

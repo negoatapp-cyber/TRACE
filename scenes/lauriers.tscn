@@ -57,8 +57,8 @@ light_energy = 1.7
 shadow_enabled = true
 shadow_bias = 0.04
 shadow_blur = 0.8
-directional_shadow_mode = 2
-directional_shadow_max_distance = 320.0
+directional_shadow_mode = 0
+directional_shadow_max_distance = 85.0
 
 [node name="Temps" type="Node" parent="."]
 script = ExtResource("6_temps")

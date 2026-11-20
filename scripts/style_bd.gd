@@ -21,6 +21,7 @@ const CONDUITE := preload("res://scripts/conduite.gd")
 var actif := true
 var _toon := {}         # matériau d'origine → version BD
 var _origine := {}      # [MeshInstance3D, surface] → matériau d'origine
+var _lots_fixes := {}
 var _encrage: MeshInstance3D
 var _env_brut := {}
 
@@ -44,6 +45,9 @@ func basculer(oui: bool) -> void:
 			continue
 		var m: Material = _origine[cle]
 		_poser(mi, cle[1], _toon[m] if oui else m)
+	for lot in _lots_fixes:
+		var source: Material = _lots_fixes[lot]
+		lot.material_override = _toon.get(source,source) if oui else source
 	if _encrage:
 		_encrage.visible = oui
 	_ambiance(oui)
@@ -54,8 +58,50 @@ func _convertir_tout() -> void:
 	RenderingServer.global_shader_parameter_set("bd_actif", 1.0)
 	_ambiance(true)
 	_convertir(get_tree().current_scene if get_tree().current_scene else get_parent())
+	_grouper_mobilier()
 	_poser_encrage()
 
+
+## Même maillage et même matériau, par cellules de 64 m. Le corps d'origine garde ses collisions.
+func _grouper_mobilier() -> void:
+	var hab := get_parent().get_node_or_null("Habillage")
+	if not hab: return
+	var paquets := {}
+	var fixes := []
+	for objet in hab.get_children():
+		var nom := str(objet.name)
+		if nom.begins_with("Lampadaire") or nom.begins_with("Pin") or nom.begins_with("Banc") or nom.begins_with("Conteneur"):
+			fixes.append(objet)
+	for voiture in get_tree().get_nodes_in_group("voiture"):
+		if not voiture.is_in_group("vehicule"):
+			fixes.append(voiture)
+	for objet: Node3D in fixes:
+		var cellule := Vector2i(floori(objet.position.x/64),floori(objet.position.z/64))
+		for mi: MeshInstance3D in objet.find_children("*","MeshInstance3D",true,false):
+			if not mi.is_visible_in_tree() or not mi.mesh or mi.mesh.get_surface_count()!=1: continue
+			var surface := -1 if mi.material_override else 0
+			var origine: Material = _origine.get([mi,surface],mi.get_active_material(0))
+			var cle := [cellule,mi.mesh,origine,mi.cast_shadow]
+			if not paquets.has(cle): paquets[cle]=[]
+			paquets[cle].append(mi)
+			mi.visibility_range_end=160
+	for cle in paquets:
+		var copies: Array=paquets[cle]
+		if copies.size()<2: continue
+		var groupe := MultiMesh.new()
+		groupe.transform_format=MultiMesh.TRANSFORM_3D
+		groupe.mesh=cle[1]
+		groupe.instance_count=copies.size()
+		var lot := MultiMeshInstance3D.new()
+		lot.multimesh=groupe
+		lot.cast_shadow=cle[3]
+		lot.visibility_range_end=185
+		get_parent().add_child(lot)
+		for i in copies.size():
+			groupe.set_instance_transform(i,lot.global_transform.affine_inverse()*copies[i].global_transform)
+			copies[i].hide()
+		_lots_fixes[lot]=cle[2]
+		lot.material_override=_toon.get(cle[2],cle[2])
 
 func _nouveau(n: Node) -> void:
 	if n is MeshInstance3D:

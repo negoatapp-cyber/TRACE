@@ -31,6 +31,6 @@ func run() -> void:
 		Input.action_release("push"); Input.action_release("move_forward"); await frames(60)
 		check(perso.anim.current_animation == perso._clips["attente"], "revient à l'attente à l'arrêt")
 	else:
-		check(p.get_node("Visual/Body").visible, "sans fichier, la capsule reste")
+		check(not p.get_node("Visual/Body").visible and perso.doublure.visible, "sans modèle privé, le substitut articulé est affiché")
 	print("RESULT failures=", failures)
 	quit(failures)

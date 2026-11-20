@@ -860,3 +860,15 @@ func _demolition() -> void:
 		_dem_n = nb
 		_silence = false
 		jouer("demolition", 0.0)
+
+func _exit_tree() -> void:
+	for voix in _pool:
+		voix.stop()
+		voix.stream=null
+	for voix in _pool3d:
+		voix.stop()
+		voix.stream=null
+	for boucle_active in _boucles.values():
+		var lecteur: AudioStreamPlayer=boucle_active.p
+		lecteur.stop()
+		lecteur.stream=null

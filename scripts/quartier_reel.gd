@@ -96,6 +96,15 @@ func _ready() -> void:
 	for c in voies:
 		if c[2] == "Boulevard Lavéran":
 			_lisser_boulevard(_pts(c[3]))
+	var ville := preload("res://scripts/ville_terrain.gd").new()
+	ville.quartier = self
+	add_child(ville)
+	ville.demander(DEPART,1)
+	# Raccord de la jupe extérieure au MNT communal sur son contour exact.
+	for j in gz.size():
+		for i in gx.size():
+			if i==0 or i==gx.size()-1 or j==0 or j==gz.size()-1:
+				alt[j][i] = ville.altitude(gx[i],gz[j])
 	_terrain()
 	for c in zones:
 		_zone(c[1], _pts(c[3]))
@@ -118,7 +127,6 @@ func _ready() -> void:
 			"T": _treillis(float(c[1]), _pts(c[2]))
 			"H": _halle(_pts(c[1])[0], float(c[2]), float(c[3]))
 			"K": _conteneur(_pts(c[1])[0], float(c[2]), c[3])
-	_horizon()
 	_limites()
 	_etiquette()
 	var joueur := get_node_or_null("../Player") as Node3D
@@ -155,14 +163,14 @@ func _lire_altitudes(c: PackedStringArray) -> void:
 	var v := c[5].split(" ", false)
 	var lignes := v.size() / cols
 	# Une bordure large autour du relevé prolonge le relief vers l'horizon.
-	gx.append(x0 - 500.0)
+	gx.append(floorf(x0/64)*64-64)
 	for i in cols:
 		gx.append(x0 + i * pas)
-	gx.append(x0 + (cols - 1) * pas + 500.0)
-	gz.append(z0 - 500.0)
+	gx.append(ceilf((x0 + (cols-1)*pas)/64)*64+64)
+	gz.append(floorf(z0/64)*64-64)
 	for j in lignes:
 		gz.append(z0 + j * pas)
-	gz.append(z0 + (lignes - 1) * pas + 500.0)
+	gz.append(ceilf((z0 + (lignes-1)*pas)/64)*64+64)
 	for j in lignes + 2:
 		var jj := clampi(j - 1, 0, lignes - 1)
 		var row := PackedFloat32Array()
@@ -810,21 +818,6 @@ func _conteneur(p: Vector2, angle_deg: float, nom: String) -> void:
 	porte.material_override = _mat(Color(0.50, 0.22, 0.15))
 	porte.transform = Transform3D(Basis(Vector3.UP, 1.1), Vector3(1.45, 0, 3.4))
 	c.add_child(porte)
-
-
-func _horizon() -> void:
-	# Collines sèches au nord-est, comme vues depuis le quartier.
-	for c in [[520.0, -620.0, 300.0], [150.0, -780.0, 340.0], [-380.0, -700.0, 300.0], [760.0, -200.0, 280.0]]:
-		var m := MeshInstance3D.new()
-		var s := SphereMesh.new()
-		s.radius = c[2]
-		s.height = c[2] * 2.0
-		m.mesh = s
-		m.material_override = _mat(Color(0.70, 0.71, 0.73))  # calcaire du massif de l'Étoile (photo depuis les Lauriers)
-		m.position = Vector3(c[0], -40.0, c[1])
-		m.scale = Vector3(1, 0.42, 1)
-		m.name = "Colline"
-		add_child(m, true)
 
 
 func _limites() -> void:

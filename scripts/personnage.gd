@@ -20,6 +20,7 @@ const PIED_AVANT := Vector3(0.0, 0.11, -0.16)
 const PIED_ARRIERE := Vector3(0.0, 0.11, 0.20)
 const CHEVILLE := 0.10     ## hauteur de la cheville au-dessus de la semelle (m)
 
+var doublure: Node3D
 var modele: Node3D
 var anim: AnimationPlayer
 var _clips := {}       ## "attente" / "marche" / "course" / "saut" -> nom réel de l'animation
@@ -86,7 +87,10 @@ func _ready() -> void:
 		_joueur = get_parent().get_parent() as Player
 	modele = _charger_modele()
 	if modele == null:
-		push_warning("TRACE : impossible de lire " + FICHIER + " (Loums reste une capsule)")
+		doublure = preload("res://scripts/silhouette_skateur.gd").new()
+		add_child(doublure)
+		get_parent().get_node("Body").hide()
+		get_parent().get_node("Cap").hide()
 		return
 	add_child(modele)
 	_mettre_a_l_echelle()
@@ -312,6 +316,8 @@ func _process(delta: float) -> void:
 		return
 	etat = _etat()   # calculé même sans modèle (copies du dépôt sans assets/personnages)
 	if modele == null:
+		doublure.animer(_joueur,delta)
+		_placer_sur_vehicule()
 		return
 	_t += delta
 	_posture(delta)

@@ -2,6 +2,30 @@
 
 Jeu en monde ouvert sur la construction de l'identité. Moteur : **Godot 4.7** (GDScript, physique Jolt).
 
+## Jouer à Marseille
+
+Avec Godot **4.7.2 standard** installé, ouvrir `project.godot` et appuyer sur **F5**. Sous Windows, `Jouer-TRACE.cmd` détecte aussi le moteur installé dans le dossier d’origine ou disponible dans PATH.
+
+Sous Linux ou macOS, depuis la racine du projet :
+
+```sh
+./run.sh           # atlas des 111 quartiers
+./run.sh quartier  # directement dans la rue de Marathon, secteur historique
+./run.sh test      # cour de réglage de Loums, rail, ledge et kicker
+```
+
+`GODOT=/chemin/vers/godot ./run.sh` permet d’indiquer le binaire du moteur. Les données de Marseille sont embarquées. La banque sonore synthétique peut être régénérée si Python 3 et NumPy sont disponibles.
+
+| Lieu ou mode | Commandes |
+| --- | --- |
+| Atlas communal | Glisser ou utiliser les flèches pour déplacer la vue. Molette ou boutons **+ / −** pour zoomer. Sélectionner un quartier, puis **Explorer ici** pour descendre dans une rue. Q/E physiques pour pivoter |
+| Les Lauriers · 2014 | **Points de départ** donne accès à la rue de Marathon, à l’escalier de l’impasse et au boulevard Lavéran devant Diderot. Échap libère la souris pour sélectionner un départ |
+| À pied | Flèches ou ZQSD, Maj pour courir, Espace pour sauter ou franchir un rebord compatible. La caméra se règle à la souris |
+| En skate | E pour poser la planche ou descendre. Maj ou avant pour pousser, gauche/droite pour tourner, arrière pour freiner. Maintenir puis relâcher Espace pour l’ollie |
+| Navigation | R ramène au départ sélectionné. F1 ou le bouton **Atlas** ramène à la carte. **Tester Loums** ouvre la cour de test |
+
+[Captures des étapes de construction](docs/CAPTURES.md) · [Sources, couverture, adaptations et résultats des tests](DECISIONS.md)
+
 ## Phase 1 : « Le geste »
 
 On veut un îlot en blocs gris où l'on marche, où l'on monte sur la planche et où l'on enchaîne quelques figures. On ne travaille pas encore l'art : on juge seulement si le skate est **agréable**.
@@ -52,7 +76,7 @@ Si une figure n'est pas finie à l'atterrissage, c'est une **chute** : la vitess
 ### Structure
 ```
 project.godot
-scenes/   lauriers.tscn (le quartier réel, scène lancée par défaut), ilot_grey.tscn (cour de réglage du skate), player.tscn (LOUMS)
+scenes/   marseille.tscn (atlas), lauriers.tscn (quartier historique), ilot_grey.tscn (cour de réglage du skate), player.tscn (LOUMS)
 scripts/  player_controller.gd (marche, caméra, HUD)
           skate_controller.gd  (physique du skate, figures, grind)
           rail.gd              (rail / ledge réglable)
@@ -62,13 +86,13 @@ data/     (phase 3 : npcs.json, places.json…)
 
 ## Phase 2 — le quartier réel
 
-`scenes/lauriers.tscn` est la scène lancée par défaut. Le quartier est construit au lancement par
+`scenes/lauriers.tscn` est la scène détaillée accessible depuis l’atlas. Le quartier est construit au lancement par
 `scripts/quartier_reel.gd` à partir du relevé `data/quartier_reel.txt` :
 
 - contours des bâtiments et tracé des rues : © les contributeurs d'OpenStreetMap (ODbL) ;
 - relief : IGN, RGE ALTI (licence ouverte), grille de 25 m.
 
-Les positions, les formes au sol et les pentes sont donc celles du terrain. Les **hauteurs** et les **couleurs**
+Les positions, les formes au sol et les pentes sont donc celles du terrain. Hors les correspondances IGN documentées, les **hauteurs** et les **couleurs**
 des immeubles sont des estimations : elles se corrigent dans le fichier de relevé (une ligne par bâtiment).
 Les habitants, eux, restent fictifs.
 
@@ -78,7 +102,7 @@ Vérification automatique : `.tools/verify_quartier.gd`.
 
 Le quartier est rendu en BD : aplats de couleur en trois tons (soleil, demi-teinte, ombre teintée violet),
 traits d'encre sur les silhouettes et les arêtes, cadres de fenêtres encrés, ciel franc.
-**Touche B** : comparer avec l'éclairage d'origine.
+**Touche F2** : comparer avec l'éclairage d'origine.
 
 - `scripts/style_bd.gd` (nœud `StyleBD` de `lauriers.tscn`) convertit automatiquement chaque matériau
   standard en matériau BD, y compris les objets ajoutés plus tard (Loums importé, décors…).
