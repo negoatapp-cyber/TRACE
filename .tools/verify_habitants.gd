@@ -16,7 +16,7 @@ func run() -> void:
 	await frames(40)
 	var hab = level.get_node("Habitants")
 	var p = level.get_node("Player"); var q = level.get_node("Quartier"); var g = level.get_node("Graffiti")
-	check(hab.habitants.size() >= 10, "des habitants dans le quartier (%d)" % hab.habitants.size())
+	check(hab.habitants.size() >= 3 and hab.habitants.size() <= 4, "seulement les habitants utiles : gardien, voisine, patron (%d)" % hab.habitants.size())
 	var depart := {}
 	for h in hab.habitants:
 		depart[h] = h.global_position
@@ -28,7 +28,7 @@ func run() -> void:
 			bougent += 1
 		if h.global_position.y < q.h(h.global_position.x, h.global_position.z) - 2.0:
 			tombes += 1
-	check(bougent >= 5, "ils marchent (%d ont bougé)" % bougent)
+	check(bougent >= 1, "le gardien fait sa ronde (%d ont bougé)" % bougent)
 	check(tombes == 0, "aucun ne passe sous le sol (%d)" % tombes)
 	# Le gardien voit Loums peindre et vient le faire partir.
 	var gardien = null
@@ -36,7 +36,7 @@ func run() -> void:
 		if h.role == "gardien":
 			gardien = h
 	g.expert = true   # le tracé reste ouvert tant qu'on ne pose pas
-	p.global_position = Vector3(-24.2, q.h(-24.2, -100) + 0.2, -100); p.velocity = Vector3.ZERO
+	p.global_position = Vector3(-23.4, q.h(-23.4, -100) + 0.2, -100); p.velocity = Vector3.ZERO
 	p.visual.rotation.y = PI * 0.5
 	await frames(20)
 	g._cible = g._mur_devant()

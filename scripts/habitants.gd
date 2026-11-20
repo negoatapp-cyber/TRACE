@@ -28,6 +28,7 @@ const CASTING := {
 	"jeune": ["06_jeune_couronne", "07_jeune_chaine", "08_jeune_doudoune"],
 	"passant": ["05_jeune_casquette", "09_jeune_capuche", "10_jeune_kaki"],
 }
+const AVEC_FIGURANTS := false   ## passants et bande de jeunes (capsules sans but) : coupés pour l'instant
 const TAILLES := {"jeune": 1.68, "patron": 1.66, "voisine": 1.64}
 const TENUES := {
 	"passant": [Color(0.30, 0.36, 0.50), Color(0.55, 0.45, 0.35), Color(0.25, 0.25, 0.28), Color(0.62, 0.30, 0.28)],
@@ -128,8 +129,9 @@ func _peupler() -> void:
 			if (p as Vector2).distance_to(centre) < 170.0:
 				proches.append(pts)
 				break
-	# passants : sur les trottoirs des rues proches
-	for k in 7:
+	# passants : retirés (Louma, 20.11 : des PNJ qui se baladent sans but ne servent à rien). On les remettra
+	# quand ils auront un lieu, une activité et un horaire (voir la review du 20.11).
+	for k in (7 if AVEC_FIGURANTS else 0):
 		if proches.is_empty():
 			break
 		var pts: Array = proches[_rng.randi() % proches.size()]
@@ -143,10 +145,11 @@ func _peupler() -> void:
 	for p in tour_barre:
 		r_gardien.append(Vector3(p.x, _h(p.x, p.y), p.y))
 	_ajouter("gardien", r_gardien, 1.1)
-	for k in 2:
-		var p0: Vector2 = tour_barre[k * 2] + Vector2(_rng.randf_range(-6, 6), _rng.randf_range(-6, 6))
-		var p1: Vector2 = tour_barre[k * 2 + 1] + Vector2(_rng.randf_range(-6, 6), _rng.randf_range(-6, 6))
-		_ajouter("voisine", PackedVector3Array([Vector3(p0.x, _h(p0.x, p0.y), p0.y), Vector3(p1.x, _h(p1.x, p1.y), p1.y)]), 0.8)
+	# la voisine : postée au pied de la barre (elle ne fait plus d'allers-retours), elle voit et elle prévient
+	var pv: Vector2 = tour_barre[1] + Vector2(3, 4)
+	var hv := _ajouter("voisine", PackedVector3Array([Vector3(pv.x, _h(pv.x, pv.y), pv.y)]), 0.0)
+	hv.etat = "reste"
+	hv.rotation.y = -PI * 0.5
 	# le patron du snack, devant sa baraque (zone « ravitaillement » de n°2)
 	for z in get_tree().get_nodes_in_group("ravitaillement"):
 		if str(z.get_meta("type", "")) == "peinture":
@@ -154,9 +157,9 @@ func _peupler() -> void:
 			var hp := _ajouter("patron", PackedVector3Array([Vector3(zp.x + 1.2, _h(zp.x + 1.2, zp.z), zp.z)]), 0.0)
 			hp.etat = "reste"
 			break
-	# jeunes : en bande, au pied des immeubles, près du départ
+	# jeunes : retirés aussi tant qu'ils n'ont pas de vrais modèles ni de rôle
 	var bande := Vector2(48, -58)
-	for k in 3:
+	for k in (3 if AVEC_FIGURANTS else 0):
 		var p := bande + Vector2(k * 1.1 - 1.1, _rng.randf_range(-0.6, 0.6))
 		var h := _ajouter("jeune", PackedVector3Array([Vector3(p.x, _h(p.x, p.y), p.y)]), 0.0)
 		h.etat = "reste"
