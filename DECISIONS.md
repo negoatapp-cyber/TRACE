@@ -1,5 +1,9 @@
 # TRACE · Marseille, base de monde du 20 novembre 2026
 
+## Diderot, façade ancienne
+
+Le départ historique du boulevard Lavéran, ses références, les éléments estimés et ses essais de déplacement sont documentés dans [Diderot depuis le boulevard Lavéran](docs/DIDEROT.md).
+
 ## Ce que représente la carte
 
 Les 16 arrondissements et les 111 quartiers de la commune partagent le même relief IGN, la même projection, les mêmes règles de hauteur et le même découpage pour les bâtiments et la voirie. Dans l’atlas et en exploration libre, le bâti décrit l’état de la cartographie en novembre 2026. Le bouton **Les Lauriers · 2014** ouvre la scène historique du jeu.

@@ -4,11 +4,13 @@ func _initialize() -> void:
 	call_deferred("run")
 
 func run() -> void:
-	var scene=load("res://scenes/lauriers.tscn").instantiate()
+	var chemin := "res://scenes/diderot.tscn" if "diderot" in OS.get_cmdline_user_args() else "res://scenes/lauriers.tscn"
+	var scene=load(chemin).instantiate()
 	root.add_child(scene)
 	current_scene=scene
 	for i in 18: await process_frame
-	scene.get_node("Temps").minutes=0
+	if chemin.ends_with("lauriers.tscn"):
+		scene.get_node("Temps").minutes=0
 	scene.get_node("Temps").pause=true
 	for i in 8: await process_frame
 	var mesures: Array[float]=[]

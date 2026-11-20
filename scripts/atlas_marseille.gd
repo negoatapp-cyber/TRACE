@@ -181,6 +181,7 @@ func _interface() -> void:
 	_bouton(row,"Vue générale",_ensemble)
 	_bouton(row,"Explorer ici",_descendre)
 	_bouton(row,"Les Lauriers · 2014",func(): get_tree().change_scene_to_file("res://scenes/lauriers.tscn"),true)
+	_bouton(row,"Diderot · 2012–13",func(): get_tree().change_scene_to_file("res://scenes/diderot.tscn"))
 	_bouton(row,"Tester Loums",func(): get_tree().change_scene_to_file("res://scenes/ilot_grey.tscn"))
 	info=_label("Glisser pour déplacer la carte  ·  Molette pour zoomer  ·  Q / E pour pivoter",18,PAPIER)
 	v.add_child(info)

@@ -11,6 +11,7 @@ Sous Linux ou macOS, depuis la racine du projet :
 ```sh
 ./run.sh           # atlas des 111 quartiers
 ./run.sh quartier  # directement dans la rue de Marathon, secteur historique
+./run.sh diderot   # ancienne entrée de Diderot, boulevard Lavéran, période 2012–2013
 ./run.sh test      # cour de réglage de Loums, rail, ledge et kicker
 ```
 
@@ -24,7 +25,7 @@ Sous Linux ou macOS, depuis la racine du projet :
 | En skate | E pour poser la planche ou descendre. Maj ou avant pour pousser, gauche/droite pour tourner, arrière pour freiner. Maintenir puis relâcher Espace pour l’ollie |
 | Navigation | R ramène au départ sélectionné. F1 ou le bouton **Atlas** ramène à la carte. **Tester Loums** ouvre la cour de test |
 
-[Captures des étapes de construction](docs/CAPTURES.md) · [Sources, couverture, adaptations et résultats des tests](DECISIONS.md)
+[Diderot avant la rénovation, captures et vérifications](docs/DIDEROT.md) · [Captures des étapes de construction](docs/CAPTURES.md) · [Sources, couverture, adaptations et résultats des tests](DECISIONS.md)
 
 ## Phase 1 : « Le geste »
 

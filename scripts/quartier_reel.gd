@@ -135,6 +135,7 @@ func _ready() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if get_parent().has_meta("diderot_archives"): return
 	if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_T:
 		epoque = "apres" if epoque == "avant" else "avant"
 		get_tree().reload_current_scene()
@@ -144,6 +145,8 @@ func _etiquette() -> void:
 	var couche := CanvasLayer.new()
 	var texte := Label.new()
 	texte.text = ("Époque : 2014-2015" if epoque == "avant" else "Époque : aujourd'hui") + "   ·   T pour changer"
+	if get_parent().has_meta("diderot_archives"):
+		texte.text = "Boulevard Lavéran  ·  Façade ancienne"
 	texte.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	texte.position = Vector2(16, -44)
 	texte.add_theme_font_size_override("font_size", 18)

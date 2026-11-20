@@ -1,0 +1,8 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/lauriers.tscn" id="1"]
+[ext_resource type="Script" path="res://scripts/diderot_archives.gd" id="2"]
+
+[node name="Diderot" instance=ExtResource("1")]
+script = ExtResource("2")
+metadata/diderot_archives = true

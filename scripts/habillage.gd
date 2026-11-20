@@ -61,6 +61,8 @@ func _ready() -> void:
 		_emprises.append(e)
 	_emprises.append(PackedVector2Array([Vector2(-28, -1), Vector2(-3, -1), Vector2(-3, 96), Vector2(-28, 96)]))  # impasse PAIX
 	_emprises.append(PackedVector2Array([Vector2(115, 34), Vector2(130, 34), Vector2(130, 50), Vector2(115, 50)]))  # le snack
+	# Emprise du parvis et du stationnement observés sur Lavéran.
+	_emprises.append(PackedVector2Array([Vector2(108,64),Vector2(149,119),Vector2(159,112),Vector2(119,56)]))
 	_mobilier(voies, batiments, zones)
 	_habiller_voitures()
 	_facades(batiments)
@@ -659,8 +661,8 @@ func _mur_paix() -> void:
 	var lisse := _boite("Barriere_blanche", PAIX_AXE - 5.1, zf + 35.5, Vector3(0.06, 0.06, 3.0), Color(0.92, 0.91, 0.88))
 	lisse.position.y += 0.5
 	# — voitures garées au fond : une bleue devant le passage, une sombre contre le mur de droite —
-	_voiture_impasse(Vector2(-11.4, zf + 3.0), PI, Color(0.12, 0.30, 0.66))
-	_voiture_impasse(Vector2(-6.4, zf + 2.8), PI + 0.08, Color(0.12, 0.13, 0.15))
+	_citadine_garee(Vector2(-11.4, zf + 3.0), PI, Color(0.12, 0.30, 0.66))
+	_citadine_garee(Vector2(-6.4, zf + 2.8), PI + 0.08, Color(0.12, 0.13, 0.15))
 	# — pins sur le plateau, derrière le mur, et un grand arbre sombre au-dessus de l'escalier —
 	for q in [Vector2(-19.5, zf - 4.0), Vector2(-15.0, z_haut - 2.5), Vector2(-9.5, zf - 3.5), Vector2(-6.0, zf - 7.0)]:
 		_pin(q)
@@ -841,8 +843,8 @@ func _herbe(p: Vector2) -> void:
 		add_child(mi)
 
 
-func _voiture_impasse(p: Vector2, angle: float, c: Color) -> void:
-	var corps := _boite("Voiture_impasse", p.x, p.y, Vector3(1.7, 0.74, 4.0), Color(0.6, 0.6, 0.6), angle, -0.25)
+func _citadine_garee(p: Vector2, angle: float, c: Color) -> void:
+	var corps := _boite("Citadine_garee", p.x, p.y, Vector3(1.7, 0.74, 4.0), Color(0.6, 0.6, 0.6), angle, -0.25)
 	var m := _vetir(corps, "voiture_citadine", Vector3(0, -0.62, 0))
 	if m:
 		_repeindre(m, "Carrosserie", c)
@@ -965,6 +967,8 @@ func _vieux_murs(batiments: Array) -> void:
 		for k in poly.size():
 			var a := poly[k]
 			var b := poly[(k + 1) % poly.size()]
+			if c[1] == "Lycée" and (a + b).distance_to(Vector2(257, 183)) < 1.0:
+				continue
 			var dehors := _normale_dehors(a, b, poly)
 			# murs des vrais tags (Poutouland, le mur des blazes) : on n'y ajoute rien d'inventé
 			if (c[1] == "Immeuble impasse sud" and dehors.y > 0.7) or (style == "marathon_rouge" and absf(a.x + 30.0) < 1.0 and absf(b.x + 30.0) < 1.0):

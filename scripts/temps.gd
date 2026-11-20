@@ -20,6 +20,7 @@ const MOIS := ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août
 
 var minutes := 0.0            ## minutes de jeu écoulées depuis DEBUT
 var pause := false
+var visite_archive := false
 var _jour := -1
 var _soleil: DirectionalLight3D
 var _env: Environment
@@ -31,7 +32,12 @@ var _debut_unix := 0
 
 func _ready() -> void:
 	_debut_unix = Time.get_unix_time_from_datetime_dict(DEBUT)
-	_charger()
+	visite_archive = get_parent().has_meta("diderot_archives")
+	if visite_archive:
+		minutes = -180
+		pause = true
+	else:
+		_charger()
 	_jour = jour()
 	_interface()
 	_actions()
@@ -76,9 +82,9 @@ func _prendre_les_reperes() -> void:
 
 
 func _process(delta: float) -> void:
-	if Input.is_action_just_pressed("temps_semaine"):
+	if not visite_archive and Input.is_action_just_pressed("temps_semaine"):
 		avancer_jusqu_a(jour() + 7, 8.0)
-	elif Input.is_action_just_pressed("temps_demain") and not Input.is_key_pressed(KEY_SHIFT):
+	elif not visite_archive and Input.is_action_just_pressed("temps_demain") and not Input.is_key_pressed(KEY_SHIFT):
 		avancer_jusqu_a(jour() + 1, 8.0)
 	if not pause:
 		minutes += delta * MINUTES_PAR_SECONDE
@@ -90,7 +96,7 @@ func _process(delta: float) -> void:
 		_verifier_demolition()
 	heure_changee.emit(minutes)
 	_eclairer()
-	_texte.text = date_texte()
+	_texte.text = "Diderot   ·   2012–2013" if visite_archive else date_texte()
 
 
 ## Le nombre de jours depuis le 15 septembre 2014.

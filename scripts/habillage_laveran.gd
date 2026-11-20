@@ -9,8 +9,8 @@ extends Node3D
 ##  - Le chantier de 2013 : grue à tour, palissades blanches taguées, blocs béton rouges et blancs.
 
 const TOON := preload("res://shaders/bd_toon.gdshader")
-const BLEU_TUBE := Color(0.62, 0.74, 0.88)
-const BLANC_TUBE := Color(0.90, 0.91, 0.90)   # au nord de la verrière, le treillis est blanc (Street View 2013)
+const BLEU_TUBE := Color(0.43, 0.57, 0.69)
+const BLANC_TUBE := Color(0.58, 0.67, 0.73)   # au nord de la verrière, le treillis est blanc (Street View 2013)
 const CARRELAGE := Color(0.88, 0.89, 0.88)
 const TURQUOISE := Color(0.28, 0.62, 0.62)
 const BLANC_GRILLE := Color(0.90, 0.91, 0.90)
@@ -46,9 +46,10 @@ func construire(batiments: Array, voies: Array, portes: Array, epoque: String) -
 	_snack(bd)
 	if lycee.size() > 2:
 		_facade_laveran(lycee, bd, portes, epoque)
+		_stationnement(bd)
 		_mur_en_face(lycee, bd)
 		_mobilier_boulevard(lycee, bd)
-		if epoque == "avant":
+		if epoque == "avant" and not get_parent().get_parent().has_meta("diderot_archives"):
 			_chantier(lycee, bd)
 	_poser_paquets()
 
@@ -168,6 +169,7 @@ func _facade_laveran(lycee: PackedVector2Array, bd: PackedVector2Array, portes: 
 	if base.determinant() < 0.0:
 		base = Basis(-Vector3(d.x, 0, d.y), Vector3.UP, Vector3(n.x, 0, n.y))
 	# ouvertures dans la clôture : la verrière au milieu, et chaque porte du lycée sur ce côté
+	_trottoir_lycee(a, d, n, lg, bd)
 	var t_verriere := lg * 0.5
 	var trous := [[t_verriere - 4.8, t_verriere + 4.8]]
 	for p in portes:
@@ -190,10 +192,18 @@ func _facade_laveran(lycee: PackedVector2Array, bd: PackedVector2Array, portes: 
 			# Street View juillet 2013 : mur de 2,5 m tout carrelé de blanc, bande turquoise en tête
 			_boite_v("cloture_carrelage", CARRELAGE, base, Vector3(t1 - t + 0.02, 2.5, 0.3), Vector3(m.x, y + 1.25, m.y))
 			_ajouter("cloture_turquoise", TURQUOISE, Transform3D(base * Basis.from_scale(Vector3(t1 - t + 0.02, 0.35, 0.32)), Vector3(m.x, y + 2.3, m.y)))
-			for j in 6:
-				_ajouter("cloture_joint", Color(0.74, 0.75, 0.74), Transform3D(base * Basis.from_scale(Vector3(t1 - t, 0.02, 0.31)), Vector3(m.x, y + 0.3 + j * 0.3, m.y)))
-			if _tag_ici(t):
-				_decalque("tag_%02d" % (int(t) % 14), Vector3(m.x, y + 1.1, m.y) + base.z * 0.16, base.x, base.z, 1.8, [Color(0.1, 0.1, 0.12), Color(0.55, 0.12, 0.45), Color(0.15, 0.3, 0.7)][int(t) % 3])
+			var longueur := t1 - t
+			var hauteur := 0.92
+			var centre := Vector3(m.x, y + 2.5 + hauteur * 0.5, m.y)
+			for niveau in [-0.42,0.40]:
+				_ajouter("lisse_bleue",BLEU_TUBE,Transform3D(base*Basis.from_scale(Vector3(longueur,0.055,0.07)),centre+Vector3.UP*niveau))
+			var barreaux := maxi(1,roundi(longueur / 0.15))
+			for j in barreaux:
+				var pos := centre + base.x * (longueur * ((j + 0.5)/barreaux - 0.5))
+				_ajouter("barreaux",Color(0.50,0.54,0.55),Transform3D(base*Basis.from_scale(Vector3(0.023,hauteur,0.03)),pos))
+			_collision(base,Vector3(longueur,hauteur,0.08),centre)
+			var bas := Vector3(m.x,y + .22,m.y)
+			_ajouter("cloture_turquoise",TURQUOISE,Transform3D(base*Basis.from_scale(Vector3(longueur,0.16,0.32)),bas))
 		t = t1
 	# portails de grille, ouverts, dans les trous
 	for tr in trous:
@@ -201,47 +211,37 @@ func _facade_laveran(lycee: PackedVector2Array, bd: PackedVector2Array, portes: 
 			var pp: Vector2 = a + d * float(tr[s]) + n * off
 			_ajouter("cloture_grille", Color(0.55, 0.58, 0.60), Transform3D(base * Basis.from_scale(Vector3(0.12, 2.6, 0.12)), Vector3(pp.x, h(pp.x, pp.y) + 1.3, pp.y)))
 	# 2. la structure tubulaire bleue en treillis, de la clôture au toit, sur toute la longueur
-	var toit := 0.0
-	for p in lycee:
-		toit += h(p.x, p.y)
-	toit = toit / lycee.size() + 11.0
-	var pas := 6.0
-	var nb := int(lg / pas)
-	for i in nb + 1:
-		var tt := i * pas + (lg - nb * pas) * 0.5
-		if absf(tt - t_verriere) < 8.0:
-			continue   # pas de structure bleue devant la verrière (Street View 2011)
-		var p0 := a + d * tt + n * (off + 0.8)
-		var y0 := h(p0.x, p0.y)
-		var haut := toit + 1.0 - y0
-		var coul := BLANC_TUBE if tt > t_verriere else BLEU_TUBE
-		var cle := "_blanc" if tt > t_verriere else ""
-		_boite_v("tube_poteau" + cle, coul, base, Vector3(0.22, haut, 0.22), Vector3(p0.x, y0 + haut * 0.5, p0.y))
-		_boite_v("tube_socle", Color(0.80, 0.79, 0.76), base, Vector3(0.7, 0.4, 0.7), Vector3(p0.x, y0 + 0.2, p0.y))
-		# traverse vers la façade, en haut, et sa diagonale
-		var p1 := a + d * tt
-		var mid := (p0 + p1) * 0.5
-		_ajouter("tube" + cle, coul, Transform3D(Basis(Vector3(n.x, 0, n.y), Vector3.UP, Vector3(-d.x, 0, -d.y)).orthonormalized() * Basis.from_scale(Vector3(off + 0.8, 0.14, 0.14)), Vector3(mid.x, toit + 1.0, mid.y)))
-		var diag := atan2(2.2, off + 0.8)
-		var bdiag := Basis(Vector3(n.x, 0, n.y), Vector3.UP, Vector3(-d.x, 0, -d.y)).orthonormalized() * Basis(Vector3.BACK, diag)
-		_ajouter("tube" + cle, coul, Transform3D(bdiag * Basis.from_scale(Vector3(sqrt(pow(off + 0.8, 2) + 4.84), 0.1, 0.1)), Vector3(mid.x, toit + 2.1, mid.y)))
-	# membrures hautes et treillis en zigzag le long du boulevard
-	for yy in [toit + 1.0, toit + 3.2]:
-		for part in [[0.0, t_verriere - 8.0], [t_verriere + 8.0, lg]]:
-			var l2: float = part[1] - part[0]
-			if l2 < 1.0:
-				continue
-			var m: Vector2 = a + d * ((part[0] + part[1]) * 0.5) + n * (off + 0.8 if yy < toit + 2.0 else off * 0.5)
-			var blanc: bool = part[0] > t_verriere
-			_ajouter("tube_blanc" if blanc else "tube", BLANC_TUBE if blanc else BLEU_TUBE, Transform3D(base * Basis.from_scale(Vector3(l2, 0.14, 0.14)), Vector3(m.x, yy, m.y)))
-	for i in int(lg / 3.0):
-		var tt := i * 3.0 + 1.5
-		if absf(tt - t_verriere) < 9.5:
-			continue
-		var s := 1.0 if i % 2 == 0 else -1.0
-		var m := a + d * tt + n * (off * 0.75 + 0.4)
-		var bz := base * Basis(Vector3.BACK, s * atan2(2.2, 3.0))
-		_ajouter("tube_blanc" if tt > t_verriere else "tube", BLANC_TUBE if tt > t_verriere else BLEU_TUBE, Transform3D(bz * Basis.from_scale(Vector3(3.7, 0.09, 0.09)), Vector3(m.x, toit + 2.1, m.y)))
+	# Le faîtage de la charpente est en retrait sur la ligne de poteaux.
+	# Chaque travée partage ses extrémités avec la suivante.
+	for aile in [[0., t_verriere-7.2],[t_verriere+7.2,lg]]:
+		var debut: float = aile[0]
+		var fin: float = aile[1]
+		var travees := maxi(1,roundi((fin-debut)/5.5))
+		var teinte := BLEU_TUBE if debut==0. else BLANC_TUBE
+		var lot := "acier_sud" if debut==0. else "acier_nord"
+		var dernier := Vector3.ZERO
+		var sommet_precedent := Vector3.ZERO
+		for i in travees+1:
+			var t_p := lerpf(debut,fin,float(i)/travees)
+			var point := a + d*t_p + n*(off+0.8)
+			var pied := Vector3(point.x,h(point.x,point.y),point.y)
+			var tete := pied + Vector3.UP*5.05
+			var sommet := tete - base.z*2.0 + Vector3.UP*1.25
+			_boite_v("tube_socle",Color(.67,.66,.61),base,Vector3(.55,.32,.55),pied+Vector3.UP*.16)
+			_boite_v(lot+"_montant",teinte,base,Vector3(.16,5.05,.16),pied+Vector3.UP*2.525)
+			_poutre(lot,teinte,tete,tete-base.z*5.8,.105)
+			_poutre(lot,teinte,tete,sommet,.082)
+			_poutre(lot,teinte,sommet,tete-base.z*5.8,.082)
+			if i>0:
+				_poutre(lot,teinte,dernier,tete,.15)
+				_poutre(lot,teinte,sommet_precedent,sommet,.095)
+				_poutre(lot,teinte,dernier,sommet,.075)
+				_poutre(lot,teinte,sommet_precedent,tete,.075)
+			dernier=tete
+			sommet_precedent=sommet
+	# La plaque rouge visible sur la vue oblique est illisible à cette distance.
+	var panneau := a + d*(t_verriere+5.25) + n*(off+.22)
+	_ajouter("plaque_rouge",Color(.60,.18,.15),Transform3D(base*Basis.from_scale(Vector3(.7,1.38,.05)),Vector3(panneau.x,h(panneau.x,panneau.y)+1.65,panneau.y)))
 	# 3. LE GRAND PORTAIL (Street View juillet 2013, 23 bd Lavéran) : une haute grille grise à barreaux sur toute
 	#    l'ouverture, deux grands battants ouverts vers l'intérieur, rabattus contre les murets de la rampe qui
 	#    descend droit dans le hall vitré (rampe : habillage_lycee.gd).
@@ -286,6 +286,8 @@ func _facade_laveran(lycee: PackedVector2Array, bd: PackedVector2Array, portes: 
 		_ajouter("bande_jaune" if k % 2 == 0 else "bande_noire", Color(0.92, 0.78, 0.12) if k % 2 == 0 else Color(0.12, 0.12, 0.12), Transform3D(base * Basis.from_scale(Vector3(0.4, 0.02, 0.35)), Vector3(ps.x, h(ps.x, ps.y) + 0.02, ps.y)))
 	var pk := a + d * (t_verriere - 6.6) + n * (off + 2.4)
 	_boite_v("barriere_u", Color(0.36, 0.37, 0.40), base, Vector3(0.12, 1.0, 0.12), Vector3(pk.x, h(pk.x, pk.y) + 0.5, pk.y))
+	if get_parent().get_parent().has_meta("diderot_archives"):
+		return
 	# 4. lettrage du lycée sur le pignon carrelé à gauche de la verrière
 	var pl := a + d * (t_verriere - 12.0) + n * 0.1
 	_decalque("lettrage_diderot", Vector3(pl.x, yv + 4.2, pl.y), base.x, base.z, 7.0, Color.WHITE)
@@ -298,8 +300,65 @@ func _facade_laveran(lycee: PackedVector2Array, bd: PackedVector2Array, portes: 
 	_decalque("arret_laveran", Vector3(pa.x, ya + 2.75, pa.y) + base.z * 0.86, base.x, base.z, 2.4, Color.WHITE)
 
 
-func _tag_ici(t: float) -> bool:
-	return int(t / 3.0) % 3 == 1
+## Une peau de béton sur le terrain existant. La limite extérieure suit la chaussée du boulevard.
+func _trottoir_lycee(a: Vector2, axe: Vector2, normale: Vector2, longueur: float, bd: PackedVector2Array) -> void:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var coupes := ceili(longueur)
+	for i in coupes:
+		var coins: Array[Vector3] = []
+		var uvs: Array[Vector2] = []
+		var t0 := longueur * i / coupes
+		var central := absf(t0 + 0.5 - longueur * 0.5) < 4.8
+		for j in 2:
+			var t := longueur * (i + j) / coupes
+			var pied := a + axe * t
+			var proche := pied
+			var distance := INF
+			for k in bd.size() - 1:
+				var point := Geometry2D.get_closest_point_to_segment(pied, bd[k], bd[k + 1])
+				if point.distance_to(pied) < distance:
+					proche = point
+					distance = point.distance_to(pied)
+			var limite := maxf(.5, (proche-pied).dot(normale) - 5.6)
+			for retrait in [minf(6.25, limite) if central else .18, limite]:
+				var p := pied + normale * float(retrait)
+				coins.append(Vector3(p.x,habillage.sol(p.x,p.y)+.026,p.y))
+				uvs.append(Vector2(t,retrait))
+		for k in [0,1,2,2,1,3]:
+			st.set_normal(Vector3.UP)
+			st.set_uv(uvs[k])
+			st.add_vertex(coins[k])
+	var surface := MeshInstance3D.new()
+	var beton := ShaderMaterial.new()
+	beton.shader = preload("res://shaders/diderot_parvis.gdshader")
+	surface.mesh = st.commit()
+	surface.material_override = beton
+	surface.name = "Trottoir_Laveran"
+	add_child(surface)
+
+
+## Le stationnement longitudinal est visible sur le cliché. Les emplacements sont indicatifs.
+func _stationnement(bd: PackedVector2Array) -> void:
+	var stations := [52., 60., 68., 103., 114., 124.]
+	var peintures := [Color("#8b4541"),Color("#bdc0b8"),Color("#444c5a"),Color("#b1a389"),Color("#474958"),Color("#b0b1af")]
+	for i in stations.size():
+		for k in bd.size() - 1:
+			var a := bd[k]
+			var b := bd[k+1]
+			if a.y <= stations[i] and stations[i] < b.y:
+				var axe := (b-a).normalized()
+				var rive := Vector2(-axe.y,axe.x)
+				var centre := a.lerp(b,(float(stations[i])-a.y)/(b.y-a.y)) + rive*4.4
+				habillage._citadine_garee(centre,atan2(axe.x,axe.y),peintures[i])
+				break
+
+
+func _poutre(cle: String, teinte: Color, a: Vector3, b: Vector3, ep: float) -> void:
+	var axe := (b-a).normalized()
+	var normal := axe.cross(Vector3.UP).normalized()
+	var cadre := Basis(axe,normal.cross(axe),normal)
+	_ajouter(cle,teinte,Transform3D(cadre*Basis.from_scale(Vector3(a.distance_to(b),ep,ep)),(a+b)*0.5))
 
 
 # ───────────────────────── en face du lycée (Street View juillet 2013) ─────────────────────────
@@ -505,6 +564,10 @@ func _poser_paquets() -> void:
 		m.set_shader_parameter("couleur", pq[1])
 		m.set_shader_parameter("grain", 0.4)
 		mi.material_override = m
+		if cle == "cloture_carrelage":
+			var email := ShaderMaterial.new()
+			email.shader = preload("res://shaders/diderot_ceramique.gdshader")
+			mi.material_override = email
 		if cle.begins_with("verriere_vitre"):
 			var verre := StandardMaterial3D.new()
 			verre.albedo_color = Color(0.80, 0.92, 0.98, 0.22)

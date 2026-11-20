@@ -227,7 +227,13 @@ func _lycee(nom: String, hauteur: float, poly: PackedVector2Array) -> void:
 			ouvertures.append([lg * 0.5 - HALL_LARGE * 0.5, lg * 0.5 + HALL_LARGE * 0.5, hall_y, toit - 1.2])
 		elif hall.size() > 2 and niveaux.size() > 0 and a.distance_to(HALL_B) < 1.0 and b.distance_to(HALL_A) < 1.0:
 			ouvertures.append([lg * 0.5 - HALL_LARGE * 0.5, lg * 0.5 + HALL_LARGE * 0.5, hall_y, toit - 1.2])
-		_mur_facade(a, b, bas, toit, u, moy, ouvertures, facade)
+		var mat_face: Material = facade
+		if hall.size() > 2 and ((a.distance_to(HALL_A)<1. and b.distance_to(HALL_B)<1.) or (a.distance_to(HALL_B)<1. and b.distance_to(HALL_A)<1.)):
+			var email := ShaderMaterial.new()
+			email.shader = preload("res://shaders/diderot_ceramique.gdshader")
+			email.set_shader_parameter("aile",true)
+			mat_face = email
+		_mur_facade(a, b, bas, toit, u, moy, ouvertures, mat_face)
 		u += lg
 	for pt in portes:
 		_marches_entree(poly, pt)
@@ -361,7 +367,8 @@ func _mur_facade(a: Vector2, b: Vector2, bas: float, haut: float, u: float, moy:
 		var q := []
 		for c in [[pc[0], pc[2]], [pc[1], pc[2]], [pc[1], pc[3]], [pc[0], pc[3]]]:
 			var p := a + d * float(c[0])
-			q.append([Vector3(p.x, c[1], p.y), Vector2(u + c[0], c[1] - moy), Vector2(c[0], lg)])
+			var origine_y := h(p.x, p.y) if m is ShaderMaterial and m.shader == preload("res://shaders/diderot_ceramique.gdshader") else moy
+			q.append([Vector3(p.x, c[1], p.y), Vector2(u + c[0], c[1] - origine_y), Vector2(c[0], lg)])
 		for idx in [0, 1, 2, 0, 2, 3]:
 			st.set_normal(nrm)
 			st.set_uv(q[idx][1])
@@ -737,12 +744,12 @@ func _prisme() -> ArrayMesh:
 	return st.commit()
 
 
-const FER := Color(0.82, 0.84, 0.86)
+const FER := Color(0.52, 0.58, 0.59)
 
 ## Profil de la verrière, en (x, hauteur au-dessus du sol du hall) : côtés droits, puis un dôme
 ## (arc de cercle surbaissé, 3,2 m de flèche sur 12 m), comme sur le Street View de 2011.
-const DOME_FLECHE := 3.2
-const DOME_SEGMENTS := 12
+const DOME_FLECHE := 1.95
+const DOME_SEGMENTS := 8
 
 func _profil(h1: float) -> PackedVector2Array:
 	var w := HALL_LARGE * 0.5
@@ -759,7 +766,7 @@ func _profil(h1: float) -> PackedVector2Array:
 
 func _verre() -> StandardMaterial3D:
 	var verre := StandardMaterial3D.new()
-	verre.albedo_color = Color(0.80, 0.92, 0.98, 0.20)
+	verre.albedo_color = Color(0.32, 0.45, 0.47, 0.46)
 	verre.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	verre.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	verre.cull_mode = BaseMaterial3D.CULL_DISABLED
@@ -808,7 +815,7 @@ func _verriere(c: Callable, base: Basis, bx: Vector3, bz: Vector3, y0: float, to
 	var x := -HALL_LARGE * 0.5
 	while x <= HALL_LARGE * 0.5 + 0.01:
 		_barre(pt.call(Vector2(x, 0), p_av), pt.call(Vector2(x, haut_a.call(x)), p_av), 0.09)
-		x += 1.2
+		x += 2.0
 	var y := 1.5
 	while y < h1 + DOME_FLECHE:
 		var demi := HALL_LARGE * 0.5
@@ -822,11 +829,11 @@ func _verriere(c: Callable, base: Basis, bx: Vector3, bz: Vector3, y0: float, to
 	# bandeau bas : petits carreaux blancs à vitre sombre (deux rangs), sauf la porte au milieu
 	var xb := -HALL_LARGE * 0.5 + 0.3
 	while xb < HALL_LARGE * 0.5 - 0.3:
-		if absf(xb) > 1.4:
-			for r in 2:
-				var o: Vector3 = pt.call(Vector2(xb, 0.45 + r * 0.75), p_av - 0.03)
-				_ajouter("verriere_bandeau", Color(0.94, 0.94, 0.92), Transform3D(base * Basis.from_scale(Vector3(0.6, 0.7, 0.06)), o))
-				_ajouter("verriere_carreau", Color(0.20, 0.24, 0.28), Transform3D(base * Basis.from_scale(Vector3(0.42, 0.48, 0.07)), o - bz * 0.01))
+		if absf(xb) < HALL_LARGE * 0.5 - 0.85:
+			for r in 3:
+				var o: Vector3 = pt.call(Vector2(xb, 2.62 + r * 0.52), p_av - 0.03)
+				_ajouter("verriere_bandeau", Color(0.94, 0.94, 0.92), Transform3D(base * Basis.from_scale(Vector3(0.64, 0.51, 0.06)), o))
+				_ajouter("verriere_carreau", Color(0.20, 0.24, 0.28), Transform3D(base * Basis.from_scale(Vector3(0.46, 0.36, 0.07)), o - bz * 0.01))
 		xb += 0.62
 	# collisions du pignon : deux pans pleins de part et d'autre de la porte (2,8 m)
 	for s in [-1.0, 1.0]:
@@ -888,16 +895,6 @@ func _verriere(c: Callable, base: Basis, bx: Vector3, bz: Vector3, y0: float, to
 		gm2.material_override = verre
 		gm2.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(gm2)
-	# — devant : deux poteaux ronds qui s'ouvrent en bras vers le pignon (l'auvent « arbre ») —
-	for s in [-1.0, 1.0]:
-		var pied: Vector3 = c.call(s * 2.6, -3.2, y0 - 1.1)
-		var tete: Vector3 = c.call(s * 2.6, -3.2, y0 + h1 * 0.72)
-		_barre(pied, tete, 0.32, "verriere_poteau", Color(0.72, 0.74, 0.74))
-		_boite(base, Vector3(0.32, h1, 0.32), (pied + tete) * 0.5)
-		_barre(tete, pt.call(Vector2(s * HALL_LARGE * 0.5, h1 - 0.3), p_av), 0.12)
-		_barre(tete, pt.call(Vector2(s * 2.2, h1 + DOME_FLECHE * 0.85), p_av), 0.12)
-		_barre(tete, pt.call(Vector2(s * 2.6, h1 * 0.72), p_av), 0.12)
-		_barre(tete, pt.call(Vector2(-s * 0.4, h1 + 1.0), p_av), 0.10)
 	print("Lycée : la verrière à dôme (%.0f m de haut)" % (h1 + DOME_FLECHE))
 
 
