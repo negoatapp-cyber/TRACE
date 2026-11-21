@@ -35,6 +35,7 @@ const POSE := preload("res://scripts/pose_procedurale.gd")
 var pose: POSE                 ## postures calculées (attente debout, planche, ollie, chute…)
 var etat := ""                 ## ce que fait le corps : debout, marche, planche, chute, grimpe, bombe…
 var _t := 0.0
+var _decale_lisse := 0.0       ## vitesse de côté, suspendu (lissée)
 var _graffiti: Node              ## lu seulement (tenue de G, mur visé) pour le geste de la bombe
 var _bombe: MeshInstance3D       ## la bombe dans la main droite
 var _bascule := 0.0            ## chute : tout le corps bascule en avant autour des pieds (rad)
@@ -93,6 +94,7 @@ func _ready() -> void:
 	anim = _trouver_animations(modele)
 	if anim:
 		_ranger_clips()
+		_ajouter_clips()
 	var sk := modele.find_children("*", "Skeleton3D", true, false)
 	if sk.size() > 0:
 		squelette = sk[0]
@@ -203,6 +205,10 @@ func _trouver_animations(n: Node) -> AnimationPlayer:
 
 
 func _ranger_clips() -> void:
+	# d'abord les clips de bonne cadence (Casual_Walk est une flânerie très lente : Loums avait l'air au ralenti)
+	for paire in [["marche", &"Walking"], ["course", &"Running"]]:
+		if anim.has_animation(paire[1]):
+			_clips[paire[0]] = paire[1]
 	var mots := {
 		"attente": ["idle", "inactif", "stand", "breath"],
 		"marche": ["walk"],
@@ -228,6 +234,276 @@ func _ranger_clips() -> void:
 	var liste := anim.get_animation_list()
 	if not _clips.has("attente") and liste.size() > 0:
 		_clips["attente"] = _clips.get("marche", liste[0])
+
+
+## Les animations de la bibliothèque Meshy (saut, passage d'obstacle, escalade, suspension) sont dans un
+## fichier à part, sans maillage : même squelette que Loums, donc mêmes pistes. Fabriqué par
+## .tools/anims_loums.py à partir des exports Meshy. Sans ce fichier, les poses calculées restent.
+const FICHIER_ANIMS := "res://assets/personnages/loums_anims.glb"
+var CLIP_SAUT := &"Regular_Jump"
+var CLIP_ENJAMBER := &"Parkour_Vault_1"
+var CLIP_HISSER := &"climbing_up_wall"
+var CLIP_PENDU := &"Bar_Hang_Idle"
+## Escalade fluide (bibliothèque Meshy, ajoutés le 21.11 ; branchés seulement s'ils sont dans loums_anims.glb) :
+const CLIP_BOND := &"Quad_Jump_Up"                 ## suspendu → bond → suspendu au rebord du dessus
+const CLIP_DECALE_G := &"Hang_and_Climb_Left"      ## décalage le long du bord
+const CLIP_DECALE_D := &"Hang_and_Climb_Rght"
+const CLIP_PENDU_MUR := &"Grab_Wall_Midair_Idle"   ## suspendu contre un mur (plus juste que la pose de barre)
+const CLIP_DESCENTE := &"climbing_down_wall"       ## descendre une gouttière
+const PAS_DECALE := 0.66                           ## distance parcourue par un cycle du clip de décalage (mesurée sur l'export Meshy)
+var _y_gouttiere := 0.0
+var _descend_gouttiere := false
+var _pendu_depuis := -1.0                         ## instant où il s'est accroché (le geste d'agrippe se joue une fois)
+var CLIP_RECEPTION := &""      ## un geste filmé de réception, s'il existe ; sinon la fin du clip de saut
+var SAUT_DECOLLE := 0.53        ## instant du clip où les pieds quittent le sol (s)
+var SAUT_ATTERRIT := 1.07       ## instant où ils le retrouvent
+var RECEPTION_DUREE := 0.35     ## durée de l'amorti joué après une vraie chute (s)
+## Les gestes filmés par Louma, transférés sur Loums par .tools/retarget_loums.gd, rangés dans
+## assets/personnages/anims/<nom>.res. Le nom du fichier dit quel geste il remplace :
+const DOSSIER_GESTES := "res://assets/personnages/anims/"
+const GESTES_FILMES := ["attente", "marche", "course", "saut", "reception", "hisser", "enjamber", "pendu",
+	"escalier_monter", "ollie", "kickflip", "shove_it", "skate_freiner", "skate_attraper", "skate_pousser"]
+const CLIP_GOUTTIERE := &"climbing_up_wall"   ## cycle d'escalade (gouttière) : reste celui de la bibliothèque
+## Gestes de planche filmés : figure -> clip, et les instants du pop et de la réception dans chaque clip.
+var _figures := {}              ## "Ollie" / "Kickflip" / "Shove-it" -> [clip, décolle, atterrit]
+var CLIP_FREIN := &""
+var CLIP_ESCALIER := &""
+var CLIP_ATTRAPER := &""        ## descendre en roulant : claquer le tail, attraper la planche
+var CLIP_POUSSE := &""          ## une poussée (un cycle : le pied se pose, glisse vers l'arrière, revient)
+var _face_route := 0.0          ## 1 = face à la route (il pousse), 0 = de profil (il roule)
+var _figure_air := ""           ## figure du dernier saut en planche (gardée pour la réception)
+var _vy_pop := 5.0              ## vitesse verticale au pop (pour suivre la figure en l'air)
+var _frein_t := 0.0
+var _montee := 0.0              ## vitesse à laquelle il monte (m/s, lissée) : escaliers
+var _y_prec := 0.0
+const RECEPTION_VITESSE := 3.0  ## vitesse de chute (m/s) à partir de laquelle il amortit
+const MARCHE_MAX := 0.6         ## en dessous de cette hauteur (m), un simple bond
+const ENJAMBER_MAX := 1.1       ## jusqu'à cette hauteur (m), il passe l'obstacle jambes en avant ; au-dessus, il se hisse
+const CYCLE_GRIMPE := 0.96      ## hauteur gagnée par cycle du clip d'escalade (m), pour la gouttière
+var _recep_t := -1.0            ## secondes depuis l'atterrissage, -1 sinon
+var _en_l_air := false
+var _vy_chute := 0.0
+
+
+func _ajouter_clips() -> void:
+	var source: Node = null
+	if ResourceLoader.exists(FICHIER_ANIMS):
+		var ps := load(FICHIER_ANIMS) as PackedScene
+		if ps:
+			source = ps.instantiate()
+	if source == null:
+		var brut := ProjectSettings.globalize_path(FICHIER_ANIMS)
+		if FileAccess.file_exists(brut):
+			var doc := GLTFDocument.new()
+			var st := GLTFState.new()
+			if doc.append_from_file(brut, st) == OK:
+				source = doc.generate_scene(st)
+	if source == null:
+		return
+	var src := _trouver_animations(source)
+	var lib := anim.get_animation_library(&"")
+	if src and lib:
+		for nom in src.get_animation_list():
+			if not anim.has_animation(nom):
+				var a := src.get_animation(nom).duplicate() as Animation
+				a.loop_mode = Animation.LOOP_NONE   # ces clips sont pilotés image par image
+				lib.add_animation(nom, a)
+	source.free()
+	_ajouter_gestes_filmes()
+	if anim.has_animation(CLIP_SAUT):
+		_clips["saut"] = CLIP_SAUT
+
+
+## Un geste filmé prend la place du clip de bibliothèque correspondant.
+func _ajouter_gestes_filmes() -> void:
+	var lib := anim.get_animation_library(&"")
+	if lib == null:
+		return
+	for nom in GESTES_FILMES:
+		var chemin: String = DOSSIER_GESTES + nom + ".res"
+		if not ResourceLoader.exists(chemin):
+			continue
+		var a := load(chemin) as Animation
+		if a == null:
+			continue
+		a = a.duplicate() as Animation
+		var id := StringName("filme_" + nom)
+		a.loop_mode = Animation.LOOP_LINEAR if nom in ["attente", "marche", "course"] else Animation.LOOP_NONE
+		if anim.has_animation(id):
+			lib.remove_animation(id)
+		lib.add_animation(id, a)
+		match nom:
+			"attente", "marche", "course":
+				_clips[nom] = id
+			"saut":
+				CLIP_SAUT = id
+				SAUT_DECOLLE = float(a.get_meta("decolle", a.length * 0.3))
+				SAUT_ATTERRIT = float(a.get_meta("atterrit", a.length * 0.6))
+			"reception":
+				CLIP_RECEPTION = id
+				RECEPTION_DUREE = a.length
+			"hisser":
+				CLIP_HISSER = id
+			"enjamber":
+				CLIP_ENJAMBER = id
+			"pendu":
+				CLIP_PENDU = id
+			"ollie", "kickflip", "shove_it":
+				var figure: String = {"ollie": "Ollie", "kickflip": "Kickflip", "shove_it": "Shove-it"}[nom]
+				var decolle := float(a.get_meta("decolle", a.length * 0.35))
+				_figures[figure] = [id, decolle, float(a.get_meta("atterrit", a.length * 0.6)), _plus_bas(a, decolle)]
+			"skate_freiner":
+				CLIP_FREIN = id
+			"skate_attraper":
+				CLIP_ATTRAPER = id
+			"skate_pousser":
+				CLIP_POUSSE = id
+			"escalier_monter":
+				CLIP_ESCALIER = id
+				a.loop_mode = Animation.LOOP_LINEAR
+
+
+## Le clip qui remplace la pose calculée pour l'état en cours, et l'instant à afficher : [nom, temps].
+## Vide s'il n'y en a pas (fichier d'animations absent) : la pose calculée prend le relais.
+func _clip_pilote() -> Array:
+	if anim == null:
+		return []
+	if etat != "suspendu" or _joueur.gouttiere != null or _joueur._bond_t >= 0.0:
+		_pendu_depuis = -1.0
+	match etat:
+		"grimpe":
+			var haut: float = _joueur._m_to.y - _joueur._m_from.y
+			if haut < MARCHE_MAX and anim.has_animation(CLIP_SAUT):
+				# une marche, un trottoir, un muret bas : un petit bond groupé
+				return [CLIP_SAUT, lerpf(SAUT_DECOLLE, SAUT_ATTERRIT + 0.1, _joueur._m_t)]
+			var nom := CLIP_ENJAMBER if haut < ENJAMBER_MAX and anim.has_animation(CLIP_ENJAMBER) else CLIP_HISSER
+			if anim.has_animation(nom):
+				return [nom, _joueur._m_t * anim.get_animation(nom).length]
+		"suspendu":
+			if _joueur.gouttiere != null:
+				# sur la gouttière, le clip avance avec la hauteur ; en descendant, le clip de descente
+				var y: float = _joueur.global_position.y
+				if absf(y - _y_gouttiere) > 0.0005:
+					_descend_gouttiere = y < _y_gouttiere
+				_y_gouttiere = y
+				var cg := CLIP_DESCENTE if _descend_gouttiere and anim.has_animation(CLIP_DESCENTE) else CLIP_GOUTTIERE
+				if anim.has_animation(cg):
+					var l := anim.get_animation(cg).length
+					var ph := fposmod(y / CYCLE_GRIMPE, 1.0)
+					return [cg, (1.0 - ph if cg == CLIP_DESCENTE else ph) * l]
+			elif _joueur._bond_t >= 0.0 and anim.has_animation(CLIP_BOND):
+				# le bond vers le rebord du dessus : le clip suit la progression du bond (0,38 s)
+				return [CLIP_BOND, clampf(_joueur._bond_t, 0.0, 1.0) * anim.get_animation(CLIP_BOND).length]
+			elif absf(_decale_lisse) > 0.15:
+				# il se décale le long du bord : clip gauche ou droite, cadencé par la distance parcourue
+				var cd := CLIP_DECALE_D if _decale_lisse > 0.0 else CLIP_DECALE_G
+				if anim.has_animation(cd):
+					return [cd, fposmod(_joueur.decale_dist / PAS_DECALE, 1.0) * anim.get_animation(cd).length]
+				return []   # sans clip : les mains passent l'une après l'autre (pose calculée)
+			elif anim.has_animation(CLIP_PENDU_MUR):
+				# il vient de s'agripper au mur : le geste se joue une fois, puis il tient la dernière pose
+				if _pendu_depuis < 0.0:
+					_pendu_depuis = _t
+				var lp := anim.get_animation(CLIP_PENDU_MUR).length
+				return [CLIP_PENDU_MUR, minf(_t - _pendu_depuis, lp - 0.01)]
+			elif anim.has_animation(CLIP_PENDU):
+				return [CLIP_PENDU, fposmod(_t, anim.get_animation(CLIP_PENDU).length)]
+		"saut":
+			if anim.has_animation(CLIP_SAUT):
+				# la pose suit la vitesse verticale : jambes qui poussent à la montée, groupées en haut, tendues à la descente
+				var v0: float = maxf(_joueur.jump_velocity, 0.1)
+				var k := clampf((v0 - _joueur.velocity.y) / (2.0 * v0), 0.0, 1.0)
+				return [CLIP_SAUT, lerpf(SAUT_DECOLLE, SAUT_ATTERRIT, k)]
+		"planche":
+			return _clip_planche()
+		"accroche":
+			# il descend en roulant : tail claqué, la planche se dresse, il l'attrape (geste filmé)
+			if CLIP_ATTRAPER != &"" and anim.has_animation(CLIP_ATTRAPER):
+				var k: float = clampf(_joueur.transition_t / Player.TRANSITION_DUREE, 0.0, 1.0)
+				return [CLIP_ATTRAPER, k * anim.get_animation(CLIP_ATTRAPER).length]
+		"reception":
+			if CLIP_RECEPTION != &"" and anim.has_animation(CLIP_RECEPTION):
+				return [CLIP_RECEPTION, _recep_t]
+			if anim.has_animation(CLIP_SAUT):
+				return [CLIP_SAUT, SAUT_ATTERRIT + _recep_t]
+	return []
+
+
+## Sur la planche, les gestes filmés : l'ollie qui se charge, la figure en l'air, la réception, le frein.
+## Les pieds restent sur les vis (l'IK passe après le clip).
+func _clip_planche() -> Array:
+	var skate: SkateController = _joueur.skate
+	if skate.grinding:
+		return []
+	if skate.charge >= 0.0 and _figures.has("Ollie"):
+		# on s'accroupit pour le pop : le début du clip, jusqu'au décollage
+		var f: Array = _figures["Ollie"]
+		var k := clampf(skate.charge / maxf(skate.charge_max, 0.01), 0.0, 1.0)
+		return [f[0], lerpf(f[3] * 0.5, f[3], k)]
+	if skate.in_air and skate.saute:
+		if _figure_air == "":
+			_figure_air = skate.trick if _figures.has(skate.trick) else "Ollie"
+			_vy_pop = maxf(_joueur.velocity.y, 1.0)
+		if _figures.has(_figure_air):
+			var f: Array = _figures[_figure_air]
+			var k := clampf((_vy_pop - _joueur.velocity.y) / (2.0 * _vy_pop), 0.0, 1.0)
+			if skate.grab > 0.0:
+				k = lerpf(k, 0.5, skate.grab)   # grab : il reste groupé, genoux au plus haut (Louma 21.11)
+			return [f[0], lerpf(f[1], f[2], k)]
+	if not skate.in_air and skate.reception > 0.0 and _figures.has(_figure_air):
+		var f: Array = _figures[_figure_air]
+		var reste: float = anim.get_animation(f[0]).length - f[2]
+		return [f[0], f[2] + (1.0 - skate.reception) * minf(reste, 0.5)]
+	if not skate.in_air:
+		_figure_air = ""
+	if skate.push_phase >= 0.0 and CLIP_POUSSE != &"":
+		# la poussée filmée : un cycle du clip par poussée (le pied arrière reste guidé par l'IK)
+		# le clip commence au pied posé au sol : c'est l'instant 0,25 de la poussée du jeu
+		return [CLIP_POUSSE, fposmod(skate.push_phase - 0.25, 1.0) * anim.get_animation(CLIP_POUSSE).length]
+	if skate.freine and CLIP_FREIN != &"":
+		# le pied arrière frotte : le milieu du clip, tenu tant qu'il freine
+		var l := anim.get_animation(CLIP_FREIN).length
+		return [CLIP_FREIN, clampf(l * 0.3 + _frein_t, 0.0, l * 0.7)]
+	return []
+
+
+## Instant où le bassin est le plus bas avant le décollage : le fond de la flexion, avant le pop.
+static func _plus_bas(a: Animation, avant: float) -> float:
+	for t in a.get_track_count():
+		if a.track_get_type(t) != Animation.TYPE_POSITION_3D:
+			continue
+		var meilleur := avant * 0.8
+		var y_min := INF
+		for k in a.track_get_key_count(t):
+			var tk := a.track_get_key_time(t, k)
+			if tk > avant:
+				break
+			var p: Vector3 = a.track_get_key_value(t, k)
+			if p.y < y_min:
+				y_min = p.y
+				meilleur = tk
+		return meilleur
+	return avant * 0.8
+
+
+## Suit les sauts à pied pour jouer l'amorti à l'atterrissage.
+func _suivre_saut(delta: float) -> void:
+	var a_pied: bool = _joueur.mode == Player.Mode.WALK and not _joueur._mantling and not _joueur.suspendu \
+			and _joueur.gouttiere == null and _joueur.chute_t < 0.0 and _joueur.transition == ""
+	if _recep_t >= 0.0:
+		_recep_t += delta
+		if _recep_t >= RECEPTION_DUREE or not a_pied or not _joueur.is_on_floor():
+			_recep_t = -1.0
+	if not a_pied:
+		_en_l_air = false
+		return
+	if not _joueur.is_on_floor():
+		_en_l_air = true
+		_vy_chute = _joueur.velocity.y
+	elif _en_l_air:
+		_en_l_air = false
+		if -_vy_chute >= RECEPTION_VITESSE and anim != null and anim.has_animation(CLIP_SAUT):
+			_recep_t = 0.0
 
 
 ## Deux jambes en cinématique inverse : les pieds vont se poser sur la planche.
@@ -310,29 +586,98 @@ func _pied_qui_pousse(t: float) -> Vector3:
 func _process(delta: float) -> void:
 	if _joueur == null:
 		return
+	if modele != null:
+		_suivre_saut(delta)
 	etat = _etat()   # calculé même sans modèle (copies du dépôt sans assets/personnages)
 	if modele == null:
 		return
 	_t += delta
+	_decale_lisse = lerpf(_decale_lisse, _joueur.decale, 1.0 - exp(-10.0 * delta))
+	_frein_t = _frein_t + delta if (_joueur.mode == Player.Mode.SKATE and _joueur.skate.freine) else 0.0
+	var vy := (_joueur.global_position.y - _y_prec) / maxf(delta, 0.001)
+	_y_prec = _joueur.global_position.y
+	_montee = lerpf(_montee, vy if _joueur.is_on_floor() else 0.0, 1.0 - exp(-8.0 * delta))
 	_posture(delta)
 	_placer_sur_vehicule()
 	if pose:
 		_composer(delta)
 	if anim == null:
 		return
+	var pilote := _clip_pilote()
+	if not pilote.is_empty():
+		# clip piloté : on affiche l'instant voulu, le jeu garde la main sur le rythme
+		var nom_clip: StringName = pilote[0]
+		if anim.current_animation != nom_clip:
+			anim.play(nom_clip, 0.0)
+		anim.speed_scale = 0.0
+		var fin: float = anim.get_animation(nom_clip).length - 0.001
+		anim.seek(clampf(float(pilote[1]), 0.0, fin), true)
+		return
 	var clip_etat := "attente"
 	var v := Vector2(_joueur.velocity.x, _joueur.velocity.z).length()
-	if etat == "marche" or etat == "course" or etat == "saut":
+	if etat == "marche" or etat == "course":
 		clip_etat = etat
 	var clip: StringName = _clips.get(clip_etat, _clips.get("attente", &""))
+	if (etat == "marche" or etat == "course") and _montee > 0.6 and CLIP_ESCALIER != &"":
+		clip = CLIP_ESCALIER   # il monte des marches : genoux hauts, buste en avant
 	if clip == &"":
 		return
 	if anim.current_animation != clip:
 		anim.play(clip, 0.2)
 	if clip_etat == "marche" or clip_etat == "course":
-		anim.speed_scale = clampf(v / (6.2 if clip_etat == "course" else 3.2), 0.6, 1.4)
+		# la cadence suit la vitesse réelle : les pieds ne glissent pas, il n'a plus l'air au ralenti
+		anim.speed_scale = clampf(v / _vitesse_clip(clip), 0.7, 2.1)
 	else:
 		anim.speed_scale = 1.0
+
+
+## Vitesse au sol d'un clip de marche ou de course (m/s) : celle du pied d'appui, mesurée une fois sur le clip.
+var _vitesses_clips := {}
+func _vitesse_clip(clip: StringName) -> float:
+	if _vitesses_clips.has(clip):
+		return _vitesses_clips[clip]
+	var v := 3.0 if clip == _clips.get("course") else 1.3
+	var gauche := -1
+	var droit := -1
+	if squelette:
+		for i in squelette.get_bone_count():
+			var n := squelette.get_bone_name(i).to_lower()
+			if n.ends_with("leftfoot"):
+				gauche = i
+			elif n.ends_with("rightfoot"):
+				droit = i
+	if gauche >= 0 and droit >= 0 and anim.has_animation(clip):
+		var garde := anim.current_animation
+		var garde_t := anim.current_animation_position if garde != "" else 0.0
+		var garde_vit := anim.speed_scale
+		var duree := anim.get_animation(clip).length
+		anim.play(clip, 0.0)
+		anim.speed_scale = 0.0
+		var avant := {}
+		var total := 0.0
+		var n_pas := 0
+		for k in 61:
+			anim.seek(duree * k / 60.0, true)
+			squelette.force_update_all_bone_transforms()
+			var a := squelette.get_bone_global_pose(gauche).origin
+			var b := squelette.get_bone_global_pose(droit).origin
+			var cle := 0 if a.y < b.y else 1
+			var bas := a if cle == 0 else b
+			if avant.get("dernier", -1) == cle:
+				var d: Vector3 = bas - avant[cle]
+				d.y = 0.0
+				total += d.length()
+				n_pas += 1
+			avant[cle] = bas
+			avant["dernier"] = cle
+		if n_pas > 0 and total > 0.0:
+			v = total * squelette.global_transform.basis.get_scale().x / (n_pas * duree / 60.0)
+		if garde != "":
+			anim.play(garde, 0.0)
+			anim.seek(garde_t, true)
+		anim.speed_scale = garde_vit
+	_vitesses_clips[clip] = maxf(v, 0.3)
+	return _vitesses_clips[clip]
 
 
 ## Le véhicule conduit (scooter, voiture), lu dans la conduite de n°2 ; null à pied.
@@ -348,7 +693,7 @@ func _vehicule() -> Node3D:
 
 ## Assis : sur la selle du scooter, au volant de la voiture (à gauche). Le corps reste visible.
 ## Siège dans le repère du véhicule (+Z = l'avant ; +X = la gauche du conducteur).
-const SIEGE := {"scooter": Vector3(0, -0.2, -0.12), "voiture": Vector3(0.38, -0.42, -0.15)}
+const SIEGE := {"scooter": Vector3(0, 0.08, -0.04), "voiture": Vector3(0.38, -0.42, -0.15)}
 func _placer_sur_vehicule() -> void:
 	var v := _vehicule()
 	var vis := get_parent() as Node3D
@@ -377,13 +722,17 @@ func _assis(c: Dictionary) -> void:
 	c.bas = 1.0
 	c.fondu = 0.15
 	var scooter := str(_vehicule().get("type")) == "scooter" if _vehicule() else true
-	c.buste = Vector3(0.12 if scooter else 0.0, 0, 0)
-	c.tete = Vector3(-0.1, 0, 0)
-	c.jg = [Vector3(0.12, -0.15, 1.0), Vector3(0.04, -1, 0.12 if scooter else 0.35)]
-	c.jd = [Vector3(-0.12, -0.15, 1.0), Vector3(-0.04, -1, 0.12 if scooter else 0.35)]
-	var ecart := 0.32 if scooter else 0.2
-	c.bg = [Vector3(ecart, -0.45, 0.85), Vector3(0.1, -0.15, 1.0)]
-	c.bd = [Vector3(-ecart, -0.45, 0.85), Vector3(-0.1, -0.15, 1.0)]
+	c.buste = Vector3(0.9 if scooter else 0.0, 0, 0)
+	c.tete = Vector3(-0.7 if scooter else -0.1, 0, 0)
+	c.jg = [Vector3(0.12, 0.05, 1.0), Vector3(0.04, -1, 0.0)] if scooter else [Vector3(0.12, -0.15, 1.0), Vector3(0.04, -1, 0.35)]
+	c.jd = [Vector3(-0.12, 0.05, 1.0), Vector3(-0.04, -1, 0.0)] if scooter else [Vector3(-0.12, -0.15, 1.0), Vector3(-0.04, -1, 0.35)]
+	if scooter:
+		# Poignets juste derrière les poignées (guidon à 1 m de haut, 0,47 m devant), coudes un peu ouverts.
+		c.bg = [Vector3(0.458, -0.625, 0.631), Vector3(-0.049, -0.6, 0.8)]
+		c.bd = [Vector3(-0.458, -0.625, 0.631), Vector3(0.049, -0.6, 0.8)]
+	else:
+		c.bg = [Vector3(0.2, -0.45, 0.85), Vector3(0.1, -0.15, 1.0)]
+		c.bd = [Vector3(-0.2, -0.45, 0.85), Vector3(-0.1, -0.15, 1.0)]
 
 
 ## Ce que fait le corps en ce moment.
@@ -405,7 +754,9 @@ func _etat() -> String:
 		return "planche"
 	if not _joueur.is_on_floor() and _clips.has("saut"):
 		return "saut"
-	if v > 4.5:
+	if _recep_t >= 0.0 and v < 2.5:
+		return "reception"
+	if v > 2.3:
 		return "course"
 	if v > 0.3:
 		return "marche"
@@ -428,7 +779,10 @@ func _composer(delta: float) -> void:
 		"jg": [Vector3(0.02, -1, 0.0), Vector3(0.02, -1, -0.02)],
 		"jd": [Vector3(-0.02, -1, 0.0), Vector3(-0.02, -1, -0.02)],
 	}
-	match etat:
+	var avec_clip := not _clip_pilote().is_empty()
+	if avec_clip:
+		c.fondu = 0.1
+	match "" if avec_clip else etat:
 		"debout":
 			_debout(c)
 		"planche":
@@ -455,7 +809,8 @@ func _composer(delta: float) -> void:
 	pose.buste = pose.buste.lerp(c.buste, k)
 	pose.tete = pose.tete.lerp(c.tete, k)
 	pose.respiration = lerpf(pose.respiration, c.souffle, k)
-	pose.poing_d = move_toward(pose.poing_d, 1.0 if etat == "bombe" else 0.0, delta / 0.15)
+	pose.poing_d = move_toward(pose.poing_d, 1.0 if etat == "bombe" or etat == "assis" else 0.0, delta / 0.15)
+	pose.poing_g = move_toward(pose.poing_g, 1.0 if etat == "assis" else 0.0, delta / 0.15)
 	for i in 2:
 		pose.bras_g[i] = pose.bras_g[i].lerp(c.bg[i], k)
 		pose.bras_d[i] = pose.bras_d[i].lerp(c.bd[i], k)
@@ -492,10 +847,13 @@ func _sur_planche(c: Dictionary) -> void:
 	var avant_bras := 0.05    # bras vers l'avant (+) ou l'arrière (-)
 	if pousse:
 		var ph := skate.push_phase
+		# pousser : la jambe d'appui plie franchement, le buste part en avant au moment où le pied frappe
+		var frappe := smoothstep(0.15, 0.4, ph) * (1.0 - smoothstep(0.6, 0.9, ph))
 		torsion = 0.25 * nez
-		penche = 0.32
-		accroupi = 0.15 + sin(ph * PI) * 0.04
+		penche = 0.3 + 0.2 * frappe
+		accroupi = 0.16 + 0.1 * frappe
 		ecart = 0.35
+		avant_bras = 0.05 + 0.2 * frappe
 	if skate.charge >= 0.0:
 		# Ollie qui se charge : on descend, le buste au-dessus des pieds, bras vers l'avant.
 		var k := clampf(skate.charge / skate.charge_max, 0.0, 1.0)
@@ -576,10 +934,21 @@ func _grimpe(c: Dictionary) -> void:
 	var avant := Vector3(-sin(ry), 0.0, -cos(ry))
 	var rebord: Vector3 = _joueur._rebord if pendu else _joueur._m_to - avant * 0.12
 	var inv := squelette.global_transform.affine_inverse()
+	# décalage le long du bord : la main qui mène part devant, l'autre la rejoint (une prise toutes les 0,3 m)
+	var le_long := Vector3.UP.cross(_joueur._rebord_n).normalized() if pendu else Vector3.ZERO
+	var phase: float = _joueur.decale_dist / 0.3 * PI
+	var sens := signf(_decale_lisse)
+	var force := clampf(absf(_decale_lisse) / 1.0, 0.0, 1.0)
 	for cote in ["Left", "Right"]:
 		var epaule := pose.origine_repos(cote + "Arm")
 		var ecart := 0.12 if cote == "Left" else -0.12
-		var vers: Vector3 = inv * (rebord) - epaule
+		var prise := rebord
+		if pendu and force > 0.0:
+			# Loums face au mur : sa droite est le_long ; la main du côté où il va mène
+			var mene: bool = (cote == "Right") == (sens > 0.0)
+			var k := 0.5 + 0.5 * sin(phase + (0.0 if mene else PI))
+			prise += le_long * sens * force * (0.22 * k - 0.05) + Vector3.UP * 0.06 * force * sin(phase * 2.0 + (0.0 if mene else PI))
+		var vers: Vector3 = inv * (prise) - epaule
 		vers.x += ecart / maxf(modele.scale.x, 0.001)
 		var d := vers.normalized()
 		var bras: Array[Vector3] = [d + Vector3(0, -0.1, 0), d + Vector3(0, 0.05, 0.1)]
@@ -593,8 +962,10 @@ func _grimpe(c: Dictionary) -> void:
 		# suspendu : jambes qui pendent, un peu fléchies, le buste contre le mur
 		c.buste = Vector3(0.05, 0, 0)
 		c.tete = Vector3(-0.35, 0, 0)
-		c.jg = [Vector3(0.06, -1, 0.12), Vector3(0.04, -1, -0.2)]
-		c.jd = [Vector3(-0.06, -1, 0.05), Vector3(-0.04, -1, -0.25)]
+		var balance := 0.25 * force * sin(phase)
+		c.jg = [Vector3(0.06 + balance, -1, 0.12), Vector3(0.04 + balance * 0.5, -1, -0.2)]
+		c.jd = [Vector3(-0.06 + balance, -1, 0.05), Vector3(-0.04 + balance * 0.5, -1, -0.25)]
+		c.bassin = Vector3(_u(0.04 * force * sin(phase)), 0, 0)
 		return
 	# un genou monte pour prendre appui
 	c.jg = [Vector3(0.05, -0.55, 0.8), Vector3(0.03, -1, 0.05)]
@@ -821,7 +1192,10 @@ func _posture(delta: float) -> void:
 		ik.influence = _poids
 	var pousse := sur_planche and skate.push_phase >= 0.0 and not skate.in_air
 	# De profil sur la planche ; un peu plus de face quand il pousse.
-	var profil := (PI * 0.5 if goofy else -PI * 0.5) * (0.55 if pousse else 1.0)
+	# Il pousse : face à la route (comme en vrai) ; il roule : de biais, de profil sur la planche.
+	# La bascule est lissée pour ne pas pivoter à chaque poussée quand il en enchaîne plusieurs.
+	_face_route = move_toward(_face_route, 1.0 if pousse else 0.0, delta * (5.0 if pousse else 1.6))
+	var profil := (PI * 0.5 if goofy else -PI * 0.5) * lerpf(1.0, 0.18, smoothstep(0.0, 1.0, _face_route))
 	rotation.y = lerp_angle(rotation.y, profil * _poids, minf(1.0, 10.0 * delta))
 	rotation.z = lerpf(rotation.z, -skate.lean * 0.18 * _poids, minf(1.0, 8.0 * delta))
 	# Chute : le corps entier bascule vers l'avant, pivot aux pieds.
@@ -838,28 +1212,35 @@ func _posture(delta: float) -> void:
 			cible_arriere.position = _pied_qui_freine()
 		else:
 			cible_arriere.position = PIED_ARRIERE
+		if sur_planche and (skate.charge >= 0.0 or (skate.saute and skate.pop_t >= 0.0)):
+			# En charge le pied arrière va sur le tail. Au pop le pied avant
+			# brosse vers le nose pour remettre le plateau à plat.
+			var t := maxf(0.0, skate.pop_t) if skate.charge < 0.0 else 0.0
+			var appui := skate.placement_pop * (1.0 - smoothstep(0.015, 0.16, t))
+			var glisse := smoothstep(0.015, 0.13, t) * (1.0 - smoothstep(0.14, 0.32, t))
+			cible_arriere.position.z += 0.11 * appui
+			cible_avant.position.z += 0.07 * appui - 0.09 * glisse
 		if sur_planche and skate.in_air and skate.trick_t < 1.0 and skate.trick in ["Kickflip", "Shove-it"]:
 			_pieds_en_flip(skate)
 
 
 ## Kickflip / shove-it : les pieds quittent la planche qui tourne sous eux, puis la rattrapent.
-## Les cibles suivent la planche « à plat » (sans sa rotation), soulevées au milieu du flip.
+## Le plateau tourne indépendamment des deux jambes et de leurs pôles d'IK.
 func _pieds_en_flip(skate: SkateController) -> void:
-	var planche := cible_avant.get_parent() as Node3D
-	var vis := get_parent() as Node3D
-	var cadre := vis.global_transform * Transform3D(Basis(), planche.position)
 	var t := skate.trick_t
-	var leve := sin(PI * t) * 0.24
+	var montee := smoothstep(0.0, 0.31, t)
+	var haut_avant := montee * (1.0 - smoothstep(0.66, 1.0, t))
+	var haut_arriere := montee * (1.0 - smoothstep(0.51, 0.86, t))
 	var face := -1.0 if goofy else 1.0
-	var avant := PIED_AVANT + Vector3(0, leve, 0)
+	cible_avant.position.y += 0.17 * haut_avant
+	cible_arriere.position.y += 0.17 * haut_arriere
 	if skate.trick == "Kickflip":
-		# le pied avant glisse vers le bord et chasse la planche
-		avant.x += face * 0.1 * sin(PI * minf(t * 1.6, 1.0))
+		# La pointe sort en diagonale par le coin du nose. Le pied arrière
+		# rattrape le grip dès la fin de la rotation, l'avant le rejoint.
+		cible_avant.position += Vector3(face * 0.10, 0, -0.08) * haut_avant
 	else:
-		# shove-it : le pied arrière racle le tail vers l'arrière
-		avant.y += 0.03
-	cible_avant.global_position = cadre * avant
-	cible_arriere.global_position = cadre * (PIED_ARRIERE + Vector3(0, leve * 0.9, 0))
+		var scoop := smoothstep(0.0, 0.19, t) * (1.0 - smoothstep(0.22, 0.62, t))
+		cible_arriere.position += Vector3(-face * 0.12, 0, 0.06) * scoop
 
 
 ## Frein : le pied arrière descend derrière le tail et frotte le sol.

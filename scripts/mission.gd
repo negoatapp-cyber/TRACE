@@ -35,6 +35,7 @@ var etat := "attente"              ## attente, peinture, mur, retour, fini
 var trace := {}                    ## ce que la mission a laissé : lieu, type, témoins, jour (pour J3)
 
 var _base := 0                     ## nombre de murs peints quand la peinture a été prise
+var _figures_aller: Array[String] = []
 var _joueur: Node3D
 var _graffiti: Node
 var _quartier: Node
@@ -90,7 +91,12 @@ func _process(delta: float) -> void:
 				_changer("peinture")
 		"peinture":
 			var d := _distance_snack()
-			_afficher_objectif(HISTOIRE.OBJECTIF["peinture"] + "  ·  %d m" % int(d))
+			var bonus := "Bonus · 2 figures différentes pour 4 couleurs"
+			if _figures_aller.size() == 1:
+				bonus = "%s ✓ · Tente une autre figure" % _figures_aller[0]
+			elif _figures_aller.size() == 2:
+				bonus = "✓ Couleurs réservées au snack"
+			_afficher_objectif(HISTOIRE.OBJECTIF["peinture"] + "  ·  %d m\n" % int(d) + bonus)
 			_t_snack = _t_snack + delta if d < RAYON_SNACK else 0.0
 			if _t_snack >= ATTENTE_SNACK:
 				_au_snack()
@@ -119,12 +125,21 @@ func _process(delta: float) -> void:
 # ───────────────────────── les étapes ─────────────────────────
 
 func _au_snack() -> void:
+	var bonus := _figures_aller.size() == 2
 	if _graffiti.has_method("_fouiller"):
-		_graffiti.call("_fouiller")      # quatre bombes pleines (la fonction existe déjà côté graffiti)
+		_graffiti.call("_fouiller", bonus)
 	_base = (_graffiti.get("poses") as Array).size()
 	_t_snack = 0.0
 	_dire(HISTOIRE.ARRIVEE)
+	if bonus:
+		_dire([["Le patron", "J’ai vu tes figures depuis le comptoir. Rose, bleu, blanc, jaune. Celles-là, je te les avais mises de côté."]])
 	_changer("mur")
+
+
+func _figure_a_l_aller(nom: String, propre: bool) -> void:
+	if etat == "peinture" and propre and _figures_aller.size() < 2 and not _figures_aller.has(nom):
+		_figures_aller.append(nom)
+		_sauver()
 
 
 ## Le tag est posé : on regarde où, et qui a vu.
@@ -162,6 +177,8 @@ func _scene_prete() -> bool:
 		return false
 	if _joueur == null or not is_instance_valid(_joueur):
 		_joueur = get_tree().get_first_node_in_group("player") as Node3D
+		if _joueur is Player:
+			(_joueur as Player).skate.trick_done.connect(_figure_a_l_aller)
 	if _graffiti == null or not is_instance_valid(_graffiti):
 		_graffiti = s.get_node_or_null("Graffiti")
 	if _quartier == null or not is_instance_valid(_quartier):
@@ -221,7 +238,7 @@ func _changer(e: String) -> void:
 func _sauver() -> void:
 	var f := FileAccess.open(SAUVEGARDE, FileAccess.WRITE)
 	if f:
-		f.store_string(JSON.stringify({"etat": etat, "base": _base, "trace": trace}))
+		f.store_string(JSON.stringify({"etat": etat, "base": _base, "trace": trace, "figures_aller": _figures_aller}))
 
 
 func _charger() -> void:
@@ -233,6 +250,13 @@ func _charger() -> void:
 		if ["attente", "peinture", "mur", "retour", "fini"].has(e):
 			etat = e
 		_base = int(data.get("base", 0))
+		_figures_aller.clear()
+		if data.get("figures_aller") is Array:
+			for nom in data.figures_aller:
+				if nom in ["Ollie", "Kickflip", "Shove-it", "50-50"] and not _figures_aller.has(nom):
+					_figures_aller.append(nom)
+					if _figures_aller.size() == 2:
+						break
 		if data.get("trace") is Dictionary:
 			trace = data.trace
 
@@ -243,6 +267,7 @@ func _test_reset() -> void:
 	if appui and not _f9:
 		etat = "attente"
 		trace = {}
+		_figures_aller.clear()
 		_base = 0
 		_t = 0.0
 		_t_snack = 0.0

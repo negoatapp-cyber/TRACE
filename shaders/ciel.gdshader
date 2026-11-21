@@ -12,37 +12,44 @@ uniform vec3 nuage_clair : source_color = vec3(1.0, 0.98, 0.94);
 uniform vec3 nuage_corps : source_color = vec3(0.90, 0.88, 0.92);
 uniform vec3 nuage_ombre : source_color = vec3(0.66, 0.66, 0.84);
 uniform vec3 halo : source_color = vec3(1.0, 0.86, 0.62);
-uniform float couverture : hint_range(0.0, 1.0) = 0.62;
+uniform float couverture : hint_range(0.0, 1.0) = 0.74;
 uniform float derive = 0.0;          // avance des nuages (m), poussée par ciel.gd
 uniform float etoiles : hint_range(0.0, 1.0) = 0.0;
 
-float h21(vec2 p) {
-	p = fract(p * vec2(123.34, 456.21));
-	p += dot(p, p + 45.32);
-	return fract(p.x * p.y);
+// Sur téléphone (rendu web/mobile) les calculs sont en demi-précision : un bruit calculé sur de grandes
+// coordonnées s'y brise en éclats triangulaires (vu sur mobile le 19.11). Tout le bruit est donc périodique
+// (période PER) et les coordonnées sont ramenées dans [0, PER[ à chaque octave : les nombres restent petits.
+const float PER = 61.0;
+
+float h21(highp vec2 p) {
+	p = mod(p, PER);
+	p = fract(p * vec2(0.1031, 0.1030));
+	p += dot(p, p.yx + 33.33);
+	return fract((p.x + p.y) * p.x);
 }
 
-float bruit(vec2 p) {
-	vec2 i = floor(p);
-	vec2 f = fract(p);
-	vec2 u = f * f * (3.0 - 2.0 * f);
+float bruit(highp vec2 p) {
+	highp vec2 i = floor(p);
+	highp vec2 f = p - i;
+	highp vec2 u = f * f * (3.0 - 2.0 * f);
 	return mix(mix(h21(i), h21(i + vec2(1, 0)), u.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), u.x), u.y);
 }
 
-float fbm(vec2 p) {
+float fbm(highp vec2 p) {
 	float v = 0.0;
 	float a = 0.55;
-	mat2 r = mat2(vec2(0.8, 0.6), vec2(-0.6, 0.8));
+	p = mod(p, PER);
 	for (int i = 0; i < 5; i++) {
 		v += a * bruit(p);
-		p = r * p * 2.03 + 11.7;
+		// octave suivante : on double la fréquence (période conservée : facteur entier, sans rotation)
+		p = mod(p * 2.0 + vec2(11.7, 4.3), PER);
 		a *= 0.48;
 	}
 	return v;
 }
 
 // densité d'un champ de cumulus : de grosses masses (forme), des bourrelets ronds (détail)
-float cumulus(vec2 p) {
+float cumulus(highp vec2 p) {
 	vec2 q = vec2(fbm(p * 0.35 + 3.1), fbm(p * 0.35 + 8.4));
 	float forme = fbm(p * 0.22 + q * 1.4);
 	float detail = fbm(p * 0.9 + q * 2.0);
@@ -75,13 +82,13 @@ void sky() {
 		}
 		// nuages : projetés sur un plafond, plus petits et plus serrés vers l'horizon
 		if (y > 0.015) {
-			vec2 p = d.xz / (y + 0.25) * 3.4 + vec2(-23.0 + derive * 0.02, 31.0 + derive * 0.006);
+			highp vec2 p = d.xz / (y + 0.25) * 3.4 + vec2(17.0 + derive * 0.02, 29.0 + derive * 0.006);
 			float dn = cumulus(p);
 			// lumière : on compare la densité un peu plus loin vers le soleil
 			vec2 vers = normalize(sd.xz + vec2(0.0001));
 			float dl = cumulus(p + vers * 0.35);
 			float eclaire = clamp((dn - dl) * 6.0 + 0.5, 0.0, 1.0);
-			float masque = smoothstep(0.50, 0.53, dn);       // bord franc, peint
+			float masque = smoothstep(0.49, 0.55, dn);       // bord net mais doux
 			float coeur = smoothstep(0.62, 0.75, dn);
 			vec3 c = mix(nuage_ombre, nuage_corps, smoothstep(0.30, 0.42, eclaire));
 			c = mix(c, nuage_clair, smoothstep(0.60, 0.66, eclaire));

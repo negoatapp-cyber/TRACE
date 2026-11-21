@@ -57,6 +57,47 @@ func _allumer() -> void:
 		add_child(_flaque(Vector2(p.x, p.z), rayon, c, 0.35 if boule else 0.55))
 		add_child(_halo(Vector3(p.x, sol + haut, p.z), 1.1 if boule else 1.6, c))
 		lampes += 1
+	_projecteurs_tours()
+
+
+## Les projecteurs au sommet des tours (souvenir de Louma, 21.11) : de gros phares au sodium sur les toits,
+## qui baignaient tout le quartier d'orange, pas seulement les lampadaires au pied des immeubles.
+## Chaque projecteur : un gros halo sur l'arête du toit + une grande nappe orangée au sol, devant la façade.
+## Positions tirées de data/batiments_carte.json (contour, pied + hauteur), écrites ici car le JSON n'est pas exporté.
+const PROJECTEURS := [
+	# [nom, centre, projecteur (x, z), hauteur du toit]
+	["Grande barre des Lauriers", Vector2(-48.1, -166.0), Vector2(-26.0, -60.8), 45.2],
+	["Grande barre des Lauriers", Vector2(-48.1, -166.0), Vector2(-79.0, -293.2), 45.2],
+	["Cyprès A", Vector2(41.0, -62.5), Vector2(45.0, -30.0), 47.7],
+	["Cyprès A", Vector2(41.0, -62.5), Vector2(37.0, -95.0), 47.7],
+	["Tour Cyprès B", Vector2(-5.0, -22.0), Vector2(-17.0, -33.0), 62.4],
+	["Tour Cyprès B", Vector2(-5.0, -22.0), Vector2(7.0, -11.0), 62.4],
+	["Les Genêts", Vector2(15.9, 124.6), Vector2(23.0, 145.0), 46.0],
+	["Les Genêts", Vector2(15.9, 124.6), Vector2(7.0, 109.0), 46.0],
+]
+## Milieu de la grande barre (240 m de long) : un projecteur de chaque côté de la façade.
+const BARRE_MILIEU := Vector2(-52.5, -177.0)
+const BARRE_PERP := Vector2(0.975, -0.222)
+var projecteurs := 0
+
+func _projecteurs_tours() -> void:
+	var demolies: Array = load("res://scripts/quartier_reel.gd").demolies
+	for e in PROJECTEURS:
+		if demolies.has(e[0]):
+			continue
+		var centre: Vector2 = e[1]
+		var p: Vector2 = e[2]
+		var dehors := (p - centre).normalized()
+		_projecteur(p + dehors * 0.8, float(e[3]), p + dehors * 16.0)
+	for cote: float in [1.0, -1.0]:
+		var p2: Vector2 = BARRE_MILIEU + BARRE_PERP * 6.0 * cote
+		_projecteur(p2, 45.2, p2 + BARRE_PERP * 18.0 * cote)
+
+
+func _projecteur(p: Vector2, toit: float, sol: Vector2) -> void:
+	add_child(_halo(Vector3(p.x, toit + 1.2, p.y), 3.2, SODIUM))
+	add_child(_flaque(sol, 26.0, SODIUM, 0.20))
+	projecteurs += 1
 
 
 func _h(x: float, z: float) -> float:

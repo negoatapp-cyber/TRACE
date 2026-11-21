@@ -53,7 +53,16 @@ func h(x: float, z: float) -> float:
 	return habillage.h(x, z)
 
 
+## Bâtiments refaits en modèles peints (scripts/carte_peinte.gd) : on garde leurs PRISES de grimpe
+## (rebords, acrotère, descentes d'eau), mais pas leurs volumes dessinés ici, que le modèle porte déjà.
+var peints: Dictionary = {}
+var _muet := false
+
+
 func _batiment(nom: String, hauteur: float, style: String, poly: PackedVector2Array) -> void:
+	_muet = peints.has(nom)
+	if peints.get(nom, true) is String and peints[nom] == "modele":
+		return   # volumétrie propre (Tour Cyprès B) : prises, descentes et acrotère viennent du modèle peint
 	if poly.size() > 2 and poly[0].distance_to(poly[poly.size() - 1]) < 0.01:
 		poly.remove_at(poly.size() - 1)
 	if poly.size() < 3:
@@ -73,9 +82,9 @@ func _batiment(nom: String, hauteur: float, style: String, poly: PackedVector2Ar
 	corps.name = "Prises_" + nom.validate_node_name()
 	corps.add_to_group("prise")
 	add_child(corps)
-	if USURE.has(style):
+	if USURE.has(style) and not _muet:
 		_repeindre(nom, {"usure": USURE[style]})
-	if style in TOITS_ENCOMBRES:
+	if style in TOITS_ENCOMBRES and not _muet:
 		_cheminees(poly, toit, mur)
 	var niveaux := int(floor((hauteur - RDC - 0.6) / etage))
 	if style in AVEC_BALCONS:
@@ -84,11 +93,13 @@ func _batiment(nom: String, hauteur: float, style: String, poly: PackedVector2Ar
 	# au-delà, une corniche fait l'étape intermédiaire.
 	var corniche := -1.0
 	var haut_balcon := RDC + (niveaux - 1) * etage + GARDE_CORPS
+	var peau := PEAU if (style == "barre_lauriers" and not _muet) else 0.0
 	if style == "barre_lauriers":
 		haut_balcon = RDC + (niveaux - 1) * etage
-		_repeindre_barre(nom)
-		_peau_barre(nom, poly, moy, hauteur, niveaux, etage, travee, mur, garde)
-	elif style == "cypres_tour":
+		if not _muet:
+			_repeindre_barre(nom)
+			_peau_barre(nom, poly, moy, hauteur, niveaux, etage, travee, mur, garde)
+	elif style == "cypres_tour" and not _muet:
 		# photos 2013-2014 : l'orange est une bande verticale en creux au milieu des grandes faces
 		_repeindre(nom, {"bande_largeur": 0.0, "bande_centre": BANDE_TOUR, "bande_axe": Vector2(0.0, 1.0)})
 		_ailettes_tour(poly, moy, hauteur, mur)
@@ -107,21 +118,51 @@ func _batiment(nom: String, hauteur: float, style: String, poly: PackedVector2Ar
 			# 2013 : façade plate, loggias en creux (shader) ; seuls les nez de dalle dépassent un peu,
 			# assez pour s'y accrocher et monter d'étage en étage.
 			if long >= 15.0:
+				if n.x < -0.7:
+					_soubassement_desserte(a, d, n, long, moy + RDC)
 				for kk in niveaux:
-					_rebord_mince(corps, a, b, d, n, long, moy + RDC + kk * etage, mur.darkened(0.05), kk < niveaux - 1, true, PEAU)
-		elif style in AVEC_BALCONS and long >= 15.0:  # pas de balcons sur les pignons
+					_rebord_mince(corps, a, b, d, n, long, moy + RDC + kk * etage, mur.darkened(0.05), kk < niveaux - 1, true, peau)
+		elif style in AVEC_BALCONS and long >= 15.0 and not _muet:  # pas de balcons sur les pignons
 			_balcons(corps, a, d, n, u, long, moy, niveaux, etage, travee, garde)
-		elif style in AVEC_DALLES:
+		elif long >= 2.0 and style != "lycee" and (style in AVEC_DALLES or _muet or not (style in AVEC_BALCONS)):
+			# Louma (20.11) : on doit pouvoir escalader TOUS les bâtiments → un rebord à chaque étage partout
 			_dalles(corps, a, b, d, n, long, moy, niveaux, etage, mur.darkened(0.08))
 		if corniche > 0.0 and long >= 2.0:
-			_rebord_mince(corps, a, b, d, n, long, corniche, mur.darkened(0.1))
-		if hauteur >= 8.0:
-			_acrotere(corps, a, b, d, n, long, toit, mur.darkened(0.1), PEAU if style == "barre_lauriers" else 0.0)
+			# pas de bloc caché au-dessus de la corniche : il dépassait du toit et prenait la place d'arrivée
+			_rebord_mince(corps, a, b, d, n, long, corniche, mur.darkened(0.1), false)
+		if hauteur >= 3.0 and not _muet:
+			# (bâtiment peint : son acrotère est dans le modèle ; un bloc ici occupait l'arrivée sur le toit)
+			_acrotere(corps, a, b, d, n, long, toit, mur.darkened(0.1), peau)
 		u += long
-	if hauteur >= 8.0:
-		_descentes(_decale(poly, PEAU) if style == "barre_lauriers" else poly, moy, toit)
+	if hauteur >= 3.0:
+		_descentes(_decale(poly, peau) if peau > 0.0 else poly, moy, toit)
 	if hauteur >= 15.0:
 		_edicules(corps, poly, toit, mur.darkened(0.06))
+
+
+## Les trappes à deux vantaux et les soupiraux du côté terrain vague (Street View, mai 2011).
+## Leur espacement est estimé. Le seuil suit la desserte, le premier balcon reste dégagé.
+func _soubassement_desserte(a: Vector2, d: Vector2, n: Vector2, longueur: float, premiere_dalle: float) -> void:
+	var base := _base(d, n)
+	var nombre := maxi(1, roundi(longueur / 19.0))
+	for i in nombre:
+		var p := a + d * ((i + 0.5) * longueur / nombre) + n * PEAU
+		var sol := h(p.x, p.y) + 0.08
+		if sol + 1.9 > premiere_dalle:
+			continue
+		var pied := Vector3(p.x, sol, p.y)
+		# Le cadre visible entre les vantaux et dans les ouïes donne le trait sombre à hauteur de rue.
+		var cadre := Color(0.31, 0.33, 0.34)
+		var tole := Color(0.71, 0.73, 0.72)
+		_ajouter("trappes_cadre", _cube, cadre, Transform3D(_ech(base, Vector3(1.72, 1.46, 0.09)), pied + base.y * 0.73 + base.z * 0.045))
+		for cote: float in [-1.0, 1.0]:
+			var centre := pied + base.x * (0.42 * cote) + base.y * 0.73
+			_ajouter("trappes_tole", _cube, tole, Transform3D(_ech(base, Vector3(0.81, 1.39, 0.035)), centre + base.z * 0.107))
+			for j in 2:
+				_ajouter("trappes_cadre", _cube, cadre, Transform3D(_ech(base, Vector3(0.40, 0.045, 0.02)), centre + base.y * (0.38 + j * 0.09) + base.z * 0.13))
+		var voisin := p + d * 3.2
+		var bouche := Vector3(voisin.x, minf(h(voisin.x, voisin.y) + 1.65, premiere_dalle - 0.3), voisin.y)
+		_ajouter("trappes_cadre", _cube, cadre, Transform3D(_ech(base, Vector3(0.56, 0.20, 0.07)), bouche + base.z * 0.04))
 
 
 ## Un balcon sur deux travées : dalle, garde-corps de face et de côté ; parfois une parabole ou du linge.
@@ -151,8 +192,9 @@ func _balcons(corps: StaticBody3D, a: Vector2, d: Vector2, n: Vector2, u0: float
 			elif r < 0.30:
 				_linge(o, base, larg)
 			n_balcons += 1
-			# Prises : les premiers niveaux partout, puis toute la hauteur sur les colonnes.
-			if k < PRISES_BASSES or colonne:
+			# Prises : tous les balcons, sur toute la hauteur (avant : seulement les 3 premiers niveaux,
+			# sauf une colonne sur 9 ; Louma restait bloqué au 2e étage sur toutes les barres).
+			if true or k < PRISES_BASSES or colonne:
 				var cs := CollisionShape3D.new()
 				var sh := BoxShape3D.new()
 				sh.size = Vector3(larg, GARDE_CORPS + 0.16, BALCON_PROFOND)
@@ -477,9 +519,12 @@ func _acrotere(corps: StaticBody3D, a: Vector2, b: Vector2, d: Vector2, n: Vecto
 	_ajouter("acrotere", _cube, c, t)
 	var cs := CollisionShape3D.new()
 	var sh := BoxShape3D.new()
-	sh.size = Vector3(long + 0.2, 0.75, 0.22)
+	# collision plus mince que le muret dessiné (12 cm côté extérieur) : en haut d'une gouttière d'angle,
+	# Loums se pose 0,7 m à l'intérieur du coin, l'acrotère épais lui prenait la place (bloqué en haut)
+	sh.size = Vector3(long + 0.2, 0.75, 0.12)
 	cs.shape = sh
-	cs.transform = Transform3D(base, t.origin)
+	var mc := (a + b) * 0.5 - n * 0.06 + n * devant
+	cs.transform = Transform3D(base, Vector3(mc.x, toit + 0.375, mc.y))
 	corps.add_child(cs)
 
 
@@ -580,6 +625,8 @@ func _normale_dehors(a: Vector2, b: Vector2, poly: PackedVector2Array) -> Vector
 
 
 func _ajouter(cle: String, mesh: Mesh, c: Color, t: Transform3D, teintes := []) -> void:
+	if _muet:
+		return   # bâtiment peint : le modèle porte déjà ce détail (seules les prises et l'acrotère restent)
 	if not _paquets.has(cle):
 		var couleur := c
 		if cle.begins_with("linge_"):

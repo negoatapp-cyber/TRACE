@@ -22,7 +22,7 @@ func run() -> void:
 	var p = level.get_node("Player"); var q = level.get_node("Quartier"); var g = level.get_node("Graffiti")
 	p.global_position = Vector3(57, q.h(57, -45) + 0.2, -45)
 	await frames(20)
-	check(noms() == ["saut", "courir", "planche", "reset", "demain"], "à pied, loin de tout : %s" % str(noms()))
+	check(noms() == ["saut", "planche", "reset", "demain"], "à pied, loin de tout (pas de COURIR : joystick à fond) : %s" % str(noms()))
 	# au pied de l'échafaudage, face au premier plateau bleu : GRIMPER
 	var toits = level.find_child("AccesToits", true, false)
 	if toits:
@@ -48,6 +48,10 @@ func run() -> void:
 	await frames(5)
 	p._set_mode(1)
 	await frames(5)
-	check("ollie" in noms() and "flip" in noms() and not ("graff" in noms()), "en skate : les figures %s" % str(noms()))
+	check(noms().slice(0, 2) == ["ollie", "pied"] and not ("pousser" in noms()) and not ("flip" in noms()), "en skate au sol : OLLIE et DESCENDRE seulement %s" % str(noms()))
+	p.skate.charge = 0.0
+	await frames(2)
+	check("flip" in noms() and "shove" in noms() and not ("pied" in noms()), "en préparant l'ollie : FLIP et SHOVE apparaissent %s" % str(noms()))
+	p.skate.charge = -1.0
 	print("RESULT failures=", failures)
 	quit(failures)

@@ -1,0 +1,20 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/lauriers.tscn" id="1_base"]
+[ext_resource type="Script" path="res://scripts/immersion_2013.gd" id="2_details"]
+[ext_resource type="Script" path="res://scripts/entree_cypres_2013.gd" id="3_entree"]
+
+[node name="Marseille2013" instance=ExtResource("1_base")]
+
+[node name="Temps" parent="." index="2"]
+calendrier_debut = {"year": 2013, "month": 9, "day": 16, "hour": 16, "minute": 30}
+fichier_sauvegarde = "user://temps_marseille_2013.json"
+
+[node name="Quartier" parent="." index="3"]
+epoque_imposee = "avant"
+
+[node name="Immersion2013" type="Node3D" parent="."]
+script = ExtResource("2_details")
+
+[node name="EntreeCypres2013" type="Node3D" parent="."]
+script = ExtResource("3_entree")

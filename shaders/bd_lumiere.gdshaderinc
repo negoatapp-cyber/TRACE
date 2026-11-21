@@ -12,6 +12,9 @@ global uniform float bd_trame;
 
 uniform float bd_seuil : hint_range(0.0, 1.0) = 0.30;
 uniform float bd_demi : hint_range(0.0, 1.0) = 0.55;
+// Reflet du soleil (conversation n°2) : 0 = mat (défaut). Métal, peintures vernies, carrosseries :
+// réglé par style_bd.gd (_eclat) et habillage.gd. Petit et franc en rendu BD, comme une touche de gouache blanche.
+uniform float bd_brillance : hint_range(0.0, 1.0) = 0.0;
 
 void light() {
 	float nl = clamp(dot(NORMAL, LIGHT), 0.0, 1.0);
@@ -27,5 +30,11 @@ void light() {
 		float hachure = step(0.62, fract((FRAGCOORD.x + FRAGCOORD.y) / 7.0));
 		ombre *= 1.0 - bd_trame * hachure * (1.0 - smoothstep(0.0, 0.06, e));
 		DIFFUSE_LIGHT += mix(ombre, LIGHT_COLOR / PI, t);
+	}
+	if (bd_brillance > 0.0) {
+		vec3 hv = normalize(LIGHT + VIEW);
+		float sp = pow(clamp(dot(NORMAL, hv), 0.0, 1.0), mix(12.0, 140.0, bd_brillance)) * ATTENUATION * nl;
+		float franc = bd_actif > 0.5 ? smoothstep(0.40, 0.48, sp) * 0.9 + sp * 0.25 : sp;
+		SPECULAR_LIGHT += LIGHT_COLOR * franc * bd_brillance;
 	}
 }

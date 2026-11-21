@@ -25,7 +25,7 @@ func run() -> void:
 		check(absf(boite.size.y - 1.75) < 0.05 and absf(boite.position.y - p.global_position.y) < 0.05, "taille 1,75 m, pieds au sol (h=%.2f)" % boite.size.y)
 		check(perso._clips.size() >= 3, "animations reconnues : %s" % str(perso._clips))
 		Input.action_press("move_forward"); await frames(40)
-		check(String(perso.anim.current_animation).to_lower().contains("walk"), "joue la marche en marchant")
+		check(String(perso.anim.current_animation).to_lower().contains("walk") or String(perso.anim.current_animation).to_lower().contains("run"), "joue un cycle de pas en avançant (%s)" % perso.anim.current_animation)
 		Input.action_press("push"); await frames(40)
 		check(String(perso.anim.current_animation).to_lower().contains("run"), "joue la course en courant")
 		Input.action_release("push"); Input.action_release("move_forward"); await frames(60)

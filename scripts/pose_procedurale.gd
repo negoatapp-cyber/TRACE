@@ -16,6 +16,7 @@ var buste := Vector3.ZERO      ## x = penché en avant, y = tourné vers sa gauc
 var tete := Vector3.ZERO       ## x = baisse la tête, y = regarde à gauche (rad)
 var respiration := 0.0         ## amplitude du souffle (rad sur le haut du buste)
 var poing_d := 0.0             ## 1 = doigts de la main droite refermés (tenir la bombe)
+var poing_g := 0.0             ## pareil pour la main gauche (tenir le guidon)
 var axe_doigts := Vector3.RIGHT
 ## Bras : [direction du bras, direction de l'avant-bras]
 var bras_g: Array[Vector3] = [Vector3(0.15, -1, 0), Vector3(0.1, -1, 0.3)]
@@ -32,6 +33,7 @@ var _rest_l := {}     ## os -> Quaternion local au repos
 var _idx := {}        ## nom court -> index
 var _doigts := []     ## index des doigts (ramenés au repos, mains détendues)
 var _doigts_d := []   ## ceux de la main droite (hors pouce)
+var _doigts_g := []   ## ceux de la main gauche (hors pouce)
 
 const NOMS := ["Hips", "Spine", "Spine1", "Spine2", "Neck", "Head",
 	"LeftShoulder", "LeftArm", "LeftForeArm", "LeftHand",
@@ -55,6 +57,8 @@ func _preparer(sk: Skeleton3D) -> void:
 			_doigts.append(i)
 			if nom.begins_with("mixamorig_RightHand") and not "Thumb" in nom:
 				_doigts_d.append(i)
+			if nom.begins_with("mixamorig_LeftHand") and not "Thumb" in nom:
+				_doigts_g.append(i)
 	_pret = true
 
 
@@ -127,6 +131,8 @@ func _process_modification_with_delta(delta: float) -> void:
 		var voulu: Quaternion = _rest_l[i]
 		if poing_d > 0.0 and i in _doigts_d:
 			voulu = voulu * Quaternion(axe_doigts, 1.1 * poing_d)
+		elif poing_g > 0.0 and i in _doigts_g:
+			voulu = voulu * Quaternion(axe_doigts, 1.1 * poing_g)
 		sk.set_bone_pose_rotation(i, cur.slerp(voulu, wh))
 
 	# Jambes (debout).

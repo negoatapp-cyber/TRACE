@@ -14,6 +14,9 @@
 !.tools/verify_skate_pose.gd
 !.tools/lettrage.py
 !.tools/capture.gd
+!.tools/verify_immersion_2013.gd
+!.tools/verify_cypres_2013.gd
+!.tools/verify_entree_cypres.gd
 !.tools/verify_animations.gd
 !.tools/verify_camera.gd
 !.tools/verify_suspendu.gd
@@ -56,3 +59,22 @@ _sauvegardes/
 # sons fabriqués par .tools/son_generer.py (n°3) : régénérés, pas suivis
 assets/sons/*.wav
 assets/sons/*.wav.import
+
+# Ajouté au 21.11 (harmonisation PC → GitHub) : tout ce qui est perso ou sous droits reste sur le PC
+/*.JPG
+/*.JPG.import
+/*.jpg.import
+/*.webp
+/*.tgz
+assets/characters/
+DIDEROT/
+gestes/
+demo/
+web-mobile/
+tag/
+capture d'écran/
+carte marseille/
+bande son/*
+!bande son/musique.gd
+!bande son/musique.gd.uid
+mnt/

@@ -89,7 +89,9 @@ func _remplacer(mi: MeshInstance3D, s: int, m: Material) -> void:
 		return  # déjà un shader (façades) : il gère lui-même le style
 	if std.shading_mode == BaseMaterial3D.SHADING_MODE_UNSHADED or std.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED:
 		return  # vitres, fonds de graffiti : on les laisse tels quels
-	if not _toon.has(m):
+	var eclat := _eclat(mi, std)
+	var cle = m if eclat == Vector2.ZERO else [m, eclat]
+	if not _toon.has(cle):
 		var t := ShaderMaterial.new()
 		t.shader = TOON
 		t.set_shader_parameter("couleur", std.albedo_color)
@@ -100,11 +102,48 @@ func _remplacer(mi: MeshInstance3D, s: int, m: Material) -> void:
 			t.set_shader_parameter("avec_texture", true)
 			t.set_shader_parameter("paliers", 12.0)
 			t.set_shader_parameter("grain", 0.0)
-			t.set_shader_parameter("personnage", true)
-		_toon[m] = t
+			t.set_shader_parameter("personnage", eclat == Vector2.ZERO)   # véhicules : pas de liseré de personnage
+		if eclat != Vector2.ZERO:
+			t.set_shader_parameter("bd_brillance", eclat.x)
+			t.set_shader_parameter("metal", eclat.y)
+		_toon[cle] = t
 	_origine[[mi, s]] = m
 	if actif:
-		_poser(mi, s, _toon[m])
+		_poser(mi, s, _toon[cle])
+
+
+## (conversation n°2) Reflets : métal et peintures vernies, reconnus au nom du matériau, de l'objet ou de
+## ses parents. Retourne (brillance, métal) ; (0, 0) = mat. Les personnages ne sont jamais touchés.
+const MOTS_METAL := ["metal", "acier", "inox", "chrome", "alu", "tole", "zinc", "grille", "garde", "rambarde",
+	"barriere", "poteau", "potelet", "lampadaire", "lanterne", "panneau", "abribus", "rail", "portail",
+	"rideau", "jante", "echafaud", "grue", "main_courante", "glissiere", "candelabre"]
+const MOTS_VERNI := ["voiture", "carrosserie", "scooter", "capot", "conteneur", "moto", "utilitaire", "vehicule"]
+const MOTS_JAMAIS := ["loums", "personnage", "habitant", "pnj", "perso", "skate", "planche"]
+
+func _eclat(mi: Node, std: BaseMaterial3D) -> Vector2:
+	# On remonte du maillage vers ses parents : c'est le nom le plus proche qui décide (21.11). Ainsi
+	# « Scooter_de_Loums » reste un véhicule (il prenait le liseré jaune des personnages à cause de « loums »),
+	# et Loums assis sur le scooter reste un personnage.
+	var niveaux: Array[String] = [String(std.resource_name).to_lower()]
+	var n: Node = mi
+	for i in 5:
+		if n == null:
+			break
+		niveaux.append(String(n.name).to_lower())
+		n = n.get_parent()
+	for nom in niveaux:
+		for k in MOTS_VERNI:
+			if k in nom:
+				return Vector2(0.8, 0.3)
+		for k in MOTS_JAMAIS:
+			if k in nom:
+				return Vector2.ZERO
+		for k in MOTS_METAL:
+			if k in nom:
+				return Vector2(0.65, 0.55)
+	if std.metallic > 0.5 and std.metallic_texture == null and std.albedo_texture == null:
+		return Vector2(0.6, 0.5)
+	return Vector2.ZERO
 
 
 func _poser(mi: MeshInstance3D, s: int, m: Material) -> void:

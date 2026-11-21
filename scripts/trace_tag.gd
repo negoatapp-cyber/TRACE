@@ -87,6 +87,7 @@ func preparer(tag: Image, teinte: Color, largeur: float, px := 450, rayon := 7.0
 ## Fige la couche une fois finie : plus de fantôme, plus d'entrée, la peinture reste visible
 ## sous les couches suivantes.
 func figer(ordre: int) -> void:
+	_actualiser_peinture()
 	set_process(false)
 	set_process_input(false)
 	set_process_unhandled_input(false)
@@ -328,8 +329,8 @@ func terminer_auto() -> void:
 			_avait_appuye = false
 			_taper(0.0)
 		return
-	_vitesse *= 1000.0
-	_auto_step(1.0)
+	# Parcourir le même chemin avec le même débit, même si on saute l'animation.
+	_auto_step(INF)
 
 
 func _process(delta: float) -> void:
@@ -346,9 +347,7 @@ func _process(delta: float) -> void:
 			_auto_step(delta)
 		if mode == "taper":
 			peindre(delta)
-		if _sale:
-			_tex.update(peinture)
-			_sale = false
+		_actualiser_peinture()
 		return
 	if camera:
 		var main := point_souris()
@@ -361,15 +360,20 @@ func _process(delta: float) -> void:
 		else:
 			curseur = main
 	peindre(delta)
+	_actualiser_peinture()
+
+
+## Une seule mise à jour GPU pour tous les impacts de l'image.
+func _actualiser_peinture() -> void:
+	if _sale:
+		_tex.update(peinture)
+		_sale = false
 
 
 ## Avance la bombe d'une image : dépose la peinture entre la position précédente et le curseur.
 func peindre(delta: float) -> void:
 	if mode == "taper":
 		_taper(delta)
-		if _sale:
-			_tex.update(peinture)
-			_sale = false
 		return
 	var dedans := curseur.x > -RAYON and curseur.y > -RAYON and curseur.x < _w + RAYON and curseur.y < _h + RAYON
 	if appuye and dedans and delta > 0.0:
@@ -386,9 +390,6 @@ func peindre(delta: float) -> void:
 	else:
 		_precedent = Vector2(-1000, -1000)
 	_faire_couler(delta)
-	if _sale:
-		_tex.update(peinture)
-		_sale = false
 
 
 func _coulure_voisine(x: int, y: int) -> bool:

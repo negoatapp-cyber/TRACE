@@ -1,8 +1,8 @@
 extends CanvasLayer
 ## Contrôles tactiles (autoload « TouchControls »), actifs seulement sur un écran tactile.
 ## Seuls les boutons utiles à l'instant s'affichent (voir _choisir_boutons).
-## Paysage : joystick de direction flottant à DROITE, boutons d'action à GAUCHE,
-## glisser dans la zone libre (gauche / milieu) pour la caméra.
+## Paysage : joystick de direction flottant à DROITE (il naît sous le pouce et le suit), boutons d'action à GAUCHE,
+## qui n'apparaissent que quand ils servent ; un doigt sur le paysage = tourner la caméra, deux doigts = zoom / pivoter.
 ## Tout passe par les mêmes actions que le clavier et la manette (voir input_setup.gd).
 ## Pour tester sur PC : lancer avec `-- --touch`, ou ouvrir la version web avec `?touch`.
 
@@ -15,7 +15,13 @@ var _joy_vu := false
 var _enfonces := {}          ## nom du bouton -> nombre de doigts dessus
 
 const JOY_RAYON := 95.0
-const SENS_CAMERA := 0.0055
+const SENS_CAMERA := 2.6       ## radians pour un glissé sur toute la hauteur de l'écran (Louma 21.11 : c'était 3 fois trop nerveux)
+const REMONTE := 90.0          ## Louma 21.11 : les boutons du bas remontés vers le pouce
+const TAILLE := 0.68           ## taille générale des boutons (1 = la version d'origine, jugée trop grosse)
+const JOY_ZONE := 0.5          ## la moitié droite de l'écran : le pouce s'y pose n'importe où
+const JOY_REPOS := Vector2(-230, -200)  ## où le joystick attend (depuis le coin bas droit), dessiné en léger
+var _apparus := {}             ## nom du bouton -> instant où il est apparu (petite animation d'entrée)
+var _t := 0.0
 
 ## Les emplacements des boutons d'action (à gauche) : [dx, dy, rayon].
 ## dx > 0 : depuis le bord gauche ; dx < 0 : depuis le bord droit.
@@ -35,12 +41,16 @@ const PLACES := {
 const BOUTONS := {
 	"saut": ["SAUT", "jump", false],
 	"courir": ["COURIR", "push", true],
-	"planche": ["PLANCHE", "toggle_board", false],
+	"planche": ["SKATE", "toggle_board", false],
+	"pied": ["DESCENDRE", "toggle_board", false],
+	"ramasser": ["RAMASSER", "toggle_board", false],
 	"pousser": ["POUSSER", "push", true],
 	"ollie": ["OLLIE", "jump", true],
 	"flip": ["FLIP", "kickflip", false],
 	"shove": ["SHOVE", "shove_it", false],
 	"grind": ["GRIND", "grind", true],
+	"manual": ["MANUAL", "grind", true],
+	"grab": ["GRAB", "push", true],
 	"graff": ["GRAFF", ":menu", false],
 	"fouille": ["FOUILLE", "fouiller", false],
 	"monter": ["MONTER", "monter", false],
@@ -94,12 +104,26 @@ func _choisir_boutons() -> void:
 		ctx = "suspendu"
 		liste = [["hisser", "A"], ["lacher", "B"]]
 	elif j and j.get("mode") == 1:
+		# Louma 21.11 : la poussée est automatique (direction vers l'avant), le grind s'accroche tout seul ;
+		# FLIP et SHOVE n'apparaissent qu'en l'air, quand on peut vraiment les faire.
 		ctx = "skate"
-		liste = [["ollie", "A"], ["pousser", "B"], ["planche", "C"], ["flip", "D"], ["shove", "E"], ["grind", "F"]]
+		var sk: Node = j.get("skate")
+		var en_l_air: bool = sk != null and ((bool(sk.get("in_air")) and (bool(sk.get("saute")) or float(sk.get("air_t")) > 0.15)) or float(sk.get("charge")) >= 0.0) and not bool(sk.get("grinding"))
+		# Louma 21.11 : en l'air le joystick fait tourner (180, 360), GRAB attrape la planche ;
+		# au sol MANUAL (tenir) lève le nose, le joystick avant/arrière garde l'équilibre.
+		liste = [["ollie", "A"]]
+		if en_l_air:
+			liste.append(["flip", "B"])
+			liste.append(["shove", "C"])
+			liste.append(["grab", "D"])
+		else:
+			liste.append(["pied", "C"])
+			if sk != null and absf(float(sk.get("speed"))) > 1.5 and not bool(sk.get("grinding")):
+				liste.append(["manual", "B"])
 	else:
-		# face à un rebord qu'il peut attraper, SAUT devient GRIMPER
+		# face à un rebord qu'il peut attraper, SAUT devient GRIMPER ; joystick à fond = courir
 		var grimpe: bool = j != null and j.has_method("peut_grimper") and j.call("peut_grimper")
-		liste = [["grimper" if grimpe else "saut", "A"], ["courir", "B"], ["planche", "C"]]
+		liste = [["grimper" if grimpe else "saut", "A"], ["ramasser" if j and j.get("planche_libre") else "planche", "C"]]
 		if g and g.call("peut_graffer"):
 			liste.append(["graff", "E"])
 		if g and g.call("_conteneur_proche") != null:
@@ -111,14 +135,29 @@ func _choisir_boutons() -> void:
 		liste.append(["demain", "haut2"])
 	if ctx + str(liste) != _contexte:
 		_contexte = ctx + str(liste)
+		var avant := _visibles.map(func(v): return v[0])
+		for v in liste:
+			if not v[0] in avant:
+				_apparus[v[0]] = _t
 		_visibles = liste
 		if _canvas:
 			_canvas.queue_redraw()
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if actif:
+		_t += delta
 		_choisir_boutons()
+		if _canvas and _anime():
+			_canvas.queue_redraw()
+
+
+## Un bouton vient d'apparaître : on redessine le temps de son animation.
+func _anime() -> bool:
+	for v in _visibles:
+		if _t - float(_apparus.get(v[0], -9.0)) < 1.6:
+			return true
+	return false
 
 
 func _ready() -> void:
@@ -144,7 +183,24 @@ func _bouton(v: Array) -> Array:
 		var g: Node = scene.get_node_or_null("Graffiti") if scene else null
 		d[0] = "EXPERT" if g and g.get("expert") else "SIMPLE"
 	var pl: Array = PLACES[v[1]]
-	return [v[0], d[0], d[1], d[2], pl[0], pl[1], pl[2]]
+	var k := _k()
+	var dy: float = (pl[1] - REMONTE) * k if pl[1] < 0 else pl[1] * k
+	if pl[1] < 0 and _canvas and _canvas.size.y > _canvas.size.x:
+		dy -= _canvas.size.y * 0.1  # portrait : le pouce est plus haut sur l'écran
+	return [v[0], d[0], d[1], d[2], pl[0] * k, dy, pl[2] * k]
+
+
+## Échelle des commandes : plus petites en général, et encore plus en portrait (le petit côté de
+## l'écran fait foi), pour qu'elles ne mangent pas la moitié de l'image.
+func _k() -> float:
+	if _canvas == null:
+		return TAILLE
+	var s := _canvas.size
+	return TAILLE * clampf(minf(s.x, s.y) / 900.0, 0.62, 1.0)
+
+
+func _joy_r() -> float:
+	return JOY_RAYON * _k() / TAILLE * 0.8
 
 
 func _centre(b: Array) -> Vector2:
@@ -185,15 +241,28 @@ func _debut(i: int, p: Vector2) -> void:
 		_doigts[i] = {"role": "bouton", "b": b}
 		_enfonces[b[0]] = int(_enfonces.get(b[0], 0)) + 1
 		_envoyer(b[2], true)
-	elif p.x > _canvas.size.x * 0.55 and not _joy_vu:
+	elif p.x > _canvas.size.x * JOY_ZONE and not _joy_vu:
 		_doigts[i] = {"role": "joy"}
 		_joy_origine = p
 		_joy_pos = p
 		_joy_vu = true
 		_appliquer_joy()
 	else:
-		_doigts[i] = {"role": "look"}
+		_doigts[i] = {"role": "look", "p": p}
+		_deux_ecart = -1.0
 	_canvas.queue_redraw()
+
+
+var _deux_ecart := -1.0
+var _deux_angle := 0.0
+
+
+func _doigts_regard() -> Array:
+	var r: Array = []
+	for k in _doigts:
+		if _doigts[k]["role"] == "look":
+			r.append(k)
+	return r
 
 
 func _glisse(i: int, p: Vector2, rel: Vector2) -> void:
@@ -202,11 +271,29 @@ func _glisse(i: int, p: Vector2, rel: Vector2) -> void:
 	match _doigts[i]["role"]:
 		"joy":
 			_joy_pos = p
+			# le pouce dépasse le cercle : le joystick le suit (on ne « sort » jamais de la zone)
+			var ecart := _joy_pos - _joy_origine
+			if ecart.length() > _joy_r():
+				_joy_origine = _joy_pos - ecart.normalized() * _joy_r()
 			_appliquer_joy()
 		"look":
+			_doigts[i]["p"] = p
 			var joueur := get_tree().get_first_node_in_group("player")
-			if joueur and joueur.has_method("touch_look"):
-				joueur.touch_look(rel * SENS_CAMERA)
+			var regards := _doigts_regard()
+			if regards.size() >= 2:
+				# deux doigts sur le paysage : pincer = zoom, tourner = pivoter (comme une carte)
+				var a: Vector2 = _doigts[regards[0]]["p"]
+				var b: Vector2 = _doigts[regards[1]]["p"]
+				var ecart_d := a.distance_to(b)
+				var angle_d := (b - a).angle()
+				if _deux_ecart > 1.0 and ecart_d > 1.0 and joueur and joueur.has_method("touch_zoom"):
+					joueur.touch_zoom(_deux_ecart / ecart_d)
+				if _deux_ecart > 1.0 and joueur and joueur.has_method("touch_twist"):
+					joueur.touch_twist(-wrapf(angle_d - _deux_angle, -PI, PI))
+				_deux_ecart = ecart_d
+				_deux_angle = angle_d
+			elif joueur and joueur.has_method("touch_look"):
+				joueur.touch_look(rel * SENS_CAMERA / maxf(minf(_canvas.size.x, _canvas.size.y), 1.0))
 	_canvas.queue_redraw()
 
 
@@ -222,6 +309,7 @@ func _fin(i: int) -> void:
 		_joy_vu = false
 		_appliquer_joy()
 	_doigts.erase(i)
+	_deux_ecart = -1.0
 	_canvas.queue_redraw()
 
 
@@ -280,7 +368,7 @@ func _commande(c: String) -> void:
 func _appliquer_joy() -> void:
 	var v := Vector2.ZERO
 	if _joy_vu:
-		v = ((_joy_pos - _joy_origine) / JOY_RAYON).limit_length(1.0)
+		v = ((_joy_pos - _joy_origine) / _joy_r()).limit_length(1.0)
 		if v.length() < 0.15:
 			v = Vector2.ZERO
 	_axe("move_left", maxf(-v.x, 0.0))
@@ -298,28 +386,39 @@ func _axe(action: String, force: float) -> void:
 
 func _dessiner() -> void:
 	var police := ThemeDB.fallback_font
-	if _canvas.size.y > _canvas.size.x:
-		# petit rappel discret en haut à gauche, sous « À pied » (Louma, 19.11 : il gênait au milieu)
-		var m := "Tourne ton téléphone en paysage"
-		_canvas.draw_string(police, Vector2(16.0, 88.0), m, HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color(1, 1, 1, 0.75))
+	# (Louma 21.11 : plus de texte en haut à gauche, le rappel « Tourne ton téléphone » est retiré.)
 	for v in _visibles:
 		var b := _bouton(v)
 		var c := _centre(b)
 		var r: float = b[6]
 		var on := int(_enfonces.get(b[0], 0)) > 0
+		# entrée : le bouton surgit avec un petit rebond, puis une onde jaune invite à l'essayer
+		var age := _t - float(_apparus.get(b[0], -9.0))
+		if age < 0.35:
+			var k := age / 0.35
+			r *= 0.55 + 0.45 * k + 0.18 * sin(k * PI)
+		if age < 1.6 and not on:
+			var o := fmod(age, 0.8) / 0.8
+			_canvas.draw_arc(c, r * (1.0 + 0.45 * o), 0.0, TAU, 48, Color(0.98, 0.82, 0.10, 0.8 * (1.0 - o)), 5.0, true)
 		# un disque sombre sous le texte : lisible sur n'importe quel décor
 		_canvas.draw_circle(c, r, Color(0.98, 0.82, 0.10, 0.85) if on else Color(0.08, 0.06, 0.10, 0.62))
-		_canvas.draw_arc(c, r, 0.0, TAU, 48, Color(1, 1, 1, 0.95), 4.0, true)
+		_canvas.draw_arc(c, r, 0.0, TAU, 48, Color(1, 1, 1, 0.9), 2.5, true)
 		var t: String = b[1]
-		var taille := int(clampf(r * 0.36, 22.0, 40.0))
+		var taille := int(clampf(r * 0.38, 13.0, 34.0))
 		var w := police.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, taille).x
-		while w > r * 1.75 and taille > 16:
+		while w > r * 1.75 and taille > 11:
 			taille -= 2
 			w = police.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, taille).x
 		var pos := c + Vector2(-w * 0.5, taille * 0.36)
-		_canvas.draw_string_outline(police, pos, t, HORIZONTAL_ALIGNMENT_LEFT, -1, taille, 6, Color(0.05, 0.04, 0.07, 0.9))
+		_canvas.draw_string_outline(police, pos, t, HORIZONTAL_ALIGNMENT_LEFT, -1, taille, 4, Color(0.05, 0.04, 0.07, 0.9))
 		_canvas.draw_string(police, pos, t, HORIZONTAL_ALIGNMENT_LEFT, -1, taille, Color(0.08, 0.06, 0.10) if on else Color(1, 1, 1))
+	if not _joy_vu:
+		# au repos : on voit où poser le pouce (mais le joystick naît là où on touche, dans toute la moitié droite)
+		var repos := _canvas.size + JOY_REPOS * _k() / TAILLE * 0.8
+		_canvas.draw_circle(repos, _joy_r(), Color(1, 1, 1, 0.05))
+		_canvas.draw_arc(repos, _joy_r(), 0.0, TAU, 40, Color(1, 1, 1, 0.22), 2.0, true)
+		_canvas.draw_circle(repos, _joy_r() * 0.36, Color(1, 1, 1, 0.16))
 	if _joy_vu:
-		_canvas.draw_circle(_joy_origine, JOY_RAYON, Color(1, 1, 1, 0.10))
-		_canvas.draw_arc(_joy_origine, JOY_RAYON, 0.0, TAU, 40, Color(1, 1, 1, 0.5), 3.0, true)
-		_canvas.draw_circle(_joy_origine + (_joy_pos - _joy_origine).limit_length(JOY_RAYON), 40.0, Color(1, 1, 1, 0.4))
+		_canvas.draw_circle(_joy_origine, _joy_r(), Color(1, 1, 1, 0.10))
+		_canvas.draw_arc(_joy_origine, _joy_r(), 0.0, TAU, 40, Color(1, 1, 1, 0.5), 2.5, true)
+		_canvas.draw_circle(_joy_origine + (_joy_pos - _joy_origine).limit_length(_joy_r()), _joy_r() * 0.4, Color(1, 1, 1, 0.4))

@@ -53,6 +53,7 @@ func _process(delta: float) -> void:
 	var a := 1.0 if _depuis < PALE_APRES else lerpf(1.0, PALE, clampf((_depuis - PALE_APRES) / 1.0, 0.0, 1.0))
 	_boite.modulate.a = a
 	_boite.position.y = get_viewport().get_visible_rect().size.y - 46.0 - _boite.size.y
+	_boite.position.x = 18.0   # jamais coupée par le bord gauche
 
 
 func contexte() -> String:
@@ -80,7 +81,7 @@ func lignes(c: String) -> Array:
 		"suspendu":
 			return [["Espace", "se hisser, ou bondir au rebord du dessus"], ["←  →", "se décaler"], ["↓", "lâcher"]]
 		"skate":
-			return [["Maj", "pousser"], ["Espace", "ollie (maintenir, relâcher)"], ["X  C", "kickflip, shove-it"], ["B", "grind"], ["E", "descendre de la planche"]]
+			return [["Espace", "ollie (maintenir, relâcher)"], ["←  →  en l'air", "tourner : 180, 360…"], ["X  C", "kickflip, shove-it"], ["Maj en l'air", "grab (↑ nose, ↓ tail)"], ["B", "manual (↑ ↓ : équilibre)"], ["sur un rail", "grind tout seul (↑ nosegrind, ↓ 5-0)"], ["E", "descendre de la planche"]]
 		"conteneur":
 			return [["F", "fouiller : bombes pleines"], ["E", "planche"]]
 		"mur", "mur_expert":

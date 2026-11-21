@@ -134,6 +134,14 @@ func run() -> void:
 		await frames(10)
 		await frames(20)
 		check(g.a_reprendre_ici(), "devant la pièce inachevée : REPRENDRE est proposé")
+		var face: Vector3 = g._cible.normal
+		g._cible.normal = -face
+		check(not g.a_reprendre_ici(), "aucune reprise depuis la face opposée")
+		g._cible.normal = face
+		var pieds: Vector3 = p.global_position
+		p.global_position += Vector3.UP * 3.0
+		check(not g.a_reprendre_ici(), "aucune reprise depuis l'étage supérieur")
+		p.global_position = pieds
 		g.commande_tactile("reprendre")
 		check(g._trace != null and g._etape_i == 1, "reprendre : on repart au contour")
 		while g._trace:

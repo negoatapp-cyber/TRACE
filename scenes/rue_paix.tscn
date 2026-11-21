@@ -1,0 +1,74 @@
+[gd_scene load_steps=9 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/player.tscn" id="1_player"]
+[ext_resource type="Script" path="res://scripts/rue_paix.gd" id="2_rue"]
+[ext_resource type="Script" path="res://scripts/graffiti.gd" id="3_graffiti"]
+[ext_resource type="Script" path="res://scripts/style_bd.gd" id="4_style"]
+
+[sub_resource type="ProceduralSkyMaterial" id="SkyMat"]
+sky_top_color = Color(0.294, 0.557, 0.992, 1)
+sky_horizon_color = Color(0.38, 0.62, 0.99, 1)
+sky_curve = 0.12
+ground_bottom_color = Color(0.36, 0.34, 0.30, 1)
+ground_horizon_color = Color(0.38, 0.62, 0.99, 1)
+sun_angle_max = 1.0
+sun_curve = 0.01
+
+[sub_resource type="Sky" id="Sky"]
+sky_material = SubResource("SkyMat")
+
+[sub_resource type="Environment" id="Env"]
+background_mode = 2
+sky = SubResource("Sky")
+ambient_light_source = 2
+ambient_light_color = Color(0.66, 0.68, 0.74, 1)
+ambient_light_energy = 0.75
+reflected_light_source = 2
+tonemap_mode = 0
+fog_enabled = false
+fog_light_color = Color(0.56, 0.72, 0.98, 1)
+fog_sun_scatter = 0.0
+fog_density = 0.0012
+fog_aerial_perspective = 0.0
+
+[node name="RuePaix" type="Node3D"]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Env")
+
+[node name="Soleil" type="DirectionalLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 60, 0)
+rotation_degrees = Vector3(-43, -26, 0)
+light_color = Color(1, 1, 1, 1)
+light_energy = 1.0
+shadow_enabled = true
+shadow_bias = 0.12
+shadow_normal_bias = 2.5
+shadow_blur = 0.6
+directional_shadow_mode = 2
+directional_shadow_max_distance = 110.0
+directional_shadow_blend_splits = true
+
+[node name="Rue" type="Node3D" parent="."]
+script = ExtResource("2_rue")
+
+[node name="Player" parent="." instance=ExtResource("1_player")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.2, 0.2, 2.5)
+
+[node name="Graffiti" type="Node3D" parent="."]
+script = ExtResource("3_graffiti")
+
+[node name="StyleBD" type="Node" parent="."]
+script = ExtResource("4_style")
+ciel_haut = Color(0.294, 0.557, 0.992, 1)
+ciel_horizon = Color(0.38, 0.62, 0.99, 1)
+brume = Color(0.56, 0.72, 0.98, 1)
+
+[node name="CameraCible" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.6, 0)
+rotation_degrees = Vector3(0, -6.66, 0)
+projection = 2
+size = 0.07002
+frustum_offset = Vector2(0, 0.0094)
+near = 0.05
+far = 600.0

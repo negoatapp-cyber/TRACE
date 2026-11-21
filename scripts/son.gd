@@ -44,6 +44,17 @@ var _recherche_t := 0.0
 
 # --- états précédents (pour détecter les changements) -------------------------------------------
 var _dist_pas := 0.8
+var _demi_pas := -1
+var _anim_p: AnimationPlayer
+## Décalage (0 à 1) entre le début du cycle de marche et le moment où le pied touche le sol. À régler à l'oreille.
+const DECAL_PAS := 0.0
+## Par animation du personnage : [nombre d'appuis de pied par cycle, moment du premier appui (0 à 1)], mesurés sur le squelette.
+const PAS_CLIPS := {
+	"casual_walk": [6, 0.03],
+	"walking": [2, 0.28],
+	"run_02": [2, 0.3],
+	"running": [2, 0.1],
+}
 var _au_sol_avant := true
 var _vy_avant := 0.0
 var _p_push := -1.0
@@ -309,7 +320,29 @@ func _v(o: Object, nom: String, def: Variant) -> Variant:
 	return def if r == null else r
 
 
+var _debloque := 0   # navigateur (surtout iPhone) : le son ne démarre qu'après un geste de la personne
+
+
+func _debloquer_web(event: InputEvent) -> void:
+	if _debloque >= 3 or not OS.has_feature("web"):
+		return
+	var geste: bool = (event is InputEventScreenTouch and not event.pressed) or (event is InputEventMouseButton and not event.pressed) \
+		or (event is InputEventKey and event.pressed)
+	if not geste:
+		return
+	_debloque += 1
+	# relance le contexte audio du moteur et de la page, dans le geste lui-même
+	JavaScriptBridge.eval("""
+		(function(){
+			try { if (window.GodotAudio && GodotAudio.ctx && GodotAudio.ctx.state !== 'running') GodotAudio.ctx.resume(); } catch(e){}
+			try { var C = window.AudioContext || window.webkitAudioContext; if (C) { var c = new C(); var b = c.createBuffer(1,1,22050); var s = c.createBufferSource(); s.buffer=b; s.connect(c.destination); s.start(0); c.resume(); } } catch(e){}
+		})();
+	""", true)
+	jouer("ui_bascule", -30)
+
+
 func _input(event: InputEvent) -> void:
+	_debloquer_web(event)
 	if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_T:
 		jouer("ui_bascule", -8)   # T : l'époque (avant / aujourd'hui)
 
@@ -361,6 +394,22 @@ func _retrouver(delta: float) -> void:
 		_cond = sc.find_child("Conduite", true, false)
 
 
+## L'AnimationPlayer du personnage (n°2) : sert à poser les pas au rythme de la marche à l'écran.
+func _anim_perso() -> AnimationPlayer:
+	if is_instance_valid(_anim_p):
+		return _anim_p
+	if not is_instance_valid(_j):
+		return null
+	var pile: Array = [_j]
+	while not pile.is_empty():
+		var n: Node = pile.pop_back()
+		if n is AnimationPlayer:
+			_anim_p = n as AnimationPlayer
+			return _anim_p
+		pile.append_array(n.get_children())
+	return null
+
+
 func _clavier() -> void:
 	if InputMap.has_action("style_bd") and Input.is_action_just_pressed("style_bd"):
 		jouer("ui_bascule", -8)
@@ -403,13 +452,27 @@ func _joueur(delta: float) -> void:
 		and not mantle and not susp and not gout and not trace_on
 	if libre and plat > 0.6:
 		var course := plat > 4.5
-		_dist_pas += plat * delta
-		var foulee := 1.9 if course else 1.3
-		if _dist_pas >= foulee:
-			_dist_pas = fmod(_dist_pas, foulee)
-			_pas(p.global_position, course)
+		var a := _anim_perso()
+		var cl := "" if a == null else String(a.current_animation).to_lower()
+		if a != null and a.is_playing() and a.current_animation_length > 0.1 \
+				and (cl.contains("walk") or cl.contains("run") or cl.contains("jog") or cl.contains("sprint")):
+			# les pas suivent l'animation : deux appuis par cycle de jambes
+			var reglage: Array = PAS_CLIPS.get(cl, [2, DECAL_PAS])
+			var phase := fposmod(a.current_animation_position / a.current_animation_length - float(reglage[1]), 1.0)
+			var demi := int(phase * float(reglage[0]))
+			if _demi_pas >= 0 and demi != _demi_pas:
+				_pas(p.global_position, course)
+			_demi_pas = demi
+		else:
+			_demi_pas = -1
+			_dist_pas += plat * delta
+			var foulee := 2.6 if course else 1.9
+			if _dist_pas >= foulee:
+				_dist_pas = fmod(_dist_pas, foulee)
+				_pas(p.global_position, course)
 	elif plat < 0.6:
 		_dist_pas = 0.8
+		_demi_pas = -1
 	if mode == WALK and not conduit and chute_t < 0.0:
 		if _au_sol_avant and not au_sol and vel.y > 2.0 and not mantle and not susp and not gout:
 			jouer("saut_pied", -8)

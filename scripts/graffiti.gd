@@ -25,15 +25,27 @@ const COULEURS := [Color(0.92, 0.15, 0.45), Color(0.12, 0.12, 0.14), Color(0.95,
 ## Ce qu'on peut choisir pour chaque graffiti (menu G / bouton GRAFF). Un style de tag = un des tags de Loums ;
 ## un style de flop ou de pièce = une palette [fond, contour, surcontour, (2e surcontour)], indices dans COULEURS.
 ## (Un nouveau lettrage de flop ou de pièce s'ajoutera ici quand Louma en dessinera un autre.)
+## « photo » : un LOUMS déjà dessiné en couleurs (assets/decor/graff/mur_loums_*.png) ; Loums le peint,
+## puis le mur montre l'image telle quelle. Le tag et la perche n'ont pas les mêmes modèles (Louma, 21.11).
+const GRAFF := "res://assets/decor/graff/"
 const STYLES := {
-	"tag": [{"nom": "Tag 1", "v": 0}, {"nom": "Tag 2", "v": 1}, {"nom": "Tag 3", "v": 2}, {"nom": "Tag 4", "v": 3}],
+	"tag": [{"nom": "Tag 1", "v": 0}, {"nom": "Tag 2", "v": 1},
+		{"nom": "Bleu ciel", "photo": GRAFF + "mur_loums_01.png"}, {"nom": "Bleu nuit", "photo": GRAFF + "mur_loums_04.png"},
+		{"nom": "Noir fin", "photo": GRAFF + "mur_loums_12.png"}, {"nom": "Rouge qui coule", "photo": GRAFF + "mur_loums_06.png"}],
 	"flop": [{"nom": "Blanc, contour rouge", "pal": [2, 6, 1]}, {"nom": "Jaune, contour noir", "pal": [4, 1, 7]},
-		{"nom": "Rose, contour noir", "pal": [0, 1, 2]}, {"nom": "Bleu, contour blanc", "pal": [3, 2, 1]}],
+		{"nom": "Rose, contour noir", "pal": [0, 1, 2]}, {"nom": "Bleu, contour blanc", "pal": [3, 2, 1]},
+		{"nom": "Flop rouge", "photo": GRAFF + "mur_loums_07.png"}, {"nom": "Flop qui coule", "photo": GRAFF + "mur_loums_08.png"}],
 	"piece": [{"nom": "Rose, bleu et jaune", "pal": [0, 1, 3, 4]}, {"nom": "Vert, blanc et rose", "pal": [5, 1, 2, 0]},
-		{"nom": "Rouge, blanc et jaune", "pal": [6, 2, 1, 4]}, {"nom": "Violet, jaune et bleu", "pal": [7, 1, 4, 3]}],
-	"perche": [{"nom": "Tag 1", "v": 0}, {"nom": "Tag 2", "v": 1}, {"nom": "Tag 3", "v": 2}, {"nom": "Tag 4", "v": 3}],
-	"rouleau": [{"nom": "Rose", "pal": [0]}, {"nom": "Bleu", "pal": [3]}, {"nom": "Noir", "pal": [1]}, {"nom": "Jaune", "pal": [4]}],
+		{"nom": "Rouge, blanc et jaune", "pal": [6, 2, 1, 4]}, {"nom": "Violet, jaune et bleu", "pal": [7, 1, 4, 3]},
+		{"nom": "La couronne", "photo": GRAFF + "mur_loums_14.png"}, {"nom": "Gris et bleu", "photo": GRAFF + "vrai_piece_loums.png"}],
+	"perche": [{"nom": "Tag 3", "v": 2}, {"nom": "Tag 4", "v": 3},
+		{"nom": "La flèche rouge", "photo": GRAFF + "mur_loums_03.png"}, {"nom": "Le paraphe blanc", "photo": GRAFF + "mur_loums_02.png"},
+		{"nom": "Rose qui coule", "photo": GRAFF + "mur_loums_13.png"}],
+	"rouleau": [{"nom": "Rose", "pal": [0]}, {"nom": "Bleu", "pal": [3]}, {"nom": "Noir", "pal": [1]}, {"nom": "Jaune", "pal": [4]},
+		{"nom": "Bloc noir", "photo": GRAFF + "mur_loums_05.png"}],
 }
+## Le mode LIBRE : on trace soi-même ce qu'on veut, à la bombe ou au rouleau (toujours à la main).
+const LIBRE := {"tag": {"largeur": 1.5, "rayon": 6.0, "px": 520, "haut": 0.62}, "rouleau": {"largeur": 4.2, "rayon": 15.0, "px": 560, "haut": 0.42}}
 const CHOIX := preload("res://scripts/choix_graff.gd")
 var choix: CanvasLayer              ## le menu de choix, ouvert devant un mur
 
@@ -115,7 +127,7 @@ func _physics_process(delta: float) -> void:
 	if Input.is_action_just_pressed("fouiller") and _conteneur_proche():
 		_fouiller()
 	_cible = _mur_devant()
-	var peut := not _cible.is_empty() and _joueur.mode == Player.Mode.WALK and _joueur.is_on_floor()
+	var peut := peut_graffer()
 	if InputMap.has_action("graff_mode") and Input.is_action_just_pressed("graff_mode"):
 		basculer_mode()
 	# G (ou 1 à 5) face à un mur : le menu du graffiti s'ouvre, on choisit quoi peindre et dans quel style.
@@ -170,7 +182,9 @@ func basculer_mode() -> void:
 
 ## Pour les boutons du téléphone.
 func peut_graffer() -> bool:
-	return _trace == null and not _cible.is_empty() and _joueur.mode == Player.Mode.WALK and _joueur.is_on_floor()
+	return _trace == null and not _cible.is_empty() and _joueur.is_physics_processing() \
+			and _joueur.mode == Player.Mode.WALK and _joueur.is_on_floor() \
+			and _joueur.transition.is_empty() and _joueur.chute_t < 0.0
 
 
 func a_reprendre_ici() -> bool:
@@ -196,11 +210,20 @@ func _a_reprendre() -> int:
 	if _cible.is_empty():
 		return -1
 	var p: Vector3 = _cible.position
+	var normale: Vector3 = _cible.normal.slide(Vector3.UP).normalized()
+	var meilleur := -1
+	var distance_min := 2.5
 	for i in range(poses.size() - 1, -1, -1):
 		var g: Dictionary = poses[i]
-		if g.has("imgs") and not g.get("fini", true) and Vector2(g.x - p.x, g.z - p.z).length() < 2.5:
-			return i
-	return -1
+		if not g.has("imgs") or g.get("fini", true):
+			continue
+		var decalage := Vector3(float(g.x) - p.x, 0, float(g.z) - p.z)
+		if absf(float(g.y) - _joueur.global_position.y) > 1.2 or Vector3(g.nx, 0, g.nz).dot(normale) < 0.95:
+			continue
+		if absf(decalage.dot(normale)) < 0.3 and decalage.length() < distance_min:
+			distance_min = decalage.length()
+			meilleur = i
+	return meilleur
 
 
 func _palier() -> String:
@@ -219,7 +242,7 @@ func _mur_devant() -> Dictionary:
 	var q := PhysicsRayQueryParameters3D.create(depart, depart + avant * PORTEE)
 	q.exclude = [_joueur.get_rid()]
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
-	if hit.is_empty() or absf(hit.normal.y) > 0.35:
+	if hit.is_empty() or hit.collider is CharacterBody3D or absf(hit.normal.y) > 0.35:
 		return {}
 	if hit.normal.dot(avant) > 0.0:
 		hit.normal = -hit.normal  # mur vu de dos : on peint du côté où l'on est
@@ -273,6 +296,19 @@ func _etapes_de(g: Dictionary, avec_guides := true) -> Array:
 	var autre: Color = tt.sur
 	var contour: Color = tt.contour
 	var lumiere := Color(1, 0.99, 0.95)
+	if g.has("libre"):
+		var lb: Dictionary = LIBRE.get(g.t, LIBRE.tag)
+		var toile: Image = null
+		if G:
+			toile = Image.create(int(lb.px), int(float(lb.px) * float(lb.haut)), false, Image.FORMAT_RGBA8)
+			toile.fill(Color(1, 1, 1, 1))
+		return [{"nom": "libre", "titre": "ton graffiti", "guide": toile, "geste": "trait", "rayon": float(lb.rayon), "teinte": c,
+			"largeur": float(lb.largeur), "libre": true}]
+	if g.has("photo"):
+		var bombe_seule: bool = g.t == "tag" or g.t == "perche"
+		return [{"nom": "photo", "titre": "le " + NOMS.get(g.t, "graffiti").to_lower(), "guide": _masque(g.photo, 520) if G else null,
+			"geste": "trait" if bombe_seule else "remplir", "rayon": 7.0 if bombe_seule else 12.0, "teinte": _teinte_photo(g.photo),
+			"largeur": LARGEUR[g.t], "inertie": 0.12 if g.t == "perche" else 0.0}]
 	match g.t:
 		"tag":
 			return [{"nom": "tag", "titre": "le trait", "guide": _masque("tag_%d" % (int(g.v) % NB_TAGS + 1), 450) if G else null, "geste": "trait", "rayon": 7.0, "teinte": c, "largeur": LARGEUR.tag}]
@@ -329,6 +365,36 @@ func choisir(type: String, indice: int) -> void:
 	_style = {}
 
 
+## LIBRE : on trace soi-même ce qu'on veut (tag à la bombe, ou rouleau).
+func choisir_libre(type: String) -> void:
+	_style = {"libre": true}
+	commande_tactile(type)
+	_style = {}
+
+
+## La couleur moyenne d'un LOUMS en couleurs : celle de la peinture pendant qu'on le pose.
+var _teintes_photos := {}
+func _teinte_photo(chemin: String) -> Color:
+	if _teintes_photos.has(chemin):
+		return _teintes_photos[chemin]
+	var c := Color(0.9, 0.9, 0.9)
+	var img := _masque(chemin, 96)
+	if img:
+		var somme := Vector3.ZERO
+		var n := 0
+		for y in img.get_height():
+			for x in img.get_width():
+				var p := img.get_pixel(x, y)
+				if p.a > 0.5:
+					somme += Vector3(p.r, p.g, p.b)
+					n += 1
+		if n > 0:
+			somme /= n
+			c = Color(somme.x, somme.y, somme.z)
+	_teintes_photos[chemin] = c
+	return c
+
+
 func styles_de(t: String) -> Array:
 	return STYLES.get(t, [])
 
@@ -343,6 +409,9 @@ func couleurs() -> Array:
 
 ## Les couches d'un aperçu (menu de choix) : [texture, couleur], du fond vers le dessus.
 func couches_apercu(t: String, style: Dictionary) -> Array:
+	if style.has("photo"):
+		var tp := _texture(style.photo)
+		return [[tp, Color.WHITE]] if tp else []
 	var g := {"t": t, "c": couleur, "v": int(style.get("v", 0))}
 	if style.has("pal"):
 		g["pal"] = style.pal
@@ -398,7 +467,11 @@ func _commencer(type: String, reprise := -1, variante := -1) -> void:
 			if _style.has("pal"):
 				g["pal"] = (_style.pal as Array).duplicate()
 				g["c"] = int(_style.pal[0])
-		if type != "tag" and type != "perche":
+			if _style.has("photo"):
+				g["photo"] = _style.photo
+			if _style.has("libre"):
+				g["libre"] = true
+		if type != "tag" and type != "perche" and not g.has("photo") and not g.has("libre"):
 			g["imgs"] = {}
 			g["e"] = 0
 			g["fini"] = false
@@ -448,9 +521,9 @@ func _lancer_etape() -> void:
 	_trace = TRACE_TAG.new()
 	_trace.name = "Couche_" + e.nom
 	_chantier.add_child(_trace)
-	_trace.preparer(e.guide, e.teinte, e.largeur, e.guide.get_width(), e.rayon, e.geste)
+	_trace.preparer(e.guide, e.teinte, e.largeur, e.guide.get_width(), e.rayon, e.geste, 0.0 if e.get("libre", false) else 0.28)
 	_trace.inertie = e.get("inertie", 0.0)
-	if not expert:
+	if not expert and not e.get("libre", false):
 		# le temps de sortir la bombe (ou de prendre la perche dans le dos) avant de peindre
 		var attente := 0.7 if _etape_i == 0 and (_trace_g.t == "perche" or _trace_g.t == "rouleau") else (0.4 if _etape_i == 0 else 0.0)
 		_trace.attente = attente
@@ -470,7 +543,8 @@ func g_type_bombe(t: String) -> bool:
 ## Une couche est finie : on l'enregistre, puis on passe à la suivante (ou on pose le graffiti).
 func _etape_finie(img: Image, q: Dictionary) -> void:
 	var e: Dictionary = _etapes[_etape_i]
-	if q.couverture < 0.05 and e.geste != "taper":
+	var vide: bool = _trace.depose <= 0.0 if e.get("libre", false) else q.couverture < 0.05
+	if vide and e.geste != "taper":
 		_interrompre()
 		return
 	if g_type_bombe(_trace_g.t):
@@ -484,9 +558,9 @@ func _etape_finie(img: Image, q: Dictionary) -> void:
 	g["notes"] = notes
 	if g.t == "rouleau":
 		pot = maxf(0.0, pot - clampf(_trace.depose * 0.00002, 0.05, 0.5))
-	if g.t == "tag" or g.t == "perche":
+	if g.t == "tag" or g.t == "perche" or g.has("photo") or g.has("libre"):
 		g["img"] = chemin
-		g["q"] = snappedf(q.note, 0.01)
+		g["q"] = 1.0 if g.has("libre") else snappedf(q.note, 0.01)
 	else:
 		g.imgs[e.nom] = chemin
 		g["e"] = _etape_i + 1
@@ -500,7 +574,9 @@ func _etape_finie(img: Image, q: Dictionary) -> void:
 	if _etape_i < _etapes.size():
 		_lancer_etape()
 		return
-	if g.t != "tag" and g.t != "perche":
+	if g.has("libre"):
+		_message = "Graffiti libre posé"
+	elif g.t != "tag" and g.t != "perche" and not g.has("photo"):
 		g["fini"] = true
 		var somme := 0.0
 		for k in notes:
@@ -564,9 +640,10 @@ func point_du_jet() -> Vector3:
 	if _trace == null:
 		return Vector3.ZERO
 	var c := _trace.curseur
-	if c.x < 0.0 or c.y < 0.0:
+	if c.x == -1000 and c.y == -1000:
 		return _trace.global_position
-	return _trace.vers_monde(c)
+	# Le pointeur peut quitter le calque, mais la main et le corps restent près du lettrage.
+	return _trace.vers_monde(c.clamp(Vector2.ZERO, Vector2(_trace.guide.get_size())))
 
 
 func _finir_trace(img: Image, q: Dictionary) -> void:
@@ -664,7 +741,7 @@ func _texture(nom: String) -> Texture2D:
 				img.generate_mipmaps()
 				tex = ImageTexture.create_from_image(img)
 		else:
-			var chemin := LETTRAGE + nom + ".png"
+			var chemin := nom if nom.begins_with("res://") else LETTRAGE + nom + ".png"
 			if ResourceLoader.exists(chemin):
 				tex = load(chemin) as Texture2D
 			elif FileAccess.file_exists(ProjectSettings.globalize_path(chemin)):
@@ -704,6 +781,22 @@ func _dessiner_lettrage(g: Dictionary) -> Node3D:
 	var contour: Color = tt.contour
 	var troisieme: Color = tt.sur2
 	var lumiere := Color(1, 0.99, 0.95)
+	if g.has("libre") and g.has("img"):
+		# le dessin du joueur, tel qu'il l'a tracé, à la taille de la toile libre
+		var tl := _texture(g.img)
+		if tl == null:
+			return null
+		var rl := Node3D.new()
+		rl.add_child(_calque(tl, float((LIBRE.get(g.t, LIBRE.tag) as Dictionary).largeur), c, 0))
+		return rl
+	if g.has("photo"):
+		# un LOUMS en couleurs : l'image elle-même une fois posé
+		var tph := _texture(g.photo)
+		if tph == null:
+			return null
+		var rp := Node3D.new()
+		rp.add_child(_calque(tph, LARGEUR[g.t], Color.WHITE, 0))
+		return rp
 	if g.has("imgs"):
 		return _dessiner_couches(g)
 	var etape: int = int(g.get("e", 99))   # étapes visibles (aperçu pendant qu'on peint)
@@ -855,11 +948,12 @@ func _conteneur_proche() -> Node3D:
 
 
 ## Au conteneur : quatre bombes pleines, de nouvelles couleurs.
-func _fouiller() -> void:
+func _fouiller(palette_du_snack := false) -> void:
 	pot = 1.0
 	var depart: int = (int(ceinture[0]) + 1) % COULEURS.size()
+	const PALETTE_SNACK := [0, 3, 2, 4]  # rose, bleu, blanc, jaune
 	for i in ceinture.size():
-		ceinture[i] = (depart + i * 2) % COULEURS.size()
+		ceinture[i] = PALETTE_SNACK[i] if palette_du_snack else (depart + i * 2) % COULEURS.size()
 		reserve[i] = 1.0
 	_joueur.skate.last_event = "Quatre bombes pleines"
 	_sauver()

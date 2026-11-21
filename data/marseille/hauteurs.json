@@ -1,0 +1,101 @@
+{
+  "Cyprès A": {
+    "hauteur": 36.1,
+    "estimation_origine": 46.0,
+    "cleabs": "BATIMENT0000000258458517",
+    "methode": "Interpolation bâti BDTopo",
+    "precision_m": 2.5,
+    "recouvrement": 0.951,
+    "date": "1969-01-01Z"
+  },
+  "Peupliers A": {
+    "hauteur": 14.5,
+    "estimation_origine": 27.0,
+    "cleabs": "BATIMENT0000000258458709",
+    "methode": "Interpolation bâti BDTopo",
+    "precision_m": 2.5,
+    "recouvrement": 0.869,
+    "date": "1972-01-01Z"
+  },
+  "Peupliers B": {
+    "hauteur": 13.4,
+    "estimation_origine": 27.0,
+    "cleabs": "BATIMENT0000000258458742",
+    "methode": "Interpolation bâti BDTopo",
+    "precision_m": 2.5,
+    "recouvrement": 0.85,
+    "date": "1972-01-01Z"
+  },
+  "Peupliers C": {
+    "hauteur": 13.4,
+    "estimation_origine": 27.0,
+    "cleabs": "BATIMENT0000000258458738",
+    "methode": "Interpolation bâti BDTopo",
+    "precision_m": 2.5,
+    "recouvrement": 0.853,
+    "date": "1972-01-01Z"
+  },
+  "Lycée annexe": {
+    "hauteur": 3.1,
+    "estimation_origine": 8.0,
+    "cleabs": "BATIMENT0000000040609411",
+    "methode": "BDTopo",
+    "precision_m": 1.5,
+    "recouvrement": 0.889,
+    "date": "2006-11-22T11:22:15.462Z"
+  },
+  "École des Lauriers": {
+    "hauteur": 3.7,
+    "estimation_origine": 8.0,
+    "cleabs": "BATIMENT0000000258458592",
+    "methode": "Corrélation",
+    "precision_m": 1,
+    "recouvrement": 0.919,
+    "date": "2011-05-20T07:06:09.327Z"
+  },
+  "École des Lauriers 2": {
+    "hauteur": 5.1,
+    "estimation_origine": 8.0,
+    "cleabs": "BATIMENT0000000258458590",
+    "methode": "Interpolation bâti BDTopo",
+    "precision_m": 2.5,
+    "recouvrement": 0.951,
+    "date": "2011-05-20T07:06:09.327Z"
+  },
+  "École Bouge": {
+    "hauteur": 7.3,
+    "estimation_origine": 10.0,
+    "cleabs": "BATIMENT0000000258458420",
+    "methode": "Corrélation",
+    "precision_m": 1,
+    "recouvrement": 0.856,
+    "date": "2011-05-20T07:06:09.327Z"
+  },
+  "Formation": {
+    "hauteur": 7.2,
+    "estimation_origine": 6.0,
+    "cleabs": "BATIMENT0000000258458487",
+    "methode": "Interpolation bâti BDTopo",
+    "precision_m": 2.5,
+    "recouvrement": 0.828,
+    "date": "2011-05-20T07:06:09.327Z"
+  },
+  "Internat": {
+    "hauteur": 11,
+    "estimation_origine": 18.0,
+    "cleabs": "BATIMENT0000000258458484",
+    "methode": "Interpolation bâti BDTopo",
+    "precision_m": 2.5,
+    "recouvrement": 0.837,
+    "date": "2011-05-20T07:06:09.327Z"
+  },
+  "Restaurant": {
+    "hauteur": 4.1,
+    "estimation_origine": 9.0,
+    "cleabs": "BATIMENT0000000258458491",
+    "methode": "Corrélation",
+    "precision_m": 1,
+    "recouvrement": 0.834,
+    "date": "2011-05-20T07:06:09.327Z"
+  }
+}

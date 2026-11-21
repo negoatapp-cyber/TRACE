@@ -233,8 +233,9 @@ func _gradins_blocs(o: Vector3) -> void:
 		_boite(b, taille, p)
 	# terre et petit arbre dans la jardinière
 	_ajouter("terre", Color(0.42, 0.33, 0.25), Transform3D(b * Basis.from_scale(Vector3(3.1, 0.04, 1.6)), base + b * Vector3(0.4, 1.0, 0.0)))
-	_ajouter("tronc", Color(0.40, 0.32, 0.26), Transform3D(b * Basis.from_scale(Vector3(0.09, 2.6, 0.09)), base + b * Vector3(0.6, 2.3, 0.0)))
-	_ajouter("feuillage", FEUILLAGE, Transform3D(b * Basis.from_scale(Vector3(1.4, 1.2, 1.4)), base + b * Vector3(0.6, 3.6, 0.0)))
+	if not _arbre("feuillu", base + b * Vector3(0.6, 1.0, 0.0), 0.55):
+		_ajouter("tronc", Color(0.40, 0.32, 0.26), Transform3D(b * Basis.from_scale(Vector3(0.09, 2.6, 0.09)), base + b * Vector3(0.6, 2.3, 0.0)))
+		_ajouter("feuillage", FEUILLAGE, Transform3D(b * Basis.from_scale(Vector3(1.4, 1.2, 1.4)), base + b * Vector3(0.6, 3.6, 0.0)))
 	# le banc en bois glissé entre deux cubes
 	for k in 4:
 		_ajouter("banc", BOIS, Transform3D(b * Basis.from_scale(Vector3(1.4, 0.05, 0.09)), base + b * Vector3(-1.15, 0.45, 1.25 + k * 0.12)))
@@ -248,6 +249,9 @@ func _peuplier(p: Vector2) -> void:
 	_ajouter("bloc", BETON, Transform3D(Basis.from_scale(Vector3(1.5, 0.55, 1.5)), Vector3(p.x, y + 0.275, p.y)))
 	_boite(Basis(), Vector3(1.5, 0.55, 1.5), Vector3(p.x, y + 0.275, p.y))
 	_ajouter("terre", Color(0.42, 0.33, 0.25), Transform3D(Basis.from_scale(Vector3(1.2, 0.04, 1.2)), Vector3(p.x, y + 0.55, p.y)))
+	# arbre généré en fuseau (cyprès, arbres.gd) ; à défaut, trois volumes empilés
+	if _arbre("cypres", Vector3(p.x, y + 0.55, p.y), 0.8):
+		return
 	_ajouter("tronc", Color(0.40, 0.32, 0.26), Transform3D(Basis.from_scale(Vector3(0.14, 2.0, 0.14)), Vector3(p.x, y + 1.5, p.y)))
 	# silhouette en fuseau : trois volumes empilés, de plus en plus fins
 	var hauts := [[1.6, 2.6, 3.2], [1.3, 2.4, 5.6], [0.8, 2.0, 7.6]]
@@ -391,3 +395,15 @@ func _poly(s: String) -> PackedVector2Array:
 	if out.size() > 2 and out[0].distance_to(out[out.size() - 1]) < 0.01:
 		out.remove_at(out.size() - 1)
 	return out
+
+
+## Un arbre généré (scripts/arbres.gd) posé à « pied », en coordonnées du monde. false si les modèles manquent.
+func _arbre(espece: String, pied: Vector3, echelle: float) -> bool:
+	var a: Node3D = load("res://scripts/arbres.gd").arbre(espece, int(pied.x * 7.0 + pied.z * 13.0))
+	if a == null:
+		return false
+	a.position = pied
+	a.rotation.y = fposmod(pied.x * 1.7 + pied.z, TAU)
+	a.scale = Vector3.ONE * echelle
+	add_child(a)
+	return true

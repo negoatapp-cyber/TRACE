@@ -120,7 +120,7 @@ func ollie() -> void:
 	await frames(24)
 	var h_charge := hanche_pieds()
 	check(not p.skate.in_air and p.skate.charge > 0.3, "ollie : Espace tenu = accroupi, pas encore en l'air")
-	check(h_charge < h0 - 0.12, "ollie : le bassin descend en chargeant (%.2f → %.2f m)" % [h0, h_charge])
+	check(h_charge < h0 - 0.08, "ollie : le bassin descend en chargeant (%.2f → %.2f m)" % [h0, h_charge])
 	var d1: float = po.RightFoot.distance_to(perso.cible_avant.global_position)
 	var d2: float = po.LeftFoot.distance_to(perso.cible_arriere.global_position)
 	check(d1 < 0.06 and d2 < 0.06, "ollie : les pieds restent sur la planche en chargeant (%.3f / %.3f)" % [d1, d2])

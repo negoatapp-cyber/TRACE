@@ -3,6 +3,8 @@
 *Document de pilotage. Mis à jour le 19.11.2026. Tenu par la conversation n°1 (gameplay et systèmes).*
 *Toute conversation qui travaille sur TRACE lit ce fichier avant de commencer.*
 
+**20.11.2026 — nouvelle cible demandée : Marseille 2013.** Le diagnostic, le plan d'habillage et les résultats de la première étude jouable sont dans [MARSEILLE_2013.md](MARSEILLE_2013.md). L'étude se lance avec `Jouer-Marseille-2013.cmd` ; la scène principale conserve son calendrier existant pendant cette comparaison. Les jalons ci-dessous restent l'historique du plan du 19.11.
+
 ## 1. L'objectif
 
 **Une démo jouable de 30 minutes, prête pour Noël (vendredi 25.12.2026).** On est en 2014-2015, dans le quartier des Lauriers et devant le lycée. Le joueur incarne Loums :

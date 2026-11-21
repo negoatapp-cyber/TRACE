@@ -20,6 +20,9 @@ const AIDE_TYPE := {
 
 var graffiti: Node
 var onglet := "tag"
+var famille := "loums"        ## « loums » : les modèles de Loums ; « libre » : on trace ce qu'on veut
+var _familles: HBoxContainer
+var _defile: ScrollContainer
 var _racine: Control
 var _onglets: HBoxContainer
 var _cartes: HBoxContainer
@@ -91,7 +94,7 @@ func _construire() -> void:
 	_racine.anchor_bottom = 1.0
 	_racine.offset_left = -640
 	_racine.offset_right = 640
-	_racine.offset_top = -490
+	_racine.offset_top = -575
 	_racine.offset_bottom = -24
 	var st := StyleBoxFlat.new()
 	st.bg_color = Color(PAPIER, 0.97)
@@ -119,13 +122,22 @@ func _construire() -> void:
 	_info.add_theme_color_override("font_color", ENCRE)
 	titre.add_child(_info)
 	v.add_child(titre)
+	# deux façons de graffer : les LOUMS (modèles du perso) ou LIBRE (ton propre graffiti)
+	_familles = HBoxContainer.new()
+	_familles.add_theme_constant_override("separation", 12)
+	v.add_child(_familles)
 	_onglets = HBoxContainer.new()
 	_onglets.add_theme_constant_override("separation", 10)
 	v.add_child(_onglets)
+	_defile = ScrollContainer.new()
+	_defile.custom_minimum_size = Vector2(0, 196)
+	_defile.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	v.add_child(_defile)
 	_cartes = HBoxContainer.new()
-	_cartes.add_theme_constant_override("separation", 14)
+	_cartes.add_theme_constant_override("separation", 12)
+	_cartes.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_cartes.alignment = BoxContainer.ALIGNMENT_CENTER
-	v.add_child(_cartes)
+	_defile.add_child(_cartes)
 	_bas = HBoxContainer.new()
 	_bas.add_theme_constant_override("separation", 12)
 	v.add_child(_bas)
@@ -165,13 +177,22 @@ func _bouton_texte(texte: String, taille: int, actif: bool) -> Button:
 
 
 func _remplir() -> void:
-	for boite in [_onglets, _cartes, _bas, _bombes]:
+	for boite in [_familles, _onglets, _cartes, _bas, _bombes]:
 		for n in boite.get_children():
 			boite.remove_child(n)
 			n.queue_free()
 	var reserve: Array = graffiti.get("reserve")
 	var bombe: int = graffiti.get("bombe")
 
+	for fa in [["loums", "LOUMS"], ["libre", "LIBRE"]]:
+		var bf := _bouton_texte(fa[1], 30, fa[0] == famille)
+		bf.custom_minimum_size = Vector2(0, 62)
+		bf.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		bf.pressed.connect(func(): famille = fa[0]; onglet = "tag"; _remplir())
+		_familles.add_child(bf)
+	if famille == "libre":
+		_remplir_libre(reserve, bombe)
+		return
 	# les onglets : un par taille
 	for ty in TYPES:
 		var b := _bouton_texte(NOMS[ty], 26, ty == onglet)
@@ -190,6 +211,43 @@ func _remplir() -> void:
 		_cartes.add_child(carte)
 		if premiere == null:
 			premiere = carte
+	_remplir_bas(reserve, bombe, premiere)
+
+
+## LIBRE : on trace soi-même, à la bombe ou au rouleau, dans la couleur de la bombe en main.
+func _remplir_libre(reserve: Array, bombe: int) -> void:
+	_info.text = "Ton graffiti à toi : tu le traces à la souris ou au doigt, dans la couleur de la bombe choisie en bas."
+	var premiere: Button = null
+	for o in [["tag", "TAG À LA BOMBE", "Un trait fin. Ton blaze, ta signature."], ["rouleau", "ROULEAU", "Gros traits pleins, lettres géantes."]]:
+		var possible: bool = float(reserve[bombe]) >= float(graffiti.call("cout_de", "tag")) if o[0] == "tag" else float(graffiti.get("pot")) >= 0.1
+		var b := Button.new()
+		b.custom_minimum_size = Vector2(400, 180)
+		b.focus_mode = Control.FOCUS_ALL
+		b.disabled = not possible
+		_style_bouton(b, Color(0.42, 0.40, 0.44), ENCRE, 4)
+		var vv := VBoxContainer.new()
+		vv.set_anchors_preset(Control.PRESET_FULL_RECT)
+		vv.alignment = BoxContainer.ALIGNMENT_CENTER
+		vv.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		b.add_child(vv)
+		for ligne in [[o[1], 34], [o[2] if possible else ("Bombe vide" if o[0] == "tag" else "Pot vide : va au conteneur"), 19]]:
+			var lb := Label.new()
+			lb.text = ligne[0]
+			lb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			lb.add_theme_font_size_override("font_size", ligne[1])
+			lb.add_theme_color_override("font_color", PAPIER)
+			lb.add_theme_color_override("font_outline_color", ENCRE)
+			lb.add_theme_constant_override("outline_size", 6)
+			lb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			vv.add_child(lb)
+		b.pressed.connect(func(): fermer(); graffiti.call("choisir_libre", o[0]))
+		_cartes.add_child(b)
+		if premiere == null and possible:
+			premiere = b
+	_remplir_bas(reserve, bombe, premiere)
+
+
+func _remplir_bas(reserve: Array, bombe: int, premiere: Button) -> void:
 	# en bas : les bombes (la couleur du tag), reprendre, le mode, fermer
 	var l := Label.new()
 	l.text = "Bombe :"
@@ -214,10 +272,11 @@ func _remplir() -> void:
 		r.custom_minimum_size = Vector2(170, 64)
 		r.pressed.connect(func(): fermer(); graffiti.call("commande_tactile", "reprendre"))
 		_bas.add_child(r)
-	var m := _bouton_texte("Mode : " + ("EXPERT" if graffiti.get("expert") else "SIMPLE"), 20, false)
-	m.custom_minimum_size = Vector2(190, 64)
-	m.pressed.connect(func(): graffiti.call("basculer_mode"); _remplir())
-	_bas.add_child(m)
+	if famille == "loums":
+		var m := _bouton_texte("Mode : " + ("EXPERT" if graffiti.get("expert") else "SIMPLE"), 20, false)
+		m.custom_minimum_size = Vector2(190, 64)
+		m.pressed.connect(func(): graffiti.call("basculer_mode"); _remplir())
+		_bas.add_child(m)
 	var f := _bouton_texte("✕  Fermer", 22, false)
 	f.custom_minimum_size = Vector2(150, 64)
 	f.pressed.connect(fermer)
@@ -231,7 +290,7 @@ func _remplir() -> void:
 ## Une vignette : l'aperçu du graffiti dans ce style, et son nom.
 func _carte(style: Dictionary, i: int) -> Button:
 	var b := Button.new()
-	b.custom_minimum_size = Vector2(285, 210)
+	b.custom_minimum_size = Vector2(232, 180)
 	b.focus_mode = Control.FOCUS_ALL
 	_style_bouton(b, Color(0.42, 0.40, 0.44), ENCRE, 4)   # un bout de mur gris
 	var v := VBoxContainer.new()

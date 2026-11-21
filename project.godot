@@ -12,7 +12,7 @@ config_version=5
 
 config/name="TRACE"
 config/description="Phase 2 — le quartier (barre, tours, lycée en façade), marche + skate, rendu BD."
-run/main_scene="res://scenes/lauriers.tscn"
+run/main_scene="res://scenes/accueil.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
 
 [autoload]
@@ -21,6 +21,7 @@ InputSetup="*res://scripts/input_setup.gd"
 TouchControls="*res://scripts/touch_controls.gd"
 Son="*res://scripts/son.gd"
 Mission="*res://scripts/mission.gd"
+Musique="*res://bande son/musique.gd"
 
 [display]
 
@@ -30,9 +31,17 @@ window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 window/handheld/orientation=1
 
+[input_devices]
+
+pointing/emulate_mouse_from_touch=false
+
 [physics]
 
 3d/physics_engine="Jolt Physics"
+
+[rendering]
+
+textures/vram_compression/import_etc2_astc=true
 
 [shader_globals]
 
@@ -40,7 +49,6 @@ nuit={
 "type": "float",
 "value": 0.0
 }
-
 bd_actif={
 "type": "float",
 "value": 1.0
@@ -57,11 +65,3 @@ bd_grain={
 "type": "float",
 "value": 0.18
 }
-
-[input_devices]
-
-pointing/emulate_mouse_from_touch=false
-
-[rendering]
-
-textures/vram_compression/import_etc2_astc=true

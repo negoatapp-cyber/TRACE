@@ -1,5 +1,5 @@
 extends Node
-## TRACE — conduire le scooter (et la voiture, sortie de la démo mais gardée).
+## TRACE — conduire le scooter (et la voiture, sortie de la démo mais gardée). Conduite n°2, refaite le 21.11.
 ## Script indépendant : il ne modifie pas les fichiers du joueur. Pendant la conduite, Loums suit le véhicule,
 ## assis dessus (la pose assise est dans personnage.gd) ; sa caméra suit donc le véhicule, de dos.
 ##
@@ -21,17 +21,18 @@ const REGLAGES := {
 	"voiture": {"vmax": 30.0, "accel": 7.0, "frein": 13.0, "rayon": 5.0, "rayon_v": 0.06, "adherence": 7.0,
 		"taille": Vector3(1.7, 1.2, 4.0), "bras": 6.5, "bras_vite": 7.5},
 }
-const ROUE_AR := Vector3(0, 0.22, -0.55)   # axe de la roue arrière du scooter (repère du modèle)
-const ROUE_AV := Vector3(0, 0.22, 0.62)    # axe de la roue avant
-const RAYON_ROUE := 0.22
-const COLONNE := Vector3(0, 0.93, 0.45)    # haut de la fourche : l'axe de direction passe par ici et l'axe avant
-const CHARNIERE := Vector3(0, 0.36, -0.80) # attache de la bavette, derrière la roue arrière
-const BAVETTE := 0.28                      # longueur de la bavette
+# Mesures prises sur le modèle Meshy « Stunt » (assets/decor/scooter.glb, 1,62 m de long, avant vers +Z).
+const ROUE_AR := Vector3(0, 0.23, -0.56)   # axe de la roue arrière (repère du modèle)
+const ROUE_AV := Vector3(0, 0.22, 0.60)    # axe de la roue avant
+const RAYON_ROUE := 0.23
+const COLONNE := Vector3(0, 0.95, 0.30)    # haut de la fourche : l'axe de direction passe par ici et l'axe avant
+const CHARNIERE := Vector3(0, 0.50, -0.84) # attache de la bavette, juste derrière celle, rigide, du modèle
+const BAVETTE := 0.42                      # longueur de la bavette
 const CHAUSSEE := 0.07                     # la chaussée est dessinée 7 cm au-dessus du sol réel
 const KMH_LIGNES := 50.0                   # traits de vitesse au-delà
 const CABRE_MAX := 1.25                    # au-delà, le scooter passe sur le dos
 
-var joueur: CharacterBody3D
+var joueur: Player
 var quartier: Node
 var vehicules: Array = []      # [Vehicule]
 var actuel: Vehicule
@@ -41,12 +42,14 @@ var vient_de_chuter := false   # lu par le son au moment où Loums quitte le vé
 var racle_sol := 0.0           # 0..1 : un scooter couché qui glisse sur le bitume (lu par le son)
 var _texte: Label
 var _lignes: Control
+var _lignes_t := 0.0
 var _etincelles: Gerbe
 var _gravite: float = ProjectSettings.get_setting("physics/3d/default_gravity")
 var _fov0 := 70.0
 var _secousse := 0.0
 var _t := 0.0
 var _message_t := 0.0
+var _avis_sortie := 0.0
 
 
 class Vehicule extends CharacterBody3D:
@@ -89,7 +92,7 @@ class Vehicule extends CharacterBody3D:
 func _ready() -> void:
 	_action("monter", KEY_V, JOY_BUTTON_DPAD_RIGHT)
 	var scene := get_tree().current_scene if get_tree().current_scene else get_parent()
-	joueur = scene.get_node_or_null("Player") as CharacterBody3D
+	joueur = scene.get_node_or_null("Player") as Player
 	quartier = scene.get_node_or_null("Quartier")
 	_interface()
 	_etincelles = _faire_etincelles()
@@ -160,6 +163,9 @@ func _articuler(v: Vehicule) -> void:
 	var m := v.modele
 	var nom := func(n: String) -> Node3D: return m.find_child(n, true, false) as Node3D
 	var parent: Node3D = (nom.call("Coque") as Node3D).get_parent() if nom.call("Coque") else m
+	if nom.call("Guidon") == null:
+		_bavette_seule(v, m)
+		return
 	# Axe de direction : de l'axe avant vers le haut de la fourche (incliné vers l'arrière).
 	var haut := (COLONNE - ROUE_AV).normalized()
 	var x := Vector3.RIGHT
@@ -188,7 +194,11 @@ func _articuler(v: Vehicule) -> void:
 		var n: Node3D = nom.call(p)
 		if n:
 			n.reparent(v.axe_ar, true)
-	# La bavette : caoutchouc noir, liseré alu en bas (c'est lui qui crache les étincelles).
+	_bavette_seule(v, parent)
+
+
+## La bavette : caoutchouc noir, liseré alu en bas (c'est lui qui crache les étincelles).
+func _bavette_seule(v: Vehicule, parent: Node3D) -> void:
 	v.bavette = Node3D.new()
 	v.bavette.name = "Bavette"
 	parent.add_child(v.bavette)
@@ -203,6 +213,7 @@ func _articuler(v: Vehicule) -> void:
 	caoutchouc.roughness = 0.9
 	plaque.material_override = caoutchouc
 	v.bavette.add_child(plaque)
+	plaque.mesh.size = Vector3(0.16, BAVETTE, 0.012)
 	var lisere := MeshInstance3D.new()
 	var lm := BoxMesh.new()
 	lm.size = Vector3(0.2, 0.025, 0.016)
@@ -224,8 +235,10 @@ func _physics_process(delta: float) -> void:
 	_scooters_couches(delta)
 	if joueur == null:
 		return
+	_avis_sortie = maxf(0.0, _avis_sortie - delta)
 	if actuel == null:
 		_effets(null, delta)
+		_compteur(false)
 		var proche := _vehicule_proche()
 		if _message_t <= 0.0:
 			if proche == null:
@@ -234,7 +247,7 @@ func _physics_process(delta: float) -> void:
 				_texte.text = "V : relever le scooter"
 			else:
 				_texte.text = "V : monter sur le scooter" if proche.type == "scooter" else "V : monter dans la voiture"
-		if proche and Input.is_action_just_pressed("monter") and joueur.is_on_floor() and joueur.get("chute_t") < 0.0:
+		if proche and Input.is_action_just_pressed("monter"):
 			if proche.au_sol:
 				_relever(proche)
 			else:
@@ -246,6 +259,10 @@ func _physics_process(delta: float) -> void:
 
 
 func _vehicule_proche() -> Vehicule:
+	if not joueur or not joueur.is_physics_processing() or not joueur.is_on_floor():
+		return null
+	if joueur.transition != "" or joueur.chute_t >= 0.0 or joueur._mantling or joueur.suspendu or joueur.gouttiere:
+		return null
 	var meilleur: Vehicule = null
 	var d := 2.8
 	for v in vehicules:
@@ -260,6 +277,9 @@ func _vehicule_proche() -> Vehicule:
 func _monter(v: Vehicule) -> void:
 	actuel = v
 	vient_de_chuter = false
+	_avis_sortie = 0.0
+	if joueur.mode == Player.Mode.SKATE:
+		joueur._set_mode(Player.Mode.WALK)
 	# Les véhicules sont solides ; seul celui qu'on conduit laisse passer Loums (il est assis dedans).
 	v.add_collision_exception_with(joueur)
 	joueur.add_collision_exception_with(v)
@@ -271,23 +291,65 @@ func _monter(v: Vehicule) -> void:
 		_fov0 = cam.fov
 	var bras := _bras()
 	if bras:
+		bras.add_excluded_object(v.get_rid())
 		bras.spring_length = float((REGLAGES[v.type] as Dictionary).bras)
+		bras.set_meta("vehicule", true)  # le joueur ne remet pas sa distance à pied
 	_suivre(v)
 
 
-func _descendre() -> void:
+## Cherche du sol portant et la place pour le corps entier, même à côté d'un trottoir ou d'un mur.
+func _point_de_sortie(v: Vehicule) -> Dictionary:
+	var espace := joueur.get_world_3d().direct_space_state
+	var forme := joueur.get_node("CollisionShape3D") as CollisionShape3D
+	var taille: Vector3 = REGLAGES[v.type].taille
+	var gauche := Vector3.UP.cross(v.avant())
+	var pas := gauche * (taille.x * 0.5 + 0.65)
+	var bout := v.avant() * (taille.z * 0.5 + 0.65)
+	for decalage: Vector3 in [pas, -pas, -bout, bout]:
+		var centre := v.global_position + Vector3.UP * 0.75
+		var cote := centre + decalage
+		var rayon := PhysicsRayQueryParameters3D.create(centre, cote, joueur.collision_mask)
+		rayon.exclude = [v.get_rid(), joueur.get_rid()]
+		if not espace.intersect_ray(rayon).is_empty():
+			continue
+		rayon.from = cote
+		rayon.to = cote - Vector3.UP * 2.0
+		var sol := espace.intersect_ray(rayon)
+		if sol.is_empty() or Vector3(sol.normal).angle_to(Vector3.UP) > joueur.floor_max_angle:
+			continue
+		var pied: Vector3 = sol.position + Vector3.UP * 0.08
+		var volume := PhysicsShapeQueryParameters3D.new()
+		volume.shape = forme.shape
+		volume.transform = Transform3D(joueur.global_basis, pied) * forme.transform
+		volume.collision_mask = joueur.collision_mask
+		volume.exclude = [joueur.get_rid()]
+		if espace.intersect_shape(volume, 1).is_empty():
+			return {"pied": pied}
+	return {}
+
+
+func _descendre() -> bool:
 	var v := actuel
+	var sortie := _point_de_sortie(v)
+	if sortie.is_empty():
+		_avis_sortie = 2.0
+		return false
 	actuel = null
 	v.vitesse = 0.0
 	v.lateral = 0.0
 	v.velocity = Vector3.ZERO
-	# Loums réapparaît à gauche du véhicule.
-	var taille: Vector3 = (REGLAGES[v.type] as Dictionary).taille
-	var p := v.global_position + v.gauche() * (taille.x * 0.5 + 0.7)
-	if quartier:
-		p.y = quartier.h(p.x, p.z) + 0.1
-	_rendre_joueur(v, p, Vector3.ZERO)
+	v.penche = 0.0
+	v.cabre = 0.0
+	v.cabre_v = 0.0
+	v.arret = 0.0
+	v.derive = 0.0
+	v.racle = 0.0
+	record = maxf(record, roue_arriere)
+	roue_arriere = 0.0
+	_poser_modele(v)
+	_rendre_joueur(v, sortie.pied, Vector3.ZERO)
 	_texte.text = ""
+	return true
 
 
 func _rendre_joueur(v: Vehicule, p: Vector3, vel: Vector3) -> void:
@@ -300,13 +362,16 @@ func _rendre_joueur(v: Vehicule, p: Vector3, vel: Vector3) -> void:
 	joueur.set_physics_process(true)
 	var bras := _bras()
 	if bras:
-		bras.spring_length = 4.5
+		bras.remove_excluded_object(v.get_rid())
+		bras.spring_length = 3.0  # distance à pied (player.tscn)
+		bras.remove_meta("vehicule")
+	_compteur(false)
 	var cam := _camera()
 	if cam:
 		cam.fov = _fov0
 		cam.h_offset = 0.0
 		cam.v_offset = 0.0
-	_lignes.set("force", 0.0)
+	_force_traits(0.0)
 
 
 ## Le texte d'aide du joueur (« À PIED… ») est masqué pendant la conduite.
@@ -439,7 +504,7 @@ func _conduire(v: Vehicule, delta: float) -> void:
 				de_face = maxf(de_face, -c.get_normal().dot(avant_choc.normalized()))
 		if de_face > 0.3 and perte > 1.0:
 			_secousse = maxf(_secousse, clampf(perte / 8.0, 0.2, 1.0))
-			if scooter and perte > 8.0 and de_face > 0.55:
+			if scooter and perte > 11.0 and de_face > 0.7:  # ~40 km/h de face
 				_chute(v, "mur", avant_choc)
 				return
 			v.vitesse = apres.dot(v.avant())
@@ -756,7 +821,7 @@ func _effets(v: Vehicule, delta: float) -> void:
 	var vib := 0.004 + 0.012 * k * k + 0.03 * v.racle + 0.08 * _secousse
 	cam.h_offset = (randf() - 0.5) * vib
 	cam.v_offset = (randf() - 0.5) * vib
-	_lignes.set("force", clampf((absf(v.vitesse) * 3.6 - KMH_LIGNES) / 40.0, 0.0, 1.0))
+	_force_traits(clampf((absf(v.vitesse) * 3.6 - KMH_LIGNES) / 40.0, 0.0, 1.0), delta)
 	# Étincelles de la bavette.
 	if v.racle > 0.0 and v.modele:
 		var bout: Vector3 = v.bavette.global_transform * Vector3(0, -BAVETTE, 0)
@@ -765,6 +830,23 @@ func _effets(v: Vehicule, delta: float) -> void:
 	if v.derive > 0.4 and absf(v.lateral) > 1.5 and v.is_on_floor() and v.type == "scooter":
 		var arr: Vector3 = v.global_transform * Vector3(0, 0.05, -0.55)
 		_fumee(arr)
+
+
+func _force_traits(f: float, delta := 0.0) -> void:
+	if _lignes is ColorRect:
+		_lignes_t += delta
+		_lignes.visible = f > 0.02
+		var mat := _lignes.material as ShaderMaterial
+		mat.set_shader_parameter("force", f)
+		mat.set_shader_parameter("temps", _lignes_t)
+	else:
+		_lignes.set("force", f)
+
+
+func force_traits() -> float:
+	if _lignes is ColorRect:
+		return float((_lignes.material as ShaderMaterial).get_shader_parameter("force")) if _lignes.visible else 0.0
+	return float(_lignes.get("force"))
 
 
 ## Des étincelles (et de la fumée de pneu) simulées à la main : un MultiMesh, aucun shader de particules,
@@ -888,43 +970,6 @@ func _message_court(txt: String, duree: float) -> void:
 	_message_t = duree
 
 
-func _hud(v: Vehicule) -> void:
-	if _message_t > 0.0:
-		return
-	var kmh := absf(v.vitesse) * 3.6
-	var lignes := "%s   %d km/h" % ["SCOOTER" if v.type == "scooter" else "VOITURE", roundi(kmh)]
-	if v.type == "scooter":
-		if roue_arriere > 0.0:
-			lignes += "\nROUE ARRIÈRE  %.1f s%s" % [roue_arriere, "  · ça racle !" if v.racle > 0.0 else ""]
-		elif v.derive > 0.5:
-			lignes += "\nDÉRAPAGE"
-		elif record > 0.0:
-			lignes += "\nrecord roue arrière : %.1f s" % record
-		if not TouchControls.actif:
-			lignes += "\nZ / S gaz · Q / D tourner · Maj dérapage · Espace roue arrière · V descendre"
-	elif not TouchControls.actif:
-		lignes += "\nZ / S gaz · Q / D tourner · Espace frein à main · V descendre"
-	_texte.text = lignes
-
-
-func _interface() -> void:
-	var couche := CanvasLayer.new()
-	add_child(couche)
-	_lignes = TraitsVitesse.new()
-	_lignes.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_lignes.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	couche.add_child(_lignes)
-	_texte = Label.new()
-	_texte.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	_texte.position = Vector2(-300, 230)
-	_texte.custom_minimum_size = Vector2(600, 0)
-	_texte.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_texte.add_theme_font_size_override("font_size", 20)
-	_texte.add_theme_color_override("font_outline_color", Color.BLACK)
-	_texte.add_theme_constant_override("outline_size", 5)
-	couche.add_child(_texte)
-
-
 ## Traits de vitesse façon BD : des lignes qui filent du centre vers les bords, seulement sur le pourtour.
 class TraitsVitesse extends Control:
 	var force := 0.0
@@ -954,3 +999,118 @@ class TraitsVitesse extends Control:
 			var b: Vector2 = c + d * r * (float(t[1]) + float(t[2]))
 			draw_line(a, b, Color(0.12, 0.1, 0.18, 0.55 * force), float(t[3]) + 1.2, true)
 			draw_line(a, b, Color(1, 1, 1, 0.6 * force), float(t[3]), true)
+
+
+## Compteur en haut à droite, sous le bouton « Départ » : grosse vitesse en lettrage d'affiche (Anton),
+## le nom du véhicule au-dessus, la roue arrière en jaune ; l'aide clavier, discrète, en bas au centre.
+const POLICE := preload("res://assets/decor/polices/Anton-Regular.ttf")
+const JAUNE := Color(1.0, 0.82, 0.12)
+const ROSE := Color(0.93, 0.18, 0.47)
+var _vitesse: Label
+var _unite: Label
+var _roue: Label
+var _aide: Label
+var _cadre: Control
+
+
+func _compteur(oui: bool) -> void:
+	if _vitesse:
+		_vitesse.get_parent().visible = oui
+		_roue.visible = oui
+		_aide.visible = oui
+
+
+func _hud(v: Vehicule) -> void:
+	_compteur(true)
+	var kmh := absf(v.vitesse) * 3.6
+	if _message_t > 0.0:
+		pass
+	else:
+		_texte.text = "SCOOTER" if v.type == "scooter" else "VOITURE"
+	if _avis_sortie > 0.0:
+		_texte.text = "Sortie bloquée · déplace le véhicule"
+	_vitesse.text = "%d" % roundi(kmh)
+	_roue.text = ""
+	_roue.add_theme_color_override("font_color", JAUNE)
+	if v.type == "scooter":
+		if roue_arriere > 0.0:
+			_roue.text = "ROUE ARRIÈRE  %.1f s%s" % [roue_arriere, "  ÇA RACLE" if v.racle > 0.0 else ""]
+			_roue.add_theme_color_override("font_color", ROSE)
+		elif v.derive > 0.5:
+			_roue.text = "DÉRAPAGE"
+			_roue.add_theme_color_override("font_color", ROSE)
+		elif record > 0.0:
+			_roue.text = "RECORD  %.1f s" % record
+	if TouchControls.actif:
+		_aide.text = ""
+	elif v.type == "scooter":
+		_aide.text = "Z / S gaz · Q / D tourner · Maj dérapage · Espace roue arrière · V descendre"
+	else:
+		_aide.text = "Z / S gaz · Q / D tourner · Espace frein à main · V descendre"
+
+
+func _etiquette(taille: int, couleur: Color, contour := 6) -> Label:
+	var l := Label.new()
+	l.add_theme_font_override("font", POLICE)
+	l.add_theme_font_size_override("font_size", taille)
+	l.add_theme_color_override("font_color", couleur)
+	l.add_theme_color_override("font_outline_color", Color(0.10, 0.08, 0.14))
+	l.add_theme_constant_override("outline_size", contour)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	return l
+
+
+func _interface() -> void:
+	var couche := CanvasLayer.new()
+	add_child(couche)
+	# Les mêmes traits de vitesse que le skate (shaders/vitesse.gdshader), à défaut ceux dessinés ici.
+	if ResourceLoader.exists("res://shaders/vitesse.gdshader"):
+		var r := ColorRect.new()
+		var mat := ShaderMaterial.new()
+		mat.shader = load("res://shaders/vitesse.gdshader")
+		r.material = mat
+		r.visible = false
+		_lignes = r
+	else:
+		_lignes = TraitsVitesse.new()
+	_lignes.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_lignes.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	couche.add_child(_lignes)
+	_cadre = Control.new()
+	_cadre.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	_cadre.offset_left = -260
+	_cadre.offset_right = -24
+	_cadre.offset_top = 96          # sous le bouton « Départ »
+	_cadre.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	couche.add_child(_cadre)
+	var pile := VBoxContainer.new()
+	pile.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	pile.add_theme_constant_override("separation", -10)
+	pile.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_cadre.add_child(pile)
+	_texte = _etiquette(22, Color(0.96, 0.95, 0.90), 5)       # SCOOTER / VOITURE
+	pile.add_child(_texte)
+	var ligne := HBoxContainer.new()
+	ligne.alignment = BoxContainer.ALIGNMENT_END
+	ligne.add_theme_constant_override("separation", 6)
+	pile.add_child(ligne)
+	_vitesse = _etiquette(64, JAUNE, 10)
+	ligne.add_child(_vitesse)
+	_unite = _etiquette(22, Color(0.96, 0.95, 0.90), 5)
+	_unite.text = "KM/H"
+	_unite.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+	_unite.size_flags_vertical = Control.SIZE_SHRINK_END
+	ligne.add_child(_unite)
+	_roue = _etiquette(22, JAUNE, 5)
+	pile.add_child(_roue)
+	_aide = Label.new()
+	_aide.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	_aide.offset_left = -360
+	_aide.offset_right = 360
+	_aide.offset_top = -40
+	_aide.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_aide.add_theme_font_size_override("font_size", 15)
+	_aide.add_theme_color_override("font_color", Color(1, 1, 1, 0.75))
+	_aide.add_theme_color_override("font_outline_color", Color.BLACK)
+	_aide.add_theme_constant_override("outline_size", 4)
+	couche.add_child(_aide)

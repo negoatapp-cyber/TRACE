@@ -9,7 +9,12 @@ extends Node3D
 const FACADE := preload("res://shaders/facade.gdshader")
 const RELEVE := "res://data/quartier_reel.txt"
 const ALT_REF := 90.0
-const DEPART := Vector2(57, -45)  # rue de Marathon, au pied des Cyprès
+## Le départ du jeu (21.11.2026, Louma) : sur le trottoir du lycée Diderot, boulevard Lavéran, devant la grille
+## de la façade ancienne, le regard tourné vers les Lauriers ; le scooter est garé juste à côté (habillage.gd).
+const DEPART := Vector2(128.4, 66.8)
+const CAP_DEPART := 36.0   ## cap de la caméra au départ, en degrés (0 = nord) : les tours des Lauriers droit devant
+## L'ancien départ, rue de Marathon au pied des Cyprès : l'aire d'essai des voitures y reste.
+const DEPART_MARATHON := Vector2(57, -45)
 
 const STYLES := {
 	"barre_lauriers": [Color(0.93, 0.90, 0.80), true, 0.45, 2.8, 3.4, Color(0.86, 0.70, 0.36)],
@@ -43,7 +48,7 @@ const VOIES := {
 	"b": [12.0, Color(0.40, 0.39, 0.45)],
 	"r": [7.0, Color(0.45, 0.44, 0.49)],
 	"s": [5.0, Color(0.50, 0.49, 0.53)],
-	"p": [2.6, Color(0.84, 0.78, 0.66)],
+	"p": [2.6, Color(0.66, 0.65, 0.66)],   # chemins piétons : béton gris, plus de sable
 }
 const ZONES := {
 	"terrain": Color(0.46, 0.62, 0.32),
@@ -60,11 +65,19 @@ static var epoque := "avant"
 ## Bâtiments déjà démolis à la date du jeu (temps.gd) : la tour Cyprès B après le 21 juillet 2016.
 static var demolies: Array = []
 
+## Carte historique : son époque ne dépend pas d'une comparaison précédente.
+@export var epoque_imposee: String = ""
+
 var gx := PackedFloat32Array()
 var gz := PackedFloat32Array()
 var alt := []  # alt[j][i], j = ligne (z), i = colonne (x)
 var _mats := {}
 var _rng := RandomNumberGenerator.new()
+
+
+func _enter_tree() -> void:
+	if not epoque_imposee.is_empty():
+		epoque = epoque_imposee
 
 
 func _ready() -> void:
@@ -96,6 +109,13 @@ func _ready() -> void:
 	for c in voies:
 		if c[2] == "Boulevard Lavéran":
 			_lisser_boulevard(_pts(c[3]))
+	# Fixer les cotes AVANT voies, parkings, murs et collisions. L'ancien ordre
+	# aplatissait seulement le terrain après coup, laissant des rubans en l'air.
+	var greffe: Node3D = (load("res://scripts/greffe_paix.gd") as GDScript).new()
+	greffe.aplanir(self, false)
+	greffe.free()
+	# Le parvis du lycée Diderot est en contrebas du boulevard (gradins) : on creuse le terrain (habillage_lycee.gd).
+	(load("res://scripts/habillage_lycee.gd") as GDScript).creuser_terrain(self)
 	_terrain()
 	for c in zones:
 		_zone(c[1], _pts(c[3]))
@@ -124,9 +144,29 @@ func _ready() -> void:
 	var joueur := get_node_or_null("../Player") as Node3D
 	if joueur:
 		joueur.position = Vector3(DEPART.x, h(DEPART.x, DEPART.y) + 0.1, DEPART.y)
+		_orienter_depart.call_deferred(joueur)
+
+
+## Loums arrive le dos au lycée, face aux Lauriers ; R le ramène ici.
+func _orienter_depart(joueur: Node3D) -> void:
+	if not is_instance_valid(joueur):
+		return
+	joueur.set("spawn_position", joueur.global_position)
+	var cap := deg_to_rad(CAP_DEPART)
+	var pivot := joueur.get_node_or_null("CameraPivot") as Node3D
+	if pivot:
+		pivot.rotation.y = cap
+	var visuel := joueur.get_node_or_null("Visual") as Node3D
+	if visuel:
+		visuel.rotation.y = cap
+	var bras := joueur.get_node_or_null("CameraPivot/SpringArm3D") as Node3D
+	if bras:
+		bras.rotation.x = -0.06   # un peu plus à plat qu'en jeu : on voit les tours
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if not epoque_imposee.is_empty():
+		return
 	if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_T:
 		epoque = "apres" if epoque == "avant" else "avant"
 		get_tree().reload_current_scene()
@@ -136,6 +176,10 @@ func _etiquette() -> void:
 	var couche := CanvasLayer.new()
 	var texte := Label.new()
 	texte.text = ("Époque : 2014-2015" if epoque == "avant" else "Époque : aujourd'hui") + "   ·   T pour changer"
+	if not epoque_imposee.is_empty():
+		var temps := get_node_or_null("../Temps")
+		var annee: int = temps.calendrier_debut.year if temps else 2013
+		texte.text = "Époque : %d · quartier historique" % annee
 	texte.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	texte.position = Vector2(16, -44)
 	texte.add_theme_font_size_override("font_size", 18)
@@ -586,6 +630,7 @@ func _friche(poly: PackedVector2Array) -> void:
 		mx = mx.max(p)
 	var poses := 0
 	var essais := 0
+	var arbres: Array[Transform3D] = []
 	while poses < 46 and essais < 2000:
 		essais += 1
 		var p := Vector2(_rng.randf_range(mn.x, mx.x), _rng.randf_range(mn.y, mx.y))
@@ -602,17 +647,64 @@ func _friche(poly: PackedVector2Array) -> void:
 			_boite("Rocher", p.x, p.y, Vector3(r * 1.4, r, r * 1.1), Color(0.62, 0.60, 0.56), _rng.randf() * TAU, 0.15)
 		else:
 			var haut := _rng.randf_range(4.5, 8.0)
-			_boite("Tronc", p.x, p.y, Vector3(0.3, haut * 0.6, 0.3), Color(0.30, 0.25, 0.20)).add_to_group("arbre")
-			var f := MeshInstance3D.new()
-			var s := SphereMesh.new()
-			s.radius = haut * 0.38
-			s.height = haut * 0.6
-			f.mesh = s
-			f.material_override = _mat(Color(0.28, 0.42, 0.22))
-			f.position = Vector3(p.x, y + haut * 0.78, p.y)
-			f.name = "Feuillage"
-			f.add_to_group("arbre")
-			add_child(f, true)
+			var pied := Vector3(p.x, y, p.y)
+			var corps := StaticBody3D.new()
+			var collision := CollisionShape3D.new()
+			var forme := BoxShape3D.new()
+			forme.size = Vector3(0.3, haut * 0.6, 0.3)
+			collision.shape = forme
+			collision.position.y = forme.size.y * 0.5
+			corps.add_child(collision)
+			corps.name = "Tronc"
+			corps.position = pied
+			corps.add_to_group("arbre")
+			add_child(corps, true)
+			arbres.append(Transform3D(Basis(Vector3.UP, poses * 2.4).scaled(Vector3.ONE * haut), pied))
+	if not arbres.is_empty():
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = _feuillu()
+		mm.instance_count = arbres.size()
+		for i in arbres.size():
+			mm.set_instance_transform(i, arbres[i])
+		var bosquet := MultiMeshInstance3D.new()
+		bosquet.name = "Feuillus_friche"
+		bosquet.multimesh = mm
+		bosquet.add_to_group("arbre")
+		add_child(bosquet, true)
+
+
+## Vue depuis la desserte, mai 2011 : fourches dégagées et couronnes irrégulières.
+## Un arbre d'un mètre, redimensionné par instance. Deux surfaces pour toute la friche.
+func _feuillu() -> ArrayMesh:
+	var bois := SurfaceTool.new()
+	var feuilles := SurfaceTool.new()
+	var branche := CylinderMesh.new()
+	branche.radial_segments = 7
+	branche.rings = 0
+	branche.height = 1.0
+	branche.top_radius = 0.36
+	branche.bottom_radius = 0.5
+	var couronne := SphereMesh.new()
+	couronne.radial_segments = 9
+	couronne.rings = 3
+	couronne.radius = 0.5
+	couronne.height = 1.0
+	var fourche := Vector3(0.0, 0.44, 0.0)
+	bois.append_from(branche, 0, Transform3D(Basis.from_scale(Vector3(0.065, 0.6, 0.065)), Vector3.UP * 0.3))
+	for bout: Vector3 in [Vector3(-0.18, 0.69, 0.04), Vector3(0.16, 0.76, 0.13), Vector3(0.03, 0.84, -0.13)]:
+		var axe := bout - fourche
+		var repere := Basis(Quaternion(Vector3.UP, axe.normalized())) * Basis.from_scale(Vector3(0.033, axe.length(), 0.033))
+		bois.append_from(branche, 0, Transform3D(repere, (bout + fourche) * 0.5))
+		feuilles.append_from(couronne, 0, Transform3D(Basis.from_scale(Vector3(0.46, 0.33, 0.43)), bout))
+	var arbre := ArrayMesh.new()
+	for surface: SurfaceTool in [bois, feuilles]:
+		var mat := ShaderMaterial.new()
+		mat.shader = preload("res://shaders/bd_toon.gdshader")
+		mat.set_shader_parameter("couleur", Color(0.32, 0.28, 0.22) if surface == bois else Color(0.35, 0.46, 0.25))
+		surface.set_material(mat)
+		surface.commit(arbre)
+	return arbre
 
 
 func _mur(pts: PackedVector2Array) -> void:

@@ -10,6 +10,19 @@ const Q := preload("res://scripts/quartier_reel.gd")
 const MARQUE := preload("res://scripts/marque_murale.gd")
 const MOB_GRIS := Color(0.30, 0.34, 0.33)
 const MOB_BETON := Color(0.80, 0.77, 0.71)
+## Arbres de Marseille générés (scripts/arbres.gd) : platanes, micocouliers, pins parasols, pins d'Alep, cyprès.
+const ARBRES := preload("res://scripts/arbres.gd")
+## Arbres posés là où ils sont sur la photo aérienne IGN 2011-2015 (data/arbres_satellite.json) : plus d'arbres
+## d'alignement tirés au hasard le long des voies, ni de bosquets au hasard dans les friches.
+const ARBRES_REELS := true
+const ARBRES_RELEVE := "res://data/arbres_satellite.json"
+## Textures peintes de la rue de la Paix, reprises sur 70 % des chaussées, trottoirs et sols (shaders/sol_paix.gdshader).
+const SOL_PAIX := preload("res://shaders/sol_paix.gdshader")
+const TEX_CHAUSSEE := "res://assets/decor/paix/sol_0.png"   # 457 px = 11,4 m de large, 104,8 m de long
+const TEX_PARVIS := "res://assets/decor/paix/sol_1.png"     # 992 px = 24,8 m, 72 m
+## Enrobé des chaussées : goudron noir-gris un peu brillant, fissures, plaques d'égout (assets/decor/source/goudron.py).
+const GOUDRON := preload("res://shaders/goudron.gdshader")
+const SOL := "res://assets/decor/sol/"
 
 var quartier: Node3D
 var _emprises: Array = []   # contours où l'on ne pose rien (bâtiments, stade, parkings…)
@@ -54,14 +67,29 @@ func _ready() -> void:
 			"W": _murs_releves.append(_pts(c[1]))
 	for c in voies:
 		_axes.append([_pts(c[3]), (Q.VOIES.get(c[1], Q.VOIES["s"]) as Array)[0] * 0.5, c[1]])
+	# La rue pilote « impasse de la Paix » greffée dans la carte (scripts/greffe_paix.gd) : le terrain est mis
+	# à son niveau AVANT tout le reste ; ses deux barres du relevé ne sont plus habillées.
+	var greffe := Node3D.new()
+	greffe.set_script(load("res://scripts/greffe_paix.gd"))
+	greffe.name = "ImpassePaix"
+	greffe.set("habillage", self)
+	# Les cotes ont déjà été fixées par Quartier avant construction des voies.
+	batiments = batiments.filter(func(c): return not ["Immeuble impasse sud", "Immeuble impasse"].has(c[1]))
 	_sol()
+	_voies_paix()
+	if not ARBRES_REELS:
+		_arbres_friche()
 	_rng.seed = 13014
 	_pied_des_cypres()
 	for e in load("res://scripts/habillage_place.gd").emprises():
 		_emprises.append(e)
 	_emprises.append(PackedVector2Array([Vector2(-28, -1), Vector2(-3, -1), Vector2(-3, 96), Vector2(-28, 96)]))  # impasse PAIX
 	_emprises.append(PackedVector2Array([Vector2(115, 34), Vector2(130, 34), Vector2(130, 50), Vector2(115, 50)]))  # le snack
+	# Emprise du parvis et du stationnement observés sur Lavéran (façade ancienne du lycée).
+	_emprises.append(PackedVector2Array([Vector2(108,64),Vector2(149,119),Vector2(159,112),Vector2(119,56)]))
 	_mobilier(voies, batiments, zones)
+	if ARBRES_REELS:
+		_arbres_satellite(batiments)
 	_habiller_voitures()
 	_facades(batiments)
 	_rue_de_marathon(batiments)
@@ -77,13 +105,22 @@ func _ready() -> void:
 	lv.set("habillage", self)
 	add_child(lv)
 	lv.call("construire", batiments, voies, ly.get("portes_monde"), Q.epoque)
-	_mur_paix()
+	# (l'ancienne impasse dessinée par _mur_paix() est remplacée par la rue pilote greffée, plus bas)
 	_horizon()
 	# le ciel peint et la lumière de chaque heure (scripts/ciel.gd)
 	var ciel: Node = preload("res://scripts/ciel.gd").new()
 	ciel.name = "Ciel"
 	add_child(ciel)
 	_vieux_murs(batiments)
+	add_child(greffe)
+	greffe.call("construire", quartier)
+	# les bâtiments du relevé refaits en modèles peints, comme la rue pilote (scripts/carte_peinte.gd)
+	var peinte := Node3D.new()
+	peinte.set_script(load("res://scripts/carte_peinte.gd"))
+	peinte.name = "CartePeinte"
+	peinte.set("habillage", self)
+	add_child(peinte)
+	peinte.call("construire", quartier)
 
 
 func h(x: float, z: float) -> float:
@@ -114,6 +151,9 @@ func sol(x: float, z: float) -> float:
 func _sol() -> void:
 	var m := ShaderMaterial.new()
 	m.shader = load("res://shaders/bd_sol.gdshader")
+	m.set_shader_parameter("paix", load("res://assets/decor/sol/goudron_couleur.png"))
+	m.set_shader_parameter("fissures", load("res://assets/decor/sol/fissures.png"))
+	m.set_shader_parameter("avec_paix", true)
 	for t in get_tree().get_nodes_in_group("terrain"):
 		for mi in (t as Node).find_children("*", "MeshInstance3D", true, false):
 			(mi as MeshInstance3D).material_override = m
@@ -178,6 +218,9 @@ func _type_voiture() -> String:
 
 
 ## Les voitures-boîtes posées par quartier_reel.gd (groupe « voiture ») reçoivent un vrai modèle.
+const MESHY_GAREES := ["voiture_meshy_blanche", "voiture_meshy_berline", "voiture_meshy_rouge", "voiture_meshy_monospace"]
+var _n_garees := 0
+
 func _habiller_voitures() -> void:
 	for v in get_tree().get_nodes_in_group("voiture"):
 		var corps := v as Node3D
@@ -185,6 +228,14 @@ func _habiller_voitures() -> void:
 		var formes := corps.find_children("*", "CollisionShape3D", true, false)
 		if formes.size() > 0 and (formes[0] as CollisionShape3D).shape is BoxShape3D:
 			bas = -((formes[0] as CollisionShape3D).shape as BoxShape3D).size.y * 0.5
+		if corps.has_meta("modele_meshy"):
+			# voiture à conduire : modèle complet (origine au sol), tourné pour que son avant soit le sens de marche (+Z)
+			var mm := _vetir(corps, "paix/" + String(corps.get_meta("modele_meshy")), Vector3(0, bas - 0.25, 0), PI)
+			if mm != null:
+				_carrosserie_bd(mm)
+				continue
+		# (21.11) Les voitures des parkings gardent leurs modèles d'origine : habillées en Meshy, elles sortaient
+		# en silhouettes jaunes la nuit sur le PC. Les Meshy sont garées le long du boulevard (_garer_meshy).
 		var m := _vetir(corps, _type_voiture(), Vector3(0, bas - 0.25, 0))
 		if m == null:
 			return
@@ -232,7 +283,7 @@ func _mobilier(voies: Array, batiments: Array, zones: Array) -> void:
 			if type == "p":
 				# Chemins piétons : pins et quelques bancs.
 				var q := p + lat * cote * (demi + 2.5)
-				if _libre(q, 2.0):
+				if _libre(q, 2.0) and not ARBRES_REELS:
 					_pin(q)
 					n_arbre += 1
 				if _rng.randf() < 0.25:
@@ -247,7 +298,7 @@ func _mobilier(voies: Array, batiments: Array, zones: Array) -> void:
 				n_lampe += 1
 			# Arbres d'alignement : platanes sur le boulevard, pins ailleurs.
 			var qa := p - lat * cote * (bord + 1.5) + dir * pas * 0.5
-			if _rng.randf() < (0.8 if type == "b" else 0.45) and _libre(qa, 2.5):
+			if _rng.randf() < (0.8 if type == "b" else 0.45) and _libre(qa, 2.5) and not ARBRES_REELS:
 				if type == "b":
 					_platane(qa)
 				else:
@@ -310,8 +361,8 @@ func _pied_des_cypres() -> void:
 	var t := 6.0
 	while t < 82.0:
 		var p := a + dir * t + lat * (demi - 1.05)
-		# Pas de voiture autour du point de départ du joueur (Q.DEPART), qui est dans la file de stationnement.
-		if _rng.randf() < 0.75 and absf(p.y - Q.DEPART.y) > 18.0:
+		# Pas de voiture autour du point de départ du joueur (Q.DEPART_MARATHON), qui est dans la file de stationnement.
+		if _rng.randf() < 0.75 and absf(p.y - Q.DEPART_MARATHON.y) > 18.0:
 			_voiture_garee(p, dir)
 		t += 5.2
 	_aire_d_essai()
@@ -340,7 +391,7 @@ func _aire_d_essai() -> void:
 	var dir := (b - a).normalized()
 	var est := -Vector2(-dir.y, dir.x)
 	var demi: float = (Q.VOIES["r"] as Array)[0] * 0.5
-	var t := (Q.DEPART.y - a.y) / dir.y
+	var t := (Q.DEPART_MARATHON.y - a.y) / dir.y
 	var axe := a + dir * t
 	# La voiture, garée côté est, juste devant le joueur.
 	var pv := axe + est * (demi - 1.05) - dir * 6.0
@@ -348,10 +399,34 @@ func _aire_d_essai() -> void:
 	voiture.add_to_group("voiture")
 	voiture.add_to_group("vehicule")
 	voiture.set_meta("type", "voiture")
+	voiture.set_meta("modele_meshy", "voiture_meshy_rouge")
 	_reserver(pv, 2.4)
+	# Trois autres voitures à conduire, garées à la file derrière elle (modèles générés le 20.11.2026, sans marque) :
+	# la citadine blanche, le petit monospace gris, la berline noire.
+	var file := ["voiture_meshy_blanche", "voiture_meshy_monospace", "voiture_meshy_berline"]
+	for k in file.size():
+		var pk := pv - dir * (6.2 * (k + 1))
+		var autre := _boite("Voiture", pk.x, pk.y, Vector3(1.7, 0.74, 4.0), Color(0.6, 0.6, 0.6), atan2(dir.x, dir.y) + PI, -0.25)
+		autre.add_to_group("voiture")
+		autre.add_to_group("vehicule")
+		autre.set_meta("type", "voiture")
+		autre.set_meta("modele_meshy", file[k])
+		_reserver(pk, 2.4)
 	# Le scooter, sur le trottoir est, à côté.
 	var ps := axe + est * (demi + 1.2) - dir * 1.5
 	var sc := _scooter(ps, atan2(dir.x, dir.y) + PI)  # dans l'axe de la rue, prêt à partir
+	sc.add_to_group("vehicule")
+	sc.set_meta("type", "scooter")
+	_scooter_du_depart()
+
+
+## Le scooter de Loums, garé sur le trottoir du lycée à côté du point de départ (Q.DEPART), dans l'axe du
+## boulevard, nez vers les Lauriers : on monte dessus (V) dès la première seconde.
+func _scooter_du_depart() -> void:
+	var dir := Vector2(-5.0, -30.0).normalized()   # le boulevard Lavéran vers le nord, à cet endroit
+	var p: Vector2 = Q.DEPART + Vector2(3.0, -1.6)
+	var sc := _scooter(p, atan2(dir.x, dir.y) + PI)
+	sc.name = "Scooter_de_Loums"
 	sc.add_to_group("vehicule")
 	sc.set_meta("type", "scooter")
 
@@ -374,8 +449,17 @@ func _scooter(p: Vector2, angle: float) -> StaticBody3D:
 	var m := _vetir(corps, "scooter", Vector3(0, -0.5, 0))
 	if m:
 		m.rotation.z = 0.12  # posé sur sa béquille
-		var teintes := [Color(0.12, 0.12, 0.14), Color(0.85, 0.85, 0.82), Color(0.70, 0.12, 0.12), Color(0.15, 0.30, 0.65)]
-		_repeindre(m, "Carrosserie", teintes[_rng.randi() % teintes.size()])
+		# Le Stunt (modèle Meshy) : une déclinaison de couleur tirée au hasard.
+		var couleurs := ["texture_0", "texture_0", "rouge", "noir", "noir", "blanc", "jaune", "vert", "orange", "violet"]
+		var tex := load("res://assets/decor/scooter_%s.webp" % couleurs[_rng.randi() % couleurs.size()]) as Texture2D
+		if tex:
+			for n in m.find_children("*", "MeshInstance3D", true, false):
+				var mi := n as MeshInstance3D
+				var orig := mi.mesh.surface_get_material(0) as StandardMaterial3D
+				if orig:
+					var mat := orig.duplicate() as StandardMaterial3D
+					mat.albedo_texture = tex
+					mi.set_surface_override_material(0, mat)
 	_reserver(p, 1.0)
 	return corps
 
@@ -840,6 +924,46 @@ func _herbe(p: Vector2) -> void:
 		add_child(mi)
 
 
+## Les voitures Meshy passent en rendu BD comme le décor, et non comme un personnage : sinon le style BD leur
+## met le liseré jaune des personnages, qui les transformait en silhouettes jaunes la nuit (capture de Louma, 21.11).
+func _carrosserie_bd(m: Node) -> void:
+	for n in m.find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		for sidx in mi.mesh.get_surface_count():
+			var std := mi.get_active_material(sidx) as BaseMaterial3D
+			if std == null:
+				continue
+			var t := ShaderMaterial.new()
+			t.shader = preload("res://shaders/bd_toon.gdshader")
+			t.set_shader_parameter("couleur", std.albedo_color)
+			if std.albedo_texture:
+				t.set_shader_parameter("texture_couleur", std.albedo_texture)
+				t.set_shader_parameter("avec_texture", true)
+			t.set_shader_parameter("paliers", 12.0)
+			t.set_shader_parameter("grain", 0.0)
+			t.set_shader_parameter("bd_brillance", 0.8)   # peinture vernie (n°2)
+			t.set_shader_parameter("metal", 0.3)
+			mi.set_surface_override_material(sidx, t)
+
+
+## Une voiture Meshy garée (pas conduisible), même gabarit de collision que les voitures d'essai.
+func _garer_meshy(p: Vector2, angle: float, modele: String) -> void:
+	var corps := _boite("Voiture_garee", p.x, p.y, Vector3(1.7, 0.74, 4.0), Color(0.6, 0.6, 0.6), angle, -0.25)
+	corps.add_to_group("mobilier")
+	var bas := -0.37
+	var m := _vetir(corps, "paix/" + modele, Vector3(0, bas - 0.25, 0), PI)
+	if m == null:
+		_vetir(corps, "voiture_citadine", Vector3(0, bas - 0.25, 0))
+	else:
+		_carrosserie_bd(m)
+	_reserver(p, 2.4)
+
+
+## Voiture garée habillée en citadine (stationnement du boulevard Lavéran, façade ancienne du lycée).
+func _citadine_garee(p: Vector2, angle: float, c: Color) -> void:
+	_voiture_impasse(p, angle, c)
+
+
 func _voiture_impasse(p: Vector2, angle: float, c: Color) -> void:
 	var corps := _boite("Voiture_impasse", p.x, p.y, Vector3(1.7, 0.74, 4.0), Color(0.6, 0.6, 0.6), angle, -0.25)
 	var m := _vetir(corps, "voiture_citadine", Vector3(0, -0.62, 0))
@@ -971,6 +1095,7 @@ func _facades(batiments: Array) -> void:
 	f.set_script(load("res://scripts/habillage_facades.gd"))
 	f.name = "Facades"
 	f.set("habillage", self)
+	f.set("peints", load("res://scripts/carte_peinte.gd").noms_peints())
 	add_child(f)
 	f.call("construire", batiments)
 	var g := Node3D.new()
@@ -1018,6 +1143,8 @@ func _vieux_murs(batiments: Array) -> void:
 		for k in poly.size():
 			var a := poly[k]
 			var b := poly[(k + 1) % poly.size()]
+			if c[1] == "Lycée" and (a + b).distance_to(Vector2(257, 183)) < 1.0:
+				continue   # la face de la verrière a sa céramique (habillage_lycee)
 			var dehors := _normale_dehors(a, b, poly)
 			# murs des vrais tags (Poutouland, le mur des blazes) : on n'y ajoute rien d'inventé
 			if (c[1] == "Immeuble impasse sud" and dehors.y > 0.7) or (style == "marathon_rouge" and absf(a.x + 30.0) < 1.0 and absf(b.x + 30.0) < 1.0):
@@ -1132,11 +1259,11 @@ func _libre(p: Vector2, r: float) -> bool:
 ## Trottoirs clairs de part et d'autre, avec une bordure de béton côté chaussée (décor, sans collision).
 func _trottoirs(pts: PackedVector2Array, demi: float) -> void:
 	for cote in [-1.0, 1.0]:
-		_bande(pts, cote * (demi + 1.1), 2.2, 0.10, Color(0.80, 0.76, 0.68))
+		_bande(pts, cote * (demi + 1.1), 2.2, 0.10, Color(0.74, 0.73, 0.71), true)
 		_bande(pts, cote * (demi + 0.12), 0.24, 0.16, MOB_BETON)
 
 
-func _bande(pts: PackedVector2Array, decal: float, large: float, leve: float, c: Color) -> void:
+func _bande(pts: PackedVector2Array, decal: float, large: float, leve: float, c: Color, paix := false) -> void:
 	var fin := PackedVector2Array()
 	for k in pts.size() - 1:
 		var n := maxi(1, int(pts[k].distance_to(pts[k + 1]) / 3.0))
@@ -1160,7 +1287,132 @@ func _bande(pts: PackedVector2Array, decal: float, large: float, leve: float, c:
 		for p in [g[k], d[k], d[k + 1], g[k], d[k + 1], g[k + 1]]:
 			st.set_normal(Vector3.UP)
 			st.add_vertex(p)
-	_decor("Trottoir", st.commit(), _mat(c))
+	_decor("Trottoir", st.commit(), _mat_trottoir() if paix else _mat(c))
+
+
+## Trottoirs : enrobé clair et vieilli (le même goudron, éclairci, fissuré, rapiécé), projeté au sol.
+func _mat_trottoir() -> ShaderMaterial:
+	if not _mats.has("trottoir"):
+		var m := _mat_goudron(2.2).duplicate() as ShaderMaterial
+		m.set_shader_parameter("mode", 1)
+		m.set_shader_parameter("teinte", 2.3)
+		m.set_shader_parameter("eclat", 0.5)
+		_mats["trottoir"] = m
+	return _mats["trottoir"]
+
+
+## Matériau « 70 % rue de la Paix, 30 % aplat d'origine ». mode 0 : suit la voie (UV), mode 1 : projeté au sol.
+func _mat_paix(tex: String, base: Color, mode: int, larg_tex: float, long_tex: float, larg_voie := 0.0) -> ShaderMaterial:
+	var cle := "%s|%s|%d|%.2f" % [tex, base.to_html(), mode, larg_voie]
+	if not _mats.has(cle):
+		var m := ShaderMaterial.new()
+		m.shader = SOL_PAIX
+		m.set_shader_parameter("paix", load(tex))
+		m.set_shader_parameter("base", base)
+		m.set_shader_parameter("mode", mode)
+		m.set_shader_parameter("largeur_tex", larg_tex)
+		m.set_shader_parameter("longueur_tex", long_tex)
+		m.set_shader_parameter("largeur_voie", larg_voie)
+		_mats[cle] = m
+	return _mats[cle]
+
+
+## Les chaussées de Quartier (n°1) reçoivent des UV (en travers 0→1, le long en mètres) et l'enrobé de la Paix.
+## Mêmes sommets, mêmes triangles : la mini-carte (mission.gd) et le son (son.gd) les lisent toujours pareil.
+func _voies_paix() -> void:
+	var n := 0
+	for v in get_tree().get_nodes_in_group("sol_voie"):
+		var mi := v as MeshInstance3D
+		if mi == null or mi.mesh == null or mi.mesh.get_surface_count() == 0:
+			continue
+		var type := String(mi.get_meta("type", "s"))
+		var arr: Array = mi.mesh.surface_get_arrays(0)
+		var pos: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+		if pos.size() < 6 or pos.size() % 6 != 0:
+			continue
+		var uv := PackedVector2Array()
+		uv.resize(pos.size())
+		var s := 0.0
+		for k in pos.size() / 6:
+			var i := k * 6
+			# [g0, d0, d1, g0, d1, g1]
+			var c0 := (pos[i] + pos[i + 1]) * 0.5
+			var c1 := (pos[i + 5] + pos[i + 2]) * 0.5
+			var s1 := s + Vector2(c1.x - c0.x, c1.z - c0.z).length()
+			uv[i] = Vector2(0, s); uv[i + 1] = Vector2(1, s); uv[i + 2] = Vector2(1, s1)
+			uv[i + 3] = Vector2(0, s); uv[i + 4] = Vector2(1, s1); uv[i + 5] = Vector2(0, s1)
+			s = s1
+		arr[Mesh.ARRAY_TEX_UV] = uv
+		var am := ArrayMesh.new()
+		am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+		mi.mesh = am
+		var vo: Array = Q.VOIES.get(type, Q.VOIES["s"])
+		if type == "p":
+			mi.material_override = _mat_trottoir()
+		else:
+			mi.material_override = _mat_goudron(float(vo[0]))
+			_plaques_egout(pos, float(vo[0]), mi.global_transform)
+		n += 1
+	print("Sol : %d voies en goudron ou béton Paix, %d plaques d'égout" % [n, _n_plaques])
+
+
+func _mat_goudron(largeur: float) -> ShaderMaterial:
+	var cle := "goudron|%.2f" % largeur
+	if not _mats.has(cle):
+		var m := ShaderMaterial.new()
+		m.shader = GOUDRON
+		m.set_shader_parameter("couleur", load(SOL + "goudron_couleur.png"))
+		m.set_shader_parameter("relief", load(SOL + "goudron_relief.png"))
+		m.set_shader_parameter("brillant", load(SOL + "goudron_brillant.png"))
+		m.set_shader_parameter("fissures", load(SOL + "fissures.png"))
+		m.set_shader_parameter("largeur_voie", largeur)
+		_mats[cle] = m
+	return _mats[cle]
+
+
+var _n_plaques := 0
+var _mat_plaque: StandardMaterial3D
+
+## Tampons d'égout le long d'une chaussée (sommets [g0, d0, d1, g0, d1, g1] par tronçon) : un tous les 30 à 55 m,
+## au milieu d'une voie de circulation. Fonte générique, sans inscription.
+func _plaques_egout(pos: PackedVector3Array, largeur: float, xf: Transform3D) -> void:
+	if _mat_plaque == null:
+		_mat_plaque = StandardMaterial3D.new()
+		_mat_plaque.albedo_texture = load(SOL + "plaque_egout.png")
+		_mat_plaque.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+		_mat_plaque.alpha_scissor_threshold = 0.5
+		_mat_plaque.metallic = 0.55
+		_mat_plaque.roughness = 0.45
+	var r := RandomNumberGenerator.new()
+	r.seed = int(pos[0].x * 13.0 + pos[0].z * 7.0)
+	var prochain := r.randf_range(12.0, 40.0)
+	var s := 0.0
+	for k in pos.size() / 6:
+		var i := k * 6
+		var c0 := (pos[i] + pos[i + 1]) * 0.5
+		var c1 := (pos[i + 5] + pos[i + 2]) * 0.5
+		var l := Vector2(c1.x - c0.x, c1.z - c0.z).length()
+		while s + l >= prochain and l > 0.01:
+			var t := (prochain - s) / l
+			var cote := 0.3 if r.randf() < 0.5 else 0.7
+			var g := pos[i].lerp(pos[i + 5], t)
+			var d := pos[i + 1].lerp(pos[i + 2], t)
+			var p := xf * g.lerp(d, cote)
+			var q := Vector2(p.x, p.z)
+			if not Rect2(-28, -1, 25, 97).has_point(q):   # l'impasse de la Paix a son propre sol
+				var mi := MeshInstance3D.new()
+				var pm := PlaneMesh.new()
+				pm.size = Vector2(0.8, 0.8)
+				mi.mesh = pm
+				mi.material_override = _mat_plaque
+				mi.position = global_transform.affine_inverse() * p + Vector3.UP * 0.012
+				mi.rotation.y = r.randf() * TAU
+				mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				mi.name = "Plaque_egout"
+				add_child(mi, true)
+				_n_plaques += 1
+			prochain += r.randf_range(30.0, 55.0)
+		s += l
 
 
 func _maillage(nom: String, parent: Node3D, mesh: Mesh, c: Color, pos: Vector3, basis := Basis()) -> MeshInstance3D:
@@ -1192,19 +1444,18 @@ func _lampadaire(p: Vector2, vers_route: Vector2) -> void:
 
 
 func _pin(p: Vector2) -> void:
-	# Pin parasol : tronc penché, houppier large et plat.
+	# Pins parasols surtout, quelques pins d'Alep tordus. Le tronc de collision reste une boîte cachée.
+	var espece := "pin_parasol" if _rng.randf() < 0.7 else "pin_alep"
 	var haut := _rng.randf_range(7.0, 11.0)
 	var t := _boite("Pin", p.x, p.y, Vector3(0.35, haut, 0.35), Color(0.42, 0.30, 0.22), 0.0, 0.2)
 	t.add_to_group("arbre")
-	if _vetir(t, "pin_parasol", Vector3(0, -haut * 0.5 + 0.2, 0), _rng.randf() * TAU, haut / 8.6):
+	if _planter(t, espece, Vector3(0, -haut * 0.5 + 0.2, 0), _rng.randf_range(0.85, 1.15)):
 		return
 	t.rotation = Vector3(_rng.randf_range(-0.12, 0.12), _rng.randf() * TAU, _rng.randf_range(-0.12, 0.12))
 	var s := SphereMesh.new()
 	var r := _rng.randf_range(3.2, 4.8)
 	s.radius = r
 	s.height = r * 0.9
-	s.radial_segments = 12
-	s.rings = 5
 	_maillage("Houppier", t, s, Color(0.27, 0.43, 0.22), Vector3(0, haut * 0.5 + 0.4, 0))
 
 
@@ -1212,13 +1463,162 @@ func _platane(p: Vector2) -> void:
 	var haut := _rng.randf_range(8.0, 12.0)
 	var t := _boite("Platane", p.x, p.y, Vector3(0.45, haut * 0.65, 0.45), Color(0.66, 0.62, 0.48))
 	t.add_to_group("arbre")
+	if _planter(t, "platane", Vector3(0, -haut * 0.65 * 0.5, 0), _rng.randf_range(0.95, 1.3)):
+		return
 	var s := SphereMesh.new()
 	var r := _rng.randf_range(3.5, 5.0)
 	s.radius = r
 	s.height = r * 1.6
-	s.radial_segments = 12
-	s.rings = 6
 	_maillage("Feuillage", t, s, Color(0.42, 0.56, 0.26), Vector3(0, haut * 0.33 + r * 0.5, 0))
+
+
+## Cache les boîtes d'un tronc et y plante un arbre généré. false si les modèles manquent.
+func _planter(corps: Node3D, espece: String, pied: Vector3, echelle: float) -> bool:
+	var a := ARBRES.arbre(espece, _rng.randi())
+	if a == null:
+		return false
+	for mi in corps.find_children("*", "MeshInstance3D", true, false):
+		(mi as MeshInstance3D).visible = false
+	a.position = pied
+	a.rotation.y = _rng.randf() * TAU
+	a.scale = Vector3.ONE * echelle
+	corps.add_child(a)
+	return true
+
+
+## Les arbres relevés sur la photo aérienne IGN 2011-2015 (couronnes vertes détectées, un pied tous les 6 m au
+## plus, rayon de couronne en m). On écarte ceux qui tomberaient sur une chaussée, dans un bâtiment, dans
+## l'impasse de la Paix (qui a ses propres pins) ou sur l'axe de la cour arrière des Cyprès. L'essence est
+## choisie d'après le lieu et la taille : platanes le long du boulevard, pins parasols et micocouliers dans les
+## grandes couronnes, pins d'Alep et cyprès dans les petites. Rendu en MultiMesh par carré de 120 m.
+func _arbres_satellite(batiments: Array) -> void:
+	if not FileAccess.file_exists(ARBRES_RELEVE):
+		return
+	var liste: Array = JSON.parse_string(FileAccess.get_file_as_string(ARBRES_RELEVE))
+	# les bosquets « en boules » des friches (Quartier, n°1) : cachés, leurs troncs ne bloquent plus
+	for b in get_tree().get_nodes_in_group("arbre"):
+		if b is MultiMeshInstance3D:
+			(b as MultiMeshInstance3D).visible = false
+		elif String(b.name).begins_with("Tronc"):
+			for cs in (b as Node).find_children("*", "CollisionShape3D", true, false):
+				(cs as CollisionShape3D).disabled = true
+	var bats: Array = []
+	for c in batiments:
+		bats.append(_pts(c[4]))
+	var r := RandomNumberGenerator.new()
+	var paquets := {}   # "variante|cx|cz" → [transforms]
+	var n := 0
+	var ecartes := 0
+	for e in liste:
+		var p := Vector2(float(e[0]), float(e[1]))
+		var couronne := float(e[2])
+		r.seed = int(p.x * 73.0 + p.y * 151.0)
+		if Rect2(-29, -2, 27, 100).has_point(p) or Rect2(-28, -41, 6, 38).has_point(p):
+			ecartes += 1
+			continue
+		var d_voie := INF
+		var pres_bd := false
+		var sur_voie := false
+		for ax in _axes:
+			var pts: PackedVector2Array = ax[0]
+			for k in pts.size() - 1:
+				var dd := Geometry2D.get_closest_point_to_segment(p, pts[k], pts[k + 1]).distance_to(p) - float(ax[1])
+				if dd < 1.3:
+					sur_voie = true
+				if ax[2] == "b" and dd < 9.0:
+					pres_bd = true
+				d_voie = minf(d_voie, dd)
+		var dedans := false
+		for poly in bats:
+			if Geometry2D.is_point_in_polygon(p, poly):
+				dedans = true
+				break
+			# trop près d'une façade : le tronc gênerait les descentes d'eau et les prises d'escalade
+			for k in poly.size():
+				if Geometry2D.get_closest_point_to_segment(p, poly[k], poly[(k + 1) % poly.size()]).distance_to(p) < 3.0:
+					dedans = true
+					break
+			if dedans:
+				break
+		if sur_voie or dedans:
+			ecartes += 1
+			continue
+		var t := r.randf()
+		var espece := "pin_alep"
+		if pres_bd:
+			espece = "platane" if t < 0.7 else "pin_parasol"
+		elif couronne >= 7.0:
+			espece = "pin_parasol" if t < 0.5 else ("platane" if t < 0.75 else "feuillu")
+		elif couronne <= 4.0:
+			espece = "feuillu" if t < 0.45 else ("pin_alep" if t < 0.75 else ("cypres" if t < 0.9 else "pin_parasol"))
+		else:
+			espece = "pin_alep" if t < 0.35 else ("pin_parasol" if t < 0.65 else ("feuillu" if t < 0.95 else "cypres"))
+		var rayon_type: float = {"platane": 5.5, "feuillu": 4.0, "pin_parasol": 5.0, "pin_alep": 3.5, "cypres": 4.0}[espece]
+		var echelle := clampf(couronne / rayon_type, 0.65, 1.3) * r.randf_range(0.92, 1.08)
+		var variante := "%s_%d" % [espece, r.randi() % int(ARBRES.VARIANTES[espece])]
+		var y := sol(p.x, p.y)
+		var xf := Transform3D(Basis(Vector3.UP, r.randf() * TAU).scaled(Vector3.ONE * echelle), Vector3(p.x, y - 0.05, p.y))
+		var cle := "%s|%d|%d" % [variante, floori(p.x / 120.0), floori(p.y / 120.0)]
+		if not paquets.has(cle):
+			paquets[cle] = []
+		(paquets[cle] as Array).append(xf)
+		# tronc : on bute dessus, on ne le traverse pas
+		var corps := StaticBody3D.new()
+		var cs := CollisionShape3D.new()
+		var cyl := CylinderShape3D.new()
+		cyl.radius = 0.28 * echelle
+		cyl.height = 3.0
+		cs.shape = cyl
+		cs.position.y = 1.5
+		corps.add_child(cs)
+		corps.position = Vector3(p.x, y, p.y)
+		corps.name = "Tronc_releve"
+		add_child(corps)
+		n += 1
+	for cle in paquets:
+		var variante: String = String(cle).split("|")[0]
+		var mesh := ARBRES.maillage(variante)
+		if mesh == null:
+			continue
+		var xfs: Array = paquets[cle]
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = mesh
+		mm.instance_count = xfs.size()
+		for i in xfs.size():
+			mm.set_instance_transform(i, xfs[i])
+		var mmi := MultiMeshInstance3D.new()
+		mmi.multimesh = mm
+		mmi.name = "Arbres_" + variante
+		mmi.visibility_range_end = 420.0
+		add_child(mmi)
+	print("Arbres relevés : %d posés, %d écartés (voie, bâtiment, impasse)" % [n, ecartes])
+
+
+## Les feuillus « en boules » des terrains vagues (Quartier, n°1) : remplacés par des micocouliers et des pins
+## d'Alep générés, au même pied et à la même taille. Leurs troncs de collision restent ceux de Quartier.
+func _arbres_friche() -> void:
+	var n := 0
+	for b in get_tree().get_nodes_in_group("arbre"):
+		var mmi := b as MultiMeshInstance3D
+		if mmi == null or mmi.multimesh == null:
+			continue
+		var mm := mmi.multimesh
+		for i in mm.instance_count:
+			var xf := mmi.global_transform * mm.get_instance_transform(i)
+			var haut := xf.basis.get_scale().y
+			var espece := "feuillu" if _rng.randf() < 0.65 else "pin_alep"
+			var a := ARBRES.arbre(espece, _rng.randi())
+			if a == null:
+				return
+			a.position = global_transform.affine_inverse() * xf.origin
+			a.rotation.y = _rng.randf() * TAU
+			a.scale = Vector3.ONE * clampf(haut / ARBRES.hauteur_type(espece) * 1.25, 0.6, 1.3)
+			add_child(a)
+			n += 1
+		mmi.visible = false
+	if n > 0:
+		print("Arbres : %d feuillus des friches remplacés" % n)
 
 
 func _conteneur(p: Vector2, dir: Vector2) -> void:

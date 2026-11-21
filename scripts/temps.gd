@@ -18,6 +18,10 @@ const DEMOLITION_CYPRES := {"year": 2016, "month": 7, "day": 21}
 const JOURS := ["Lun.", "Mar.", "Mer.", "Jeu.", "Ven.", "Sam.", "Dim."]
 const MOIS := ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."]
 
+## Une scène d'étude peut choisir sa date sans déplacer les sauvegardes de la partie normale.
+@export var calendrier_debut: Dictionary = DEBUT.duplicate()
+@export var fichier_sauvegarde: String = SAUVEGARDE
+
 var minutes := 0.0            ## minutes de jeu écoulées depuis DEBUT
 var pause := false
 var _jour := -1
@@ -26,11 +30,17 @@ var _env: Environment
 var _ciel: ProceduralSkyMaterial
 var _base := {}
 var _texte: Label
+var _heure_texte: Label
+var _carton: Control          ## la date en grand, au début puis à chaque nouveau jour (Louma 21.11)
+var _carton_t := 0.0
+const CARTON_DUREE := 4.0
+const JOURS_LONGS := ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"]
+const MOIS_LONGS := ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"]
 var _debut_unix := 0
 
 
 func _ready() -> void:
-	_debut_unix = Time.get_unix_time_from_datetime_dict(DEBUT)
+	_debut_unix = Time.get_unix_time_from_datetime_dict(calendrier_debut)
 	_charger()
 	_jour = jour()
 	_interface()
@@ -86,21 +96,23 @@ func _process(delta: float) -> void:
 	if j != _jour:
 		_jour = j
 		jour_change.emit(j)
+		_carton_t = 0.0
 		_sauver()
 		_verifier_demolition()
 	heure_changee.emit(minutes)
 	_eclairer()
-	_texte.text = date_texte()
+	_carton_t += delta
+	_animer_carton()
 
 
 ## Le nombre de jours depuis le 15 septembre 2014.
 func jour() -> int:
-	return int(floor((minutes + DEBUT.hour * 60.0 + DEBUT.minute) / 1440.0))
+	return int(floor((minutes + calendrier_debut.hour * 60.0 + calendrier_debut.minute) / 1440.0))
 
 
 ## L'heure de la journée, en heures (0 → 24).
 func heure() -> float:
-	return fmod(minutes + DEBUT.hour * 60.0 + DEBUT.minute, 1440.0) / 60.0
+	return fmod(minutes + calendrier_debut.hour * 60.0 + calendrier_debut.minute, 1440.0) / 60.0
 
 
 func date() -> Dictionary:
@@ -115,7 +127,7 @@ func date_texte() -> String:
 
 ## Saute au jour donné, à l'heure donnée (dormir, ou laisser passer une semaine).
 func avancer_jusqu_a(j: int, h: float) -> void:
-	var cible := j * 1440.0 + h * 60.0 - (DEBUT.hour * 60.0 + DEBUT.minute)
+	var cible: float = j * 1440.0 + h * 60.0 - (calendrier_debut.hour * 60.0 + calendrier_debut.minute)
 	if cible > minutes:
 		minutes = cible
 
@@ -179,30 +191,70 @@ func _interface() -> void:
 	var couche := CanvasLayer.new()
 	couche.layer = 4
 	add_child(couche)
-	_texte = Label.new()
-	_texte.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	_texte.position = Vector2(-200, 8)
-	_texte.custom_minimum_size = Vector2(400, 0)
-	_texte.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_texte.add_theme_font_size_override("font_size", 15)
-	_texte.add_theme_color_override("font_color", Color(0.97, 0.94, 0.86))
-	_texte.add_theme_color_override("font_outline_color", Color(0.10, 0.07, 0.12))
-	_texte.add_theme_constant_override("outline_size", 5)
-	couche.add_child(_texte)
+	# Plus de date permanente en haut de l'écran : un carton au début, puis elle s'efface.
+	_carton = VBoxContainer.new()
+	_carton.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_carton.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_carton.offset_top = 70
+	_carton.alignment = BoxContainer.ALIGNMENT_CENTER
+	_carton.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_carton.pivot_offset = Vector2(0, 0)
+	couche.add_child(_carton)
+	_texte = _ligne(50, Color(1.0, 0.82, 0.12), 14)
+	_heure_texte = _ligne(30, Color(0.96, 0.28, 0.62), 10)
+	_carton.add_child(_texte)
+	_carton.add_child(_heure_texte)
+	_carton.modulate.a = 0.0
+
+
+func _ligne(taille: int, couleur: Color, contour: int) -> Label:
+	var l := Label.new()
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.add_theme_font_size_override("font_size", taille)
+	l.add_theme_color_override("font_color", couleur)
+	l.add_theme_color_override("font_outline_color", Color(0.08, 0.05, 0.10))
+	l.add_theme_constant_override("outline_size", contour)
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return l
+
+
+## La date en grand : elle entre en glissant, reste, puis s'efface.
+func _animer_carton() -> void:
+	if _carton == null:
+		return
+	var t := _carton_t
+	if t > CARTON_DUREE + 1.0:
+		if _carton.visible:
+			_carton.visible = false
+		return
+	_carton.visible = true
+	var d := date()
+	var js: int = (int(d.weekday) + 6) % 7
+	_texte.text = "%s %d %s %d" % [JOURS_LONGS[js], d.day, MOIS_LONGS[int(d.month) - 1], d.year]
+	_heure_texte.text = "%02dh%02d" % [d.hour, d.minute]
+	var entree := smoothstep(0.0, 0.45, t)
+	var sortie := 1.0 - smoothstep(CARTON_DUREE, CARTON_DUREE + 1.0, t)
+	_carton.modulate.a = entree * sortie
+	_carton.offset_top = 70.0 - 30.0 * (1.0 - entree)
+	_carton.size.x = 0.0
 
 
 func _sauver() -> void:
-	var f := FileAccess.open(SAUVEGARDE, FileAccess.WRITE)
+	var f := FileAccess.open(fichier_sauvegarde, FileAccess.WRITE)
 	if f:
 		f.store_string(JSON.stringify({"minutes": minutes}))
 
 
 func _charger() -> void:
-	if not FileAccess.file_exists(SAUVEGARDE):
-		return
-	var d = JSON.parse_string(FileAccess.get_file_as_string(SAUVEGARDE))
-	if d is Dictionary:
-		minutes = float(d.get("minutes", 0.0))
+	if FileAccess.file_exists(fichier_sauvegarde):
+		var d = JSON.parse_string(FileAccess.get_file_as_string(fichier_sauvegarde))
+		if d is Dictionary:
+			minutes = float(d.get("minutes", 0.0))
 	var Q = load("res://scripts/quartier_reel.gd")
-	if _debut_unix + int(minutes * 60.0) >= Time.get_unix_time_from_datetime_dict(DEMOLITION_CYPRES) and not Q.demolies.has("Tour Cyprès B"):
-		Q.demolies.append("Tour Cyprès B")
+	if _debut_unix + int(minutes * 60.0) >= Time.get_unix_time_from_datetime_dict(DEMOLITION_CYPRES):
+		if not Q.demolies.has("Tour Cyprès B"):
+			Q.demolies.append("Tour Cyprès B")
+	else:
+		# Cette liste est statique : une autre scène a pu avancer jusqu'en 2016.
+		# Revenir en 2013 restaure la tour, même sans fichier de sauvegarde.
+		Q.demolies.erase("Tour Cyprès B")

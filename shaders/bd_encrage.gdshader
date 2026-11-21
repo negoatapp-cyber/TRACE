@@ -18,6 +18,7 @@ uniform float opacite = 0.9;
 uniform float epaisseur = 1.3;      // en pixels (rapportés à 900 px de haut)
 uniform float seuil_prof = 0.06;    // sensibilité aux ruptures de profondeur
 uniform float seuil_angle = 0.40;   // 0,4 ≈ arêtes de plus de 50°
+uniform float seuil_perso = 0.36;   // personnages : seuil propre (avant : seuil_prof × 6, qui noircissait Loums quand une scène baissait seuil_prof)
 uniform float pres = 0.4;           // distance (m) en deçà de laquelle on n'encre pas (évite la caméra)
 uniform float loin = 420.0;         // au-delà, plus de trait
 
@@ -52,7 +53,14 @@ void fragment() {
 	bool perso = texture(tex_norm, SCREEN_UV).a < 0.75 && c > 0.0;
 	if (ref > 0.0) {
 		float lap = max(abs(g + d - 2.0 * c), abs(h + b - 2.0 * c));
-		bord = step(perso ? seuil_prof * 6.0 : seuil_prof, lap / ref);
+		bord = step(perso ? seuil_perso : seuil_prof, lap / ref);
+		// Personnage : jamais de trait À L'INTÉRIEUR de sa silhouette, seulement là où un voisin n'est pas lui.
+		if (perso) {
+			bool dedans = texture(tex_norm, SCREEN_UV - dx).a < 0.75 && texture(tex_norm, SCREEN_UV + dx).a < 0.75
+					&& texture(tex_norm, SCREEN_UV - dy).a < 0.75 && texture(tex_norm, SCREEN_UV + dy).a < 0.75
+					&& g > 0.0 && d > 0.0 && h > 0.0 && b > 0.0;
+			if (dedans) bord = 0.0;
+		}
 		// Arêtes : seulement entre pixels de géométrie (le ciel n'a pas de normale).
 		if (!perso && c > 0.0 && g > 0.0 && d > 0.0 && h > 0.0 && b > 0.0) {
 			vec3 n = normale(SCREEN_UV);

@@ -6,20 +6,30 @@ extends CharacterBody3D
 
 enum Mode { WALK, SKATE }
 
-@export var walk_speed := 3.2
-@export var run_speed := 6.2        ## en maintenant Maj
-@export var walk_accel := 25.0
+@export var walk_speed := 3.9      ## petite foulée de course (Sleeping Dogs) ; moins si le stick est à peine poussé
+@export var run_speed := 6.8        ## en maintenant Maj : la course franche
+@export var walk_accel := 32.0
 @export var mantle_reach := 2.6     ## hauteur max qu'on attrape depuis les pieds (m)
 @export var jump_velocity := 4.2
 @export var mouse_sensitivity := 0.003
 @export var stick_camera_speed := 2.5
 ## Caméra qui se replace d'elle-même derrière Loums quand il avance (à pied ou en skate).
 ## Elle reste libre à l'arrêt, et pendant `camera_pause` secondes après qu'on l'a tournée à la main.
-@export var camera_suivi := 3.0      ## vitesse de recalage (plus grand = plus collé au dos)
+@export var camera_suivi := 1.8      ## vitesse de recalage (plus grand = plus collé au dos)
+@export var camera_vitesse_max := 1.3  ## rad/s : le recalage ne tourne jamais plus vite (jamais de coup brusque)
 @export var camera_pause := 1.2      ## délai (s) avant que le suivi reprenne après un mouvement manuel
 @export var camera_vitesse_min := 1.0  ## en dessous (m/s), pas de suivi : on peut tourner autour de lui
 
 var _camera_libre := 0.0
+## Caméra au doigt (Louma 21.11) : le doigt donne une cible, la caméra la rejoint en douceur.
+const DOIGT_VERTICAL := 0.35        ## le haut/bas au doigt est 3 fois moins sensible que la rotation
+const DOIGT_LISSAGE := 18.0         ## vitesse à laquelle la caméra rattrape le doigt
+const TANGAGE_DOIGT := Vector2(-0.95, 0.12)  ## au doigt, on ne bascule ni sous le sol ni à la verticale
+const TANGAGE_REPOS := -0.2   ## Louma 21.11 : plus à hauteur d'épaule, moins vue d'ensemble        ## l'angle où elle revient d'elle-même quand on bouge
+const ZOOM_MIN := 2.4
+const ZOOM_MAX := 8.0
+var _doigt_reste := Vector2.ZERO    ## rotation demandée au doigt, pas encore appliquée
+var _zoom_cible := -1.0
 
 var mode: Mode = Mode.WALK
 var spawn_position := Vector3.ZERO
@@ -32,10 +42,14 @@ var accroches := 0                  ## nombre de fois où il s'est accroché (te
 var _rebord := Vector3.ZERO         ## point du bord sous les mains
 var _rebord_n := Vector3.ZERO       ## normale du mur, vers Loums
 var gouttiere: Node3D = null       ## la descente d'eau à laquelle il grimpe (Getting Up)
-const GOUTTIERE_VITESSE := 1.6
+var _accroche_relachee := false
+const GOUTTIERE_VITESSE := 2.2
 var _bond_t := -1.0                 ## bond vers le rebord du dessus en cours (0 → 1), -1 sinon
 var _bond_de := Vector3.ZERO
 var _bond_vers := Vector3.ZERO
+var _bond_sortie := 0.15             ## de combien il se décolle du mur pendant le bond (passer devant le balcon tenu)
+var decale := 0.0                   ## suspendu : vitesse de côté le long du bord (m/s, + = droite), lue par l'animation
+var decale_dist := 0.0              ## distance parcourue de côté (cadence des mains)
 const BOND_MAX := 3.1               ## un étage de balcon en balcon (2,8 m) et un peu de marge
 const ACCROCHE_MAX := 3.3           ## hauteur max du bord au-dessus des pieds (au moment où on l'attrape)
 const SOUS_LES_MAINS := 2.05        ## des pieds aux mains, bras tendus
@@ -43,6 +57,7 @@ var _m_t := 0.0
 var _m_dur := 0.4
 var _m_from := Vector3.ZERO
 var _m_to := Vector3.ZERO
+var _m_par := 0.0                   ## de combien il passe au-dessus du point d'arrivée (muret de toit)
 var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
 const CHUTE_DUREE := 1.6            ## tomber, rester au sol, se relever (s)
 var chute_t := -1.0                 ## secondes depuis la chute, -1 sinon (lu par l'animation)
@@ -59,21 +74,85 @@ var planche_depart := Transform3D()  ## où était la planche au début de « ac
 @onready var camera_pivot: Node3D = $CameraPivot
 @onready var spring_arm: SpringArm3D = $CameraPivot/SpringArm3D
 @onready var visual: Node3D = $Visual
-@onready var board: Node3D = $Visual/Board
+const Skateboard = preload("res://scripts/skateboard.gd")
+@onready var board: Skateboard = $Visual/Board
 @onready var skate: SkateController = $SkateController
 @onready var debug_label: Label = $HUD/DebugLabel
+var _f3_tenu := false
+
+
+## Pour vérifier qu'un geste ne fait pas entrer Loums dans le décor (grimper, s'accrocher, bondir) :
+## un corps de la taille du sien, un peu aminci pour tolérer le contact avec le mur qu'il touche.
+const CORPS_RAYON := 0.32
+const CORPS_HAUT := 1.75
+const CORPS_MARGE := 0.05
+var _forme_test := CapsuleShape3D.new()
+
+
+func _requete_corps(pieds: Vector3) -> PhysicsShapeQueryParameters3D:
+	_forme_test.radius = CORPS_RAYON - CORPS_MARGE
+	_forme_test.height = CORPS_HAUT - CORPS_MARGE * 2.0
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.shape = _forme_test
+	q.transform = Transform3D(Basis(), pieds + Vector3.UP * (CORPS_HAUT * 0.5 + 0.03))
+	q.exclude = [get_rid()]
+	return q
+
+
+## Loums tiendrait-il là (pieds à `pieds`) sans rien traverser ?
+func place_libre(pieds: Vector3) -> bool:
+	return get_world_3d().direct_space_state.intersect_shape(_requete_corps(pieds), 1).is_empty()
+
+
+## Comme place_libre, mais les prises de grimpe (balcons, corniches) ne comptent pas : sur une gouttière,
+## Loums les longe, il ne doit pas rester coincé dessous.
+func _libre_sauf_prises(pieds: Vector3) -> bool:
+	for r in get_world_3d().direct_space_state.intersect_shape(_requete_corps(pieds), 8):
+		var c := r.collider as Node
+		if c == null or not c.is_in_group("prise"):
+			return false
+	return true
+
+
+## Le corps peut-il aller en ligne droite de `a` à `b` (positions des pieds) sans rien heurter ?
+func trajet_libre(a: Vector3, b: Vector3) -> bool:
+	var q := _requete_corps(a)
+	q.motion = b - a
+	var r := get_world_3d().direct_space_state.cast_motion(q)
+	return r[0] >= 0.999
+
+
+## Se hisser de `de` à `vers` : monter à la verticale, passer par-dessus, se poser (comme _mantle_step).
+## Rend la hauteur à laquelle il passe au-dessus du point d'arrivée (un muret de toit, un garde-corps
+## qui dépasse), ou -1 s'il ne peut y aller qu'en traversant quelque chose.
+func hisse_libre(de: Vector3, vers: Vector3) -> float:
+	if not place_libre(vers + Vector3.UP * 0.02):
+		return -1.0
+	for par: float in [0.0, 0.4, 0.8, 1.2]:
+		var coude := Vector3(de.x, vers.y + 0.02 + par, de.z)
+		var dessus := vers + Vector3.UP * (0.02 + par)
+		if trajet_libre(de + Vector3.UP * 0.02, coude) and trajet_libre(coude, dessus) \
+				and (par == 0.0 or trajet_libre(dessus, vers + Vector3.UP * 0.02)):
+			return par
+	return -1.0
 
 
 func _ready() -> void:
+	debug_label.visible = false
 	spawn_position = global_position
 	spring_arm.add_excluded_object(get_rid())
-	spring_arm.rotation.x = -0.35
+	# la caméra a un volume : elle s'arrête avant les murs au lieu de passer à travers
+	var boule := SphereShape3D.new()
+	boule.radius = 0.25
+	spring_arm.shape = boule
+	spring_arm.rotation.x = TANGAGE_REPOS
 	camera_pivot.top_level = true  # la caméra suit sans hériter des à-coups
 	add_to_group("player")
 	if not TouchControls.actif:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	_set_mode(Mode.WALK)
 	skate.trick_done.connect(_on_trick_done)
+	_sensations_pretes()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -91,8 +170,30 @@ func _unhandled_input(event: InputEvent) -> void:
 ## Caméra au doigt (contrôles tactiles) : `rel` est un déplacement déjà mis à l'échelle (radians).
 func touch_look(rel: Vector2) -> void:
 	_camera_libre = camera_pause
-	camera_pivot.rotate_y(-rel.x)
-	spring_arm.rotation.x = clampf(spring_arm.rotation.x - rel.y, -1.2, 0.25)
+	_doigt_reste += Vector2(rel.x, rel.y * DOIGT_VERTICAL)
+
+
+## Deux doigts : pincer / écarter = zoom (facteur > 1 : on s'éloigne), tourner = pivoter autour de Loums.
+func touch_zoom(facteur: float) -> void:
+	if _zoom_cible < 0.0:
+		_zoom_cible = spring_arm.spring_length
+	_zoom_cible = clampf(_zoom_cible * facteur, ZOOM_MIN, ZOOM_MAX)
+
+
+func touch_twist(angle: float) -> void:
+	_camera_libre = camera_pause
+	_doigt_reste.x += angle
+
+
+## Applique en douceur ce que le doigt a demandé (les gestes arrivent par à-coups, la caméra glisse).
+func _camera_doigt(delta: float) -> void:
+	if _doigt_reste.length_squared() > 0.0000001:
+		var part := _doigt_reste * minf(1.0, DOIGT_LISSAGE * delta)
+		_doigt_reste -= part
+		camera_pivot.rotate_y(-part.x)
+		spring_arm.rotation.x = clampf(spring_arm.rotation.x - part.y, TANGAGE_DOIGT.x, TANGAGE_DOIGT.y)
+	if _zoom_cible > 0.0:
+		spring_arm.spring_length = lerpf(spring_arm.spring_length, _zoom_cible, minf(1.0, 10.0 * delta))
 
 
 func _physics_process(delta: float) -> void:
@@ -133,27 +234,46 @@ func _physics_process(delta: float) -> void:
 			_walk(delta)
 		Mode.SKATE:
 			skate.step(self, delta)
-			visual.rotation.y = skate.heading
+			# le corps et la planche tournent en l'air (spin) ; en boardslide ils restent en travers du rail
+			visual.rotation.y = skate.heading + skate.spin + (PI * 0.5 if skate.slide else 0.0)
 
 	if not (mode == Mode.SKATE and skate.grinding):
 		move_and_slide()
+		if is_on_floor():
+			_accroche_relachee = false
 
 	if global_position.y < -20.0:
 		_respawn()
 
 
 func _process(delta: float) -> void:
+	# Caméra collée à Loums (contre un mur, dans un échafaudage) : on le cache, lui et sa planche,
+	# plutôt que de remplir l'écran avec son dos (comme les jeux à la 3e personne).
+	var cam3d := spring_arm.get_child(0) as Node3D if spring_arm.get_child_count() > 0 else null
+	if cam3d:
+		var pres := cam3d.global_position.distance_to(global_position + Vector3.UP * 1.3) < 0.85
+		visual.visible = not pres
 	# Caméra : suit le joueur en douceur, stick droit pour tourner.
-	var target := global_position + Vector3.UP * 1.5
+	var target := global_position + Vector3.UP * 1.4
 	camera_pivot.global_position = camera_pivot.global_position.lerp(target, minf(1.0, 12.0 * delta))
 	var cam := Input.get_vector("cam_left", "cam_right", "cam_up", "cam_down")
 	camera_pivot.rotate_y(-cam.x * stick_camera_speed * delta)
 	if absf(cam.x) > 0.1 or absf(cam.y) > 0.1:
 		_camera_libre = camera_pause
+	_camera_doigt(delta)
+	# Distance de base : 3 m en paysage ; en portrait l'image est étroite, on recule un peu (tant qu'on n'a pas zoomé).
+	if _zoom_cible < 0.0 and not spring_arm.has_meta("vehicule"):
+		var ecran := get_viewport().get_visible_rect().size
+		spring_arm.spring_length = 4.2 if ecran.y > ecran.x else 3.0
 	_suivre_de_dos(delta)
 	spring_arm.rotation.x = clampf(spring_arm.rotation.x - cam.y * stick_camera_speed * delta, -1.2, 0.25)
 	_animate_board()
+	_sensations(delta)
 	_update_hud()
+	# collé à un mur, la caméra arrive sur Loums : on le cache plutôt que de filmer l'intérieur de son corps
+	var perso := visual.get_node_or_null("Personnage") as Node3D
+	if perso:
+		perso.visible = spring_arm.get_hit_length() > 0.7
 
 
 ## Replace doucement la caméra dans le dos de Loums quand il se déplace : plus il va vite, plus elle suit.
@@ -164,22 +284,53 @@ func _suivre_de_dos(delta: float) -> void:
 	var v := absf(skate.speed) if mode == Mode.SKATE else Vector2(velocity.x, velocity.z).length()
 	if v < camera_vitesse_min:
 		return
-	var cap := visual.rotation.y
+	var cap := skate.heading if mode == Mode.SKATE else visual.rotation.y  # la rotation en l'air ne fait pas tourner la caméra
 	if mode == Mode.SKATE and skate.speed < 0.0:
 		cap += PI  # en fakie, on regarde dans le sens de la marche
-	# Moins de suivi quand on se déplace de côté par rapport à la caméra (sinon on tourne en rond).
+	# Louma 21.11 (5 h) : dès qu'on se met en mouvement, la caméra passe dans le dos, même si on part de face
+	# ou vers elle. Elle ne tourne plus en rond car la direction du joystick est figée au départ du mouvement
+	# (voir move_input_world). À l'arrêt, elle reste libre : on peut voir Loums sous toutes ses faces.
 	var b := camera_pivot.global_basis
 	var avant := Vector2(-b.z.x, -b.z.z).normalized()
 	var dir := Vector2(-sin(cap), -cos(cap))
-	var face := 0.35 + 0.65 * maxf(0.0, avant.dot(dir))
-	var force := clampf(v / 4.0, 0.3, 1.6) * camera_suivi * face
-	camera_pivot.rotation.y = lerp_angle(camera_pivot.rotation.y, cap, clampf(force * delta, 0.0, 1.0))
+	var face := 1.0
+	var demi_tour := avant.dot(dir) < 0.0   # Loums vient vers la caméra : elle fait le tour plus franchement
+	var force := clampf(v / 4.0, 0.3, 1.4) * camera_suivi * face
+	var ecart := angle_difference(camera_pivot.rotation.y, cap)
+	var vmax := camera_vitesse_max * (1.8 if demi_tour else 1.0)
+	var pas := clampf(ecart * clampf(force * delta, 0.0, 1.0), -vmax * delta, vmax * delta)
+	if demi_tour and absf(pas) < 0.6 * vmax * delta:
+		pas = signf(ecart) * 0.6 * vmax * delta   # face à la caméra, l'écart est maximal : on garde un vrai élan
+	camera_pivot.rotation.y += pas
+	# au téléphone, elle reprend aussi sa hauteur normale : on n'a jamais à la recaler à la main
+	if TouchControls.actif:
+		spring_arm.rotation.x = lerpf(spring_arm.rotation.x, TANGAGE_REPOS, clampf(0.25 * force * delta, 0.0, 1.0))
 
 
 ## Direction voulue, relative à la caméra, à plat.
+## Le repère de la caméra est figé au moment où l'on se met en marche (comme dans les jeux à la 3e personne) :
+## la caméra peut alors pivoter dans le dos de Loums sans changer la direction qu'on a donnée au joystick.
+## Il se recale sur la caméra quand on lâche le joystick, quand on change franchement de direction,
+## ou quand on tourne la caméra à la main.
+var _repere_fige := false
+var _repere_yaw := 0.0
+var _repere_entree := Vector2.ZERO
+
 func move_input_world() -> Vector3:
 	var input := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
-	var b := camera_pivot.global_basis
+	var yaw := camera_pivot.global_rotation.y
+	if input.length() < 0.2 or _camera_libre > 0.0:
+		_repere_fige = false
+	elif not _repere_fige or absf(angle_difference(input.angle(), _repere_entree.angle())) > deg_to_rad(60.0):
+		_repere_fige = true
+		_repere_yaw = yaw
+		_repere_entree = input
+	else:
+		# petits ajustements du joystick : on accompagne, sans recaler le repère
+		_repere_entree = _repere_entree.slerp(input.normalized() * _repere_entree.length(), 0.05) if _repere_entree.length() > 0.0 else input
+	if _repere_fige:
+		yaw = _repere_yaw
+	var b := Basis(Vector3.UP, yaw)
 	var fwd := Vector3(-b.z.x, 0.0, -b.z.z).normalized()
 	var right := Vector3(b.x.x, 0.0, b.x.z).normalized()
 	return right * input.x - fwd * input.y
@@ -187,11 +338,13 @@ func move_input_world() -> Vector3:
 
 func _walk(delta: float) -> void:
 	var dir := move_input_world()
+	if Input.is_action_just_pressed("jump"):
+		_accroche_relachee = false
 	if not is_on_floor():
 		velocity.y -= _gravity * delta
 		# En l'air, saut maintenu face à un rebord : on s'y accroche.
 		var vers_le_mur := move_input_world().length() > 0.3 or Input.is_action_pressed("jump")
-		if vers_le_mur and velocity.y < 2.0 and (_try_mantle() or _try_accrocher() or _try_gouttiere()):
+		if not _accroche_relachee and vers_le_mur and velocity.y < 2.0 and (_try_mantle() or _try_accrocher() or _try_gouttiere()):
 			return
 	elif Input.is_action_just_pressed("jump"):
 		if _try_gouttiere() or _try_mantle():
@@ -201,7 +354,9 @@ func _walk(delta: float) -> void:
 		if Vector2(velocity.x, velocity.z).length() > 2.0 and _mur_proche(2.4):
 			velocity.y = jump_velocity * 1.55
 			skate.last_event = "Course murale"
-	var target := dir * (run_speed if Input.is_action_pressed("push") else walk_speed)
+	# au téléphone, pas de bouton COURIR : le joystick poussé à fond fait courir
+	var court := Input.is_action_pressed("push") or (TouchControls.actif and dir.length() > 0.85)
+	var target := dir * (run_speed if court else walk_speed)
 	velocity.x = move_toward(velocity.x, target.x, walk_accel * delta)
 	velocity.z = move_toward(velocity.z, target.z, walk_accel * delta)
 	if dir.length() > 0.1:
@@ -238,6 +393,10 @@ func _try_mantle() -> bool:
 	q3.exclude = [get_rid()]
 	if not space.intersect_ray(q3).is_empty():
 		return false  # pas la place de tenir debout là-haut
+	var par := hisse_libre(feet, down.position + Vector3.UP * 0.05)
+	if par < 0.0:
+		return false  # une corniche, un poteau, un rebord trop étroit : il ne passerait qu'en traversant
+	_m_par = par
 	_mantling = true
 	_m_t = 0.0
 	_m_dur = 0.25 + rise * 0.22
@@ -297,6 +456,9 @@ func _try_gouttiere() -> bool:
 	var g := gouttiere_proche()
 	if g == null:
 		return false
+	var accroche: Vector3 = g.global_position + (g.get_meta("dehors", Vector3.FORWARD) as Vector3) * 0.32
+	if not place_libre(Vector3(accroche.x, global_position.y + 0.05, accroche.z)):
+		return false  # un coffret, une grille au pied de la descente d'eau : pas la place de s'y coller
 	gouttiere = g
 	velocity = Vector3.ZERO
 	var dehors: Vector3 = g.get_meta("dehors", Vector3.FORWARD)
@@ -315,23 +477,33 @@ func _gouttiere_step(delta: float) -> void:
 	var input := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 	var y := global_position.y - input.y * GOUTTIERE_VITESSE * delta
 	var y_max := haut - SOUS_LES_MAINS + 0.6
-	global_position = Vector3(g.global_position.x, clampf(y, g.global_position.y, y_max), g.global_position.z) + dehors * 0.32
+	var ancrage := g.global_position + dehors * 0.32
+	var rapproche := 1.0 - exp(-16.0 * delta)
+	var suivant := Vector3(lerpf(global_position.x, ancrage.x, rapproche),
+		clampf(y, g.global_position.y, y_max), lerpf(global_position.z, ancrage.z, rapproche))
+	if _libre_sauf_prises(suivant) or not _libre_sauf_prises(global_position):
+		global_position = suivant   # sinon il reste où il est : quelque chose bloque le long de la descente
 	velocity = Vector3.ZERO
 	_rebord = Vector3(g.global_position.x, global_position.y + SOUS_LES_MAINS - 0.1, g.global_position.z)
 	_rebord_n = dehors
-	if Input.is_action_just_pressed("jump"):
+	# Saut lâche la gouttière, sauf s'il tient « haut » : là, le joueur veut monter, pas tomber.
+	if Input.is_action_just_pressed("jump") and input.y > -0.3:
 		gouttiere = null
+		_accroche_relachee = true
 		global_position += dehors * 0.2
 		skate.last_event = "Lâche"
 		return
-	if y >= y_max and input.y < -0.3:
+	var sommet := Vector3(g.global_position.x, haut + 0.05, g.global_position.z) - dehors * 0.9
+	var par_toit := hisse_libre(global_position, sommet) if y >= y_max and input.y < -0.3 else -1.0
+	if par_toit >= 0.0:
 		# en haut : par-dessus le muret, sur le toit (on passe dans le coin, côté intérieur)
+		_m_par = par_toit
 		gouttiere = null
 		_mantling = true
 		_m_t = 0.0
 		_m_dur = 0.8
 		_m_from = global_position
-		_m_to = Vector3(g.global_position.x, haut + 0.05, g.global_position.z) - dehors * 0.9
+		_m_to = sommet
 		skate.last_event = "Grimpe"
 		return
 	if y <= g.global_position.y + 0.01 and input.y > 0.3:
@@ -377,6 +549,8 @@ func _try_accrocher() -> bool:
 	var rise: float = b.haut - global_position.y
 	if rise <= mantle_reach - 0.1 or rise > ACCROCHE_MAX:
 		return false
+	if not place_libre(b.point + b.n * 0.32 - Vector3.UP * SOUS_LES_MAINS):
+		return false  # suspendu là, il serait dans le mur (sous un balcon, contre un appui de fenêtre)
 	_accrocher(b.point, b.n)
 	return true
 
@@ -396,60 +570,102 @@ func _accrocher(point: Vector3, n: Vector3) -> void:
 func _suspendu_step(delta: float) -> void:
 	velocity = Vector3.ZERO
 	if _bond_t >= 0.0:
-		_bond_t = minf(_bond_t + delta / 0.45, 1.0)
+		_bond_t = minf(_bond_t + delta / 0.38, 1.0)
 		var k := _bond_t * _bond_t * (3.0 - 2.0 * _bond_t)
-		global_position = _bond_de.lerp(_bond_vers, k) + _rebord_n * sin(_bond_t * PI) * 0.15
+		global_position = _bond_de.lerp(_bond_vers, k) + _rebord_n * sin(_bond_t * PI) * _bond_sortie
 		if _bond_t >= 1.0:
 			_bond_t = -1.0
 		return
 	var input := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
-	if Input.is_action_just_pressed("jump"):
-		# se hisser : il faut la place de tenir debout là-haut
-		var space := get_world_3d().direct_space_state
-		var haut := _rebord - _rebord_n * 0.35
-		var q := PhysicsRayQueryParameters3D.create(haut + Vector3.UP * 0.15, haut + Vector3.UP * 1.8)
-		q.exclude = [get_rid()]
-		if space.intersect_ray(q).is_empty():
-			suspendu = false
-			_mantling = true
-			_m_t = 0.0
-			_m_dur = 0.75
-			_m_from = global_position
-			_m_to = haut + Vector3.UP * 0.05
-			climbs += 1
-			skate.last_event = "Grimpe"
+	decale = 0.0
+	# monter : Espace, ou haut maintenu (il enchaîne de rebord en rebord tant qu'on pousse)
+	# Monter. Haut maintenu : on enchaîne de balcon en balcon jusqu'en haut de l'immeuble (le bond passe
+	# avant le hissage, sinon on finit coincé sur le premier balcon, sous la dalle du suivant).
+	# Espace : on se hisse sur ce qu'on tient (le balcon, le toit).
+	var espace := Input.is_action_just_pressed("jump")
+	var tient_haut := input.y < -0.6
+	if espace or tient_haut:
+		if tient_haut and not espace and _bondir_plus_haut():
 			return
-		# pas la place de se hisser : un rebord plus haut ? on bondit pour l'attraper (Getting Up)
-		var b := _bord_devant(global_position, -_rebord_n, SOUS_LES_MAINS + 0.5, SOUS_LES_MAINS + BOND_MAX)
-		if not b.is_empty() and b.haut - _rebord.y > 0.4:
-			_rebord = b.point
-			_bond_de = global_position
-			_bond_vers = b.point + _rebord_n * 0.32 - Vector3.UP * SOUS_LES_MAINS
-			_bond_t = 0.0
-			climbs += 1
-			skate.last_event = "Bond"
+		if _se_hisser():
+			return
+		if _bondir_plus_haut():
 			return
 	if input.y > 0.6:
 		suspendu = false   # on lâche
+		_accroche_relachee = true
 		global_position += _rebord_n * 0.15
 		skate.last_event = "Lâche"
 		return
 	if absf(input.x) > 0.2:
 		var long := Vector3.UP.cross(_rebord_n).normalized()   # vers la droite de Loums, face au mur
-		var pas := long * signf(input.x) * 1.1 * delta
-		var b := _bord_devant(global_position + pas + _rebord_n * 0.0, -_rebord_n, SOUS_LES_MAINS - 0.5, SOUS_LES_MAINS + 0.35)
-		if not b.is_empty() and absf(b.haut - _rebord.y) < 0.2:
+		var pas := long * input.x * 1.7 * delta
+		var b := _bord_devant(global_position + pas, -_rebord_n, SOUS_LES_MAINS - 0.5, SOUS_LES_MAINS + 0.35)
+		var vers_cote: Vector3 = (b.point + _rebord_n * 0.32 - Vector3.UP * SOUS_LES_MAINS) if not b.is_empty() else Vector3.ZERO
+		if not b.is_empty() and absf(b.haut - _rebord.y) < 0.2 and place_libre(vers_cote):
 			_rebord = b.point
-			global_position = b.point + _rebord_n * 0.32 - Vector3.UP * SOUS_LES_MAINS
+			decale = input.x * 1.7
+			decale_dist += absf(pas.length())
+			global_position = vers_cote
+
+
+## Se hisser sur le rebord tenu, s'il y a la place d'y tenir debout. Vrai si c'est parti.
+func _se_hisser() -> bool:
+	var space := get_world_3d().direct_space_state
+	var haut := _rebord - _rebord_n * 0.35
+	var q := PhysicsRayQueryParameters3D.create(haut + Vector3.UP * 0.15, haut + Vector3.UP * 1.8)
+	q.exclude = [get_rid()]
+	var par := hisse_libre(global_position, haut + Vector3.UP * 0.05) if space.intersect_ray(q).is_empty() else -1.0
+	if par < 0.0:
+		return false
+	_m_par = par
+	suspendu = false
+	_mantling = true
+	_m_t = 0.0
+	_m_dur = 0.6
+	_m_from = global_position
+	_m_to = haut + Vector3.UP * 0.05
+	climbs += 1
+	skate.last_event = "Grimpe"
+	return true
+
+
+## Bondir au rebord du dessus (le balcon de l'étage suivant, Getting Up). Vrai si c'est parti.
+func _bondir_plus_haut() -> bool:
+	var b := _bord_devant(global_position, -_rebord_n, SOUS_LES_MAINS + 0.5, SOUS_LES_MAINS + BOND_MAX)
+	if b.is_empty() or b.haut - _rebord.y <= 0.4:
+		return false
+	# Le balcon qu'il tient (dalle, garde-corps) est juste devant lui : tout droit vers le haut, il le
+	# heurte. Il se décolle donc un peu du mur le temps du bond (comme on se repousse des pieds), et
+	# s'il ne peut pas se suspendre pile sous le balcon du dessus, un peu plus en avant.
+	for ecart: float in [0.32, 0.45, 0.6]:
+		var vers_bond: Vector3 = b.point + _rebord_n * ecart - Vector3.UP * SOUS_LES_MAINS
+		if not place_libre(vers_bond):
+			continue
+		for sortie: float in [0.0, 0.3, 0.55]:
+			var d := _rebord_n * sortie
+			if trajet_libre(global_position, global_position + d) and trajet_libre(global_position + d, vers_bond + d) \
+					and trajet_libre(vers_bond + d, vers_bond):
+				_rebord = b.point
+				_bond_de = global_position
+				_bond_vers = vers_bond
+				_bond_sortie = maxf(0.15, sortie * 1.15)
+				_bond_t = 0.0
+				climbs += 1
+				skate.last_event = "Bond"
+				return true
+	return false
 
 
 func _mantle_step(delta: float) -> void:
 	_m_t = minf(_m_t + delta / _m_dur, 1.0)
 	# On monte d'abord, on avance ensuite.
-	var up := clampf(_m_t / 0.65, 0.0, 1.0)
-	var fwd := clampf((_m_t - 0.45) / 0.55, 0.0, 1.0)
+	# on monte, on passe par-dessus (au besoin plus haut que l'arrivée), on se pose
+	var up := smoothstep(0.0, 0.6, _m_t)
+	var fwd := smoothstep(0.55, 0.95 if _m_par > 0.0 else 1.0, _m_t)
+	var pose := smoothstep(0.9, 1.0, _m_t) if _m_par > 0.0 else 0.0
 	global_position = Vector3(
-		lerpf(_m_from.x, _m_to.x, fwd), lerpf(_m_from.y, _m_to.y, up), lerpf(_m_from.z, _m_to.z, fwd))
+		lerpf(_m_from.x, _m_to.x, fwd), lerpf(_m_from.y, _m_to.y + _m_par, up) - _m_par * pose, lerpf(_m_from.z, _m_to.z, fwd))
 	if _m_t >= 1.0:
 		_mantling = false
 
@@ -582,33 +798,46 @@ const POP_DUREE := 0.2
 
 ## Rotation de la planche : pop, genoux remontés, flips (purement visuel).
 func _animate_board() -> void:
+	var demi_tour := PI if skate.tail_devant else 0.0
+	var roulis := 0.0
+	if mode == Mode.SKATE and skate.trick in ["Kickflip", "Shove-it"]:
+		# Le pied relâche la planche, puis la rattrape à plat avant la réception.
+		var rotation_finie := smoothstep(0.04, 0.86, skate.trick_t)
+		if skate.trick == "Kickflip":
+			roulis = TAU * rotation_finie
+		else:
+			demi_tour += PI * rotation_finie
+	board.plateau_mobile.basis = Basis(Vector3.BACK, roulis) * Basis(Vector3.UP, demi_tour)
 	if planche_libre or mode == Mode.WALK:
 		return  # à pied, c'est Personnage qui la porte (dans le dos) ou la manie
 	board.rotation = Vector3.ZERO
 	board.position = Vector3(0, 0.085, 0)
 	if mode == Mode.SKATE and not skate.in_air:
 		board.rotation.z = -skate.lean * 0.12   # la planche bascule dans le virage
+		if skate.manual:
+			# sur les roues arrière : le nose se lève (pivot sur l'essieu arrière)
+			var m := 0.2 + 0.08 * clampf(skate.manual_bal, -1.0, 1.0)
+			var essieu := Vector3(0, 0, 0.27)
+			board.rotation.x = -m
+			board.position += essieu - Basis(Vector3.RIGHT, -m) * essieu
 	if mode != Mode.SKATE:
 		return
 	if skate.in_air and not skate.grinding:
 		# Genoux remontés : la planche monte vers lui, puis redescend avant la réception.
 		var monte := smoothstep(0.0, 0.12, skate.air_t) if skate.saute else smoothstep(0.25, 0.45, skate.air_t)
 		var descend := clampf((-velocity.y - 1.0) / 3.0, 0.0, 1.0)
-		board.position.y += 0.22 * monte * (1.0 - 0.6 * descend)
+		board.position.y += 0.22 * monte * (1.0 - descend)
+		if skate.grab > 0.0:
+			# grab : la planche monte à la main, un peu penchée
+			board.position.y += 0.2 * skate.grab
+			board.rotation.z += 0.35 * skate.grab
 	if skate.pop_t >= 0.0 and skate.pop_t < POP_DUREE:
 		# Pop : le tail claque au sol, le nose se lève, puis la planche se remet à plat.
-		var a := 0.5 * sin(PI * skate.pop_t / POP_DUREE)
+		var a := 0.53 * smoothstep(0.0, 0.045, skate.pop_t) * (1.0 - smoothstep(0.045, POP_DUREE, skate.pop_t))
 		var tail := Vector3(0, 0, 0.38)
 		var r := Basis(Vector3.RIGHT, a)
 		board.rotation.x = a
 		board.position += tail - r * tail
-	if skate.trick_t >= 1.0:
-		return
-	match skate.trick:
-		"Kickflip":
-			board.rotation.z = TAU * skate.trick_t
-		"Shove-it":
-			board.rotation.y = PI * skate.trick_t
 
 
 func _update_hud() -> void:
@@ -616,7 +845,124 @@ func _update_hud() -> void:
 	var state := "CHUTE" if chute_t >= 0.0 else "À PIED"
 	if mode == Mode.SKATE:
 		state = "GRIND" if skate.grinding else ("AIR" if skate.in_air else "SKATE")
-	if TouchControls.actif:
-		debug_label.text = "%s   %d km/h\n%s" % [state, roundi(kmh), skate.last_event]
+	var ips := Engine.get_frames_per_second()
+	# Louma 21.11 : plus de texte de mise au point à l'écran (F3 pour le revoir sur PC).
+	if Input.is_key_pressed(KEY_F3) and not _f3_tenu:
+		debug_label.visible = not debug_label.visible
+	_f3_tenu = Input.is_key_pressed(KEY_F3)
+	if debug_label.visible:
+		debug_label.text = "%s   %d km/h   %d img/s\n%s" % [state, roundi(kmh), ips, skate.last_event]
+
+
+# ---------------------------------------------------------------------------------------------
+# Sensations (Louma 21.11) : vitesse, impact, grind. Purement visuel, rien ne change la physique.
+
+const FOV_BASE := 62.0
+const FOV_VITE := 76.0
+var _cam: Camera3D
+var _hud_figures: CanvasLayer
+var _traits: ColorRect
+var _poussiere: CPUParticles3D
+var _etincelles: CPUParticles3D
+var _secousse := 0.0
+var _traits_t := 0.0
+
+
+func _sensations_pretes() -> void:
+	_cam = spring_arm.get_child(0) as Camera3D if spring_arm.get_child_count() > 0 else null
+	_hud_figures = preload("res://scripts/figures_hud.gd").new()
+	_hud_figures.set("skate", skate)
+	add_child(_hud_figures)
+	var couche := CanvasLayer.new()
+	couche.layer = 1
+	add_child(couche)
+	_traits = ColorRect.new()
+	_traits.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_traits.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var mat := ShaderMaterial.new()
+	mat.shader = preload("res://shaders/vitesse.gdshader")
+	_traits.material = mat
+	_traits.visible = false
+	couche.add_child(_traits)
+	_poussiere = _particules(Color(0.85, 0.78, 0.66, 0.8), 26, 0.45, Vector3(0, 1.6, 0), 2.2, 0.09)
+	_etincelles = _particules(Color(1.0, 0.75, 0.25), 40, 0.35, Vector3(0, 2.5, 0), 4.0, 0.03)
+	_etincelles.one_shot = false
+	_etincelles.emitting = false
+	skate.atterri.connect(_impact)
+
+
+func _particules(c: Color, n: int, vie: float, haut: Vector3, v: float, taille: float) -> CPUParticles3D:
+	var p := CPUParticles3D.new()
+	p.amount = n
+	p.lifetime = vie
+	p.one_shot = true
+	p.emitting = false
+	p.explosiveness = 0.9
+	p.direction = haut.normalized()
+	p.spread = 70.0
+	p.initial_velocity_min = v * 0.5
+	p.initial_velocity_max = v
+	p.gravity = Vector3(0, -9.0, 0)
+	p.scale_amount_min = 0.6
+	p.scale_amount_max = 1.3
+	var m := SphereMesh.new()
+	m.radius = taille
+	m.height = taille * 2.0
+	m.radial_segments = 4
+	m.rings = 2
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.albedo_color = c
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.vertex_color_use_as_albedo = true
+	m.material = mat
+	p.mesh = m
+	var fondu := Gradient.new()
+	fondu.set_color(0, Color(1, 1, 1, 1))
+	fondu.set_color(1, Color(1, 1, 1, 0))
+	p.color_ramp = fondu
+	p.top_level = true
+	add_child(p)
+	return p
+
+
+## Réception : secousse proportionnée au saut, poussière, et un gel d'une fraction de seconde sur les gros.
+func _impact(t_air: float, qualite: String) -> void:
+	if t_air < 0.25:
 		return
-	debug_label.text = "%s   %d km/h\n%s" % [state, roundi(kmh), skate.last_event]
+	_secousse = clampf(t_air * 0.5, 0.15, 0.7) * (1.4 if qualite == "chute" else 1.0)
+	if _poussiere:
+		_poussiere.global_position = global_position + Vector3.UP * 0.05
+		_poussiere.amount = int(clampf(t_air * 30.0, 10.0, 40.0))
+		_poussiere.restart()
+	if t_air > 0.65 and qualite != "chute":
+		Engine.time_scale = 0.12
+		get_tree().create_timer(0.07, true, false, true).timeout.connect(func(): Engine.time_scale = 1.0)
+
+
+func _sensations(delta: float) -> void:
+	if _cam == null:
+		return
+	if spring_arm.has_meta("vehicule"):
+		_traits.visible = false
+		return  # en scooter, conduite.gd gère l'angle de vue, les traits de vitesse et les secousses
+	var vite := clampf((absf(skate.speed) - 5.0) / 9.0, 0.0, 1.0) if mode == Mode.SKATE and chute_t < 0.0 else 0.0
+	# plus on va vite, plus l'image s'ouvre (et la caméra se rapproche du sol)
+	_cam.fov = lerpf(_cam.fov, FOV_BASE + (FOV_VITE - FOV_BASE) * vite, minf(1.0, 3.0 * delta))
+	_traits_t += delta
+	_traits.visible = vite > 0.05
+	if _traits.visible:
+		var mat := _traits.material as ShaderMaterial
+		mat.set_shader_parameter("force", vite)
+		mat.set_shader_parameter("temps", _traits_t)
+	# secousse : un tremblement court qui s'éteint vite
+	_secousse = move_toward(_secousse, 0.0, delta * 2.5)
+	var s2 := _secousse * _secousse
+	_cam.h_offset = (randf() - 0.5) * 0.35 * s2
+	_cam.v_offset = (randf() - 0.5) * 0.35 * s2
+	# grind : des étincelles sous la planche
+	var grind := mode == Mode.SKATE and skate.grinding
+	if _etincelles.emitting != grind:
+		_etincelles.emitting = grind
+	if grind:
+		_etincelles.global_position = global_position + Vector3.UP * 0.03

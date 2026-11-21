@@ -17,8 +17,12 @@ const CONCAVE := 0.007
 @export var couleur_dessous := Color(0.78, 0.10, 0.22)
 @export var couleur_roues := Color(0.93, 0.90, 0.82)
 
+## Les pieds et les pôles des genoux ont leur propre repère sur Board.
+## Seule la géométrie tourne sous eux pendant un flip.
+var plateau_mobile := Node3D.new()
 
 func _ready() -> void:
+	add_child(plateau_mobile)
 	_plateau()
 	for z in [-EMPATTEMENT * 0.5, EMPATTEMENT * 0.5]:
 		_truck(z)
@@ -113,19 +117,19 @@ func _quad(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, d: Vector3, n: V
 		st.add_vertex(p)
 
 
-func _piece(nom: String, mesh: Mesh, m: Material) -> void:
+func _piece(nom: String, mesh: Mesh, m: Material) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
 	mi.material_override = m
 	mi.name = nom
-	add_child(mi)
+	plateau_mobile.add_child(mi)
+	return mi
 
 
 func _boite(nom: String, pos: Vector3, taille: Vector3, m: Material) -> void:
 	var bm := BoxMesh.new()
 	bm.size = taille
-	_piece(nom, bm, m)
-	get_child(get_child_count() - 1).position = pos
+	_piece(nom, bm, m).position = pos
 
 
 func _cylindre(nom: String, pos: Vector3, rayon: float, long: float, axe: Vector3, m: Material, segments := 12) -> void:
@@ -135,8 +139,7 @@ func _cylindre(nom: String, pos: Vector3, rayon: float, long: float, axe: Vector
 	c.height = long
 	c.radial_segments = segments
 	c.rings = 1
-	_piece(nom, c, m)
-	var mi := get_child(get_child_count() - 1) as MeshInstance3D
+	var mi := _piece(nom, c, m)
 	mi.position = pos
 	if axe == Vector3.RIGHT:
 		mi.rotation.z = PI * 0.5
