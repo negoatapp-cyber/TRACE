@@ -433,34 +433,75 @@ func _batiment(nom: String, hauteur: float, style: String, poly: PackedVector2Ar
 func _voie(type: String, pts: PackedVector2Array) -> void:
 	var v: Array = VOIES.get(type, VOIES["s"])
 	var demi: float = v[0] * 0.5
-	var leve := 0.10 if type == "p" else 0.07
-	# On recoupe la ligne tous les 3 m pour qu'elle épouse le relief.
+	var leve := 0.10 if type == "p" else (0.08 if type == "s" else 0.07)
+	# Le relief est triangulé sous la voie : un seul quad sur 7 à 12 m de largeur
+	# le traversait en ligne droite et laissait surgir de grands triangles du terrain.
 	var fin := PackedVector2Array()
 	for k in pts.size() - 1:
-		var n := maxi(1, int(pts[k].distance_to(pts[k + 1]) / 3.0))
+		var n := maxi(1, int(ceil(pts[k].distance_to(pts[k + 1]) / 2.0)))
 		for t in n:
 			fin.append(pts[k].lerp(pts[k + 1], float(t) / n))
 	fin.append(pts[pts.size() - 1])
 	if fin.size() < 2:
 		return
+	var bandes := maxi(1, int(ceil(float(v[0]) / (0.5 if type == "s" or type == "p" else (0.75 if type == "r" else 1.5)))))
+	var rangs := _rangs_voie(fin, demi, leve, bandes)
+	# Raffiner seulement les tronçons où le relief traverse le ruban. Raffiner
+	# toute la largeur du tronçon évite les fissures aux raccords entre bandes.
+	for passage in 4:
+		var raffinee := PackedVector2Array()
+		var ajouts := 0
+		for k in fin.size() - 1:
+			raffinee.append(fin[k])
+			if _voie_percee(rangs[k], rangs[k + 1], bandes):
+				raffinee.append((fin[k] + fin[k + 1]) * 0.5)
+				ajouts += 1
+		raffinee.append(fin[fin.size() - 1])
+		if ajouts == 0:
+			break
+		fin = raffinee
+		rangs = _rangs_voie(fin, demi, leve, bandes)
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var g := []
-	var d := []
-	for k in fin.size():
-		var dir := (fin[mini(k + 1, fin.size() - 1)] - fin[maxi(k - 1, 0)]).normalized()
-		var lat := Vector2(-dir.y, dir.x) * demi
-		var a := fin[k] + lat
-		var b := fin[k] - lat
-		g.append(Vector3(a.x, h(a.x, a.y) + leve, a.y))
-		d.append(Vector3(b.x, h(b.x, b.y) + leve, b.y))
+	var s := 0.0
 	for k in fin.size() - 1:
-		for p in [g[k], d[k], d[k + 1], g[k], d[k + 1], g[k + 1]]:
-			st.set_normal(Vector3.UP)
-			st.add_vertex(p)
+		var s1 := s + fin[k].distance_to(fin[k + 1])
+		for j in bandes:
+			var u0 := float(j) / bandes
+			var u1 := float(j + 1) / bandes
+			for e in [[rangs[k][j], Vector2(u0, s)], [rangs[k][j + 1], Vector2(u1, s)],
+					[rangs[k + 1][j + 1], Vector2(u1, s1)], [rangs[k][j], Vector2(u0, s)],
+					[rangs[k + 1][j + 1], Vector2(u1, s1)], [rangs[k + 1][j], Vector2(u0, s1)]]:
+				st.set_normal(Vector3.UP)
+				st.set_uv(e[1])
+				st.add_vertex(e[0])
+		s = s1
 	var n := _decor("Voie", st.commit(), _mat(v[1]))
 	n.add_to_group("sol_voie")
 	n.set_meta("type", type)
+	n.set_meta("bandes_transversales", bandes)
+
+
+func _rangs_voie(fin: PackedVector2Array, demi: float, leve: float, bandes: int) -> Array:
+	var rangs := []
+	for k in fin.size():
+		var dir := (fin[mini(k + 1, fin.size() - 1)] - fin[maxi(k - 1, 0)]).normalized()
+		var lat := Vector2(-dir.y, dir.x) * demi
+		var rang := []
+		for j in bandes + 1:
+			var p := fin[k] + lat.lerp(-lat, float(j) / bandes)
+			rang.append(Vector3(p.x, h(p.x, p.y) + leve, p.y))
+		rangs.append(rang)
+	return rangs
+
+
+func _voie_percee(a: Array, b: Array, bandes: int) -> bool:
+	for j in bandes:
+		for tri in [[a[j], a[j + 1], b[j + 1]], [a[j], b[j + 1], b[j]]]:
+			var p: Vector3 = (tri[0] + tri[1] + tri[2]) / 3.0
+			if h(p.x, p.z) - p.y > 0.015:
+				return true
+	return false
 
 
 func _zone(type: String, poly: PackedVector2Array) -> void:
