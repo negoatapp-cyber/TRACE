@@ -30,6 +30,7 @@
 !.tools/verify_son.gd
 !.tools/son_generer.py
 !.tools/verify_conduite.gd
+!.tools/verify_scooter_v2.gd
 !.tools/capture_scooter.gd
 
 # Fichiers locaux à ne jamais publier (dépôt public)
