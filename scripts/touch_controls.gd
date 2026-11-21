@@ -58,6 +58,7 @@ const BOUTONS := {
 	"hisser": ["MONTER", "jump", false],
 	"lacher": ["LÂCHER", ":lacher", false],
 	"roue": ["ROUE AR.", "jump", true],
+	"derape": ["DÉRAPAGE", "push", true],
 	"frein": ["FREIN À MAIN", "jump", true],
 	"grimper": ["GRIMPER", "jump", true],
 	"lacher_g": ["LÂCHER", "jump", false],
@@ -85,7 +86,7 @@ func _choisir_boutons() -> void:
 	elif cond and cond.get("actuel") != null:
 		ctx = "conduite"
 		var scooter: bool = str((cond.get("actuel") as Node).get("type")) == "scooter"
-		liste = [["roue" if scooter else "frein", "A"], ["descendre", "C"]]
+		liste = [["roue", "A"], ["derape", "B"], ["descendre", "C"]] if scooter else [["frein", "A"], ["descendre", "C"]]
 	elif j and j.get("gouttiere") != null:
 		ctx = "gouttiere"
 		liste = [["lacher_g", "A"]]

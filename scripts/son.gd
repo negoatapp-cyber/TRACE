@@ -776,7 +776,7 @@ func _vehicule() -> void:
 				_veh_t0 = _t + 1.1
 		elif _p_veh != null and is_instance_valid(_p_veh):
 			var scooter2 := String(_v(_p_veh, "type", "voiture")) == "scooter"
-			if _p_cabre >= 1.2:
+			if _p_cabre >= 1.2 or bool(_cond.get("vient_de_chuter")):
 				jouer("chute", -2)
 				apres(0.1, "choc_vehicule", -5)
 			else:
@@ -785,11 +785,13 @@ func _vehicule() -> void:
 		_p_veh = v
 		_p_vit = 0.0
 		_p_cabre = 0.0
+	# un scooter couché qui glisse sur le bitume
+	boucle("racle_sol", "racle_loop", 0.7 * float(_v(_cond, "racle_sol", 0.0)), 0.8)
 	if v == null:
 		return
 	var scooter3 := String(_v(v, "type", "voiture")) == "scooter"
 	var vit := absf(float(_v(v, "vitesse", 0.0)))
-	var vmax := 13.0 if scooter3 else 17.0
+	var vmax := float(_v(v, "vmax", 13.0 if scooter3 else 17.0))
 	var r := clampf(vit / vmax, 0.0, 1.0)
 	var cabre := float(_v(v, "cabre", 0.0))
 	var gaz := Input.get_action_strength("move_forward") if _t >= _veh_t0 else 0.0
@@ -798,7 +800,12 @@ func _vehicule() -> void:
 			boucle("moteur_scooter", "scooter_loop", 0.5 * (0.55 + 0.45 * r), 0.75 + 1.35 * r + cabre * 0.5 + 0.2 * gaz)
 		else:
 			boucle("moteur_voiture", "voiture_loop", 0.55 * (0.55 + 0.45 * r), 0.8 + 1.1 * r + 0.15 * gaz)
-		if not scooter3 and Input.is_action_pressed("jump") and vit > 4.0:
+		# le vent monte avec la vitesse ; la bavette qui racle ; le pneu qui glisse en dérapage
+		boucle("vent", "vent_loop", clampf((vit - 8.0) / 18.0, 0.0, 1.0) * 0.55, 0.8 + 0.5 * r)
+		boucle("racle", "racle_loop", 0.6 * float(_v(v, "racle", 0.0)), 0.9 + 0.3 * r)
+		if scooter3 and float(_v(v, "derive", 0.0)) > 0.4 and vit > 5.0:
+			boucle("crisse", "pneu_crisse_loop", 0.35 * float(_v(v, "derive", 0.0)), 1.15 + 0.15 * r)
+		elif not scooter3 and Input.is_action_pressed("jump") and vit > 4.0:
 			boucle("crisse", "pneu_crisse_loop", 0.4 * r, 0.9 + 0.2 * r)
 		elif Input.get_action_strength("move_back") > 0.5 and vit > 7.0:
 			boucle("crisse", "pneu_crisse_loop", 0.25 * r, 0.9 + 0.2 * r)

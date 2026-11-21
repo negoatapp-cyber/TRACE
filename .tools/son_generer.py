@@ -707,6 +707,26 @@ def s_respawn():
 
 
 # ---------------------------------------------------------------- registre
+
+def s_racle_loop():
+    # bavette / flanc du scooter sur le bitume : grattement granuleux, crépitements métalliques
+    D = 1.0; n = n_(D); y = nz(bp(noise(n), 1200, 7000)) * 0.6
+    y *= 0.55 + 0.45 * jitter(n, 30, 0.9)
+    crep = np.zeros(n)
+    for _ in range(90):
+        put_wrap(crep, ping(0.03, [RNG.uniform(2500, 6500)], [0.006]), RNG.uniform(0, D), RNG.uniform(0.3, 1.0))
+    y += crep * 0.8
+    y += nz(lp(noise(n), 300)) * 0.25 * am(n, 13, 0.6)
+    return y
+
+
+def s_vent_loop():
+    # souffle du vent à pleine vitesse, avec des rafales
+    D = 2.0; n = n_(D)
+    y = nz(bp(noise(n), 150, 1800, 1)) * (0.6 + 0.4 * am(n, 1, 0.7)) * jitter(n, 3, 0.25)
+    y += nz(bp(noise(n), 1500, 4000)) * 0.15 * am(n, 2, 0.8, 1.0)
+    return y
+
 BANQUE = [
     # (nom, fonction, variantes, crête, boucle)
     ("pas_dur", s_pas_dur, 4, 0.85, False),
@@ -785,6 +805,8 @@ BANQUE = [
     ("ui_bascule", s_ui_bascule, 1, 0.5, False),
     ("temps_saut", s_temps_saut, 1, 0.6, False),
     ("respawn", s_respawn, 1, 0.6, False),
+    ("racle_loop", s_racle_loop, 1, 0.55, True),
+    ("vent_loop", s_vent_loop, 1, 0.5, True),
 ]
 
 

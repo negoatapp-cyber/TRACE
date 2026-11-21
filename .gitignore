@@ -26,6 +26,8 @@
 !.tools/verify_mission.gd
 !.tools/verify_son.gd
 !.tools/son_generer.py
+!.tools/verify_conduite.gd
+!.tools/capture_scooter.gd
 
 # Fichiers locaux à ne jamais publier (dépôt public)
 *.mp4
