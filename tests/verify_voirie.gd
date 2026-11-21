@@ -44,12 +44,13 @@ func verifier() -> void:
 			var a: Vector3 = mi.global_transform * sommets[i]
 			var b: Vector3 = mi.global_transform * sommets[i + 1]
 			var c: Vector3 = mi.global_transform * sommets[i + 2]
-			var p := (a + b + c) / 3.0
-			var delta: float = quartier.h(p.x, p.z) - p.y
-			if delta > 0.03:
-				traverses += 1
-				max_traversee = maxf(max_traversee, delta)
-				pires.append([delta, mi.get_meta("type", "?"), p.x, p.z])
+			for p: Vector3 in [(a + b + c) / 3.0, (a + b) * 0.5,
+					(b + c) * 0.5, (c + a) * 0.5]:
+				var delta: float = quartier.h(p.x, p.z) - p.y
+				if delta > 0.03:
+					traverses += 1
+					max_traversee = maxf(max_traversee, delta)
+					pires.append([delta, mi.get_meta("type", "?"), p.x, p.z])
 	pires.sort_custom(func(a, b): return a[0] > b[0])
 	print("PIRES : ", pires.slice(0, 12))
 	print("VOIRIE : %d voies, %d bandes, %d triangles, %d traversées (>3 cm), max %.3f m, %d UV invalides" % [voies, total_bandes, triangles, traverses, max_traversee, uv_invalides])
