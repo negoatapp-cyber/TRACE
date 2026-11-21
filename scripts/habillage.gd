@@ -1330,28 +1330,15 @@ func _voies_paix() -> void:
 		var pos: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
 		if pos.size() < 6 or pos.size() % 6 != 0:
 			continue
-		var uv := PackedVector2Array()
-		uv.resize(pos.size())
-		var s := 0.0
-		for k in pos.size() / 6:
-			var i := k * 6
-			# [g0, d0, d1, g0, d1, g1]
-			var c0 := (pos[i] + pos[i + 1]) * 0.5
-			var c1 := (pos[i + 5] + pos[i + 2]) * 0.5
-			var s1 := s + Vector2(c1.x - c0.x, c1.z - c0.z).length()
-			uv[i] = Vector2(0, s); uv[i + 1] = Vector2(1, s); uv[i + 2] = Vector2(1, s1)
-			uv[i + 3] = Vector2(0, s); uv[i + 4] = Vector2(1, s1); uv[i + 5] = Vector2(0, s1)
-			s = s1
-		arr[Mesh.ARRAY_TEX_UV] = uv
-		var am := ArrayMesh.new()
-		am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
-		mi.mesh = am
+		# La voie fournit maintenant les UV continus sur ses bandes transversales.
+		# Ne pas les reconstruire par quad : cela répéterait l'usure de la chaussée
+		# sur chaque bande et multiplierait artificiellement les plaques d'égout.
 		var vo: Array = Q.VOIES.get(type, Q.VOIES["s"])
 		if type == "p":
 			mi.material_override = _mat_trottoir()
 		else:
 			mi.material_override = _mat_goudron(float(vo[0]))
-			_plaques_egout(pos, float(vo[0]), mi.global_transform)
+			_plaques_egout(pos, float(vo[0]), mi.global_transform, int(mi.get_meta("bandes_transversales", 1)))
 		n += 1
 	print("Sol : %d voies en goudron ou béton Paix, %d plaques d'égout" % [n, _n_plaques])
 
@@ -1375,7 +1362,7 @@ var _mat_plaque: StandardMaterial3D
 
 ## Tampons d'égout le long d'une chaussée (sommets [g0, d0, d1, g0, d1, g1] par tronçon) : un tous les 30 à 55 m,
 ## au milieu d'une voie de circulation. Fonte générique, sans inscription.
-func _plaques_egout(pos: PackedVector3Array, largeur: float, xf: Transform3D) -> void:
+func _plaques_egout(pos: PackedVector3Array, largeur: float, xf: Transform3D, bandes: int = 1) -> void:
 	if _mat_plaque == null:
 		_mat_plaque = StandardMaterial3D.new()
 		_mat_plaque.albedo_texture = load(SOL + "plaque_egout.png")
@@ -1387,17 +1374,21 @@ func _plaques_egout(pos: PackedVector3Array, largeur: float, xf: Transform3D) ->
 	r.seed = int(pos[0].x * 13.0 + pos[0].z * 7.0)
 	var prochain := r.randf_range(12.0, 40.0)
 	var s := 0.0
-	for k in pos.size() / 6:
-		var i := k * 6
-		var c0 := (pos[i] + pos[i + 1]) * 0.5
-		var c1 := (pos[i + 5] + pos[i + 2]) * 0.5
+	for k in pos.size() / (6 * bandes):
+		var i := k * 6 * bandes
+		var fin := i + (bandes - 1) * 6
+		var c0 := (pos[i] + pos[fin + 1]) * 0.5
+		var c1 := (pos[i + 5] + pos[fin + 2]) * 0.5
 		var l := Vector2(c1.x - c0.x, c1.z - c0.z).length()
 		while s + l >= prochain and l > 0.01:
 			var t := (prochain - s) / l
 			var cote := 0.3 if r.randf() < 0.5 else 0.7
-			var g := pos[i].lerp(pos[i + 5], t)
-			var d := pos[i + 1].lerp(pos[i + 2], t)
-			var p := xf * g.lerp(d, cote)
+			var bande := mini(bandes - 1, int(cote * bandes))
+			var travers := cote * bandes - bande
+			var j := i + bande * 6
+			var g := pos[j].lerp(pos[j + 5], t)
+			var d := pos[j + 1].lerp(pos[j + 2], t)
+			var p := xf * g.lerp(d, travers)
 			var q := Vector2(p.x, p.z)
 			if not Rect2(-28, -1, 25, 97).has_point(q):   # l'impasse de la Paix a son propre sol
 				var mi := MeshInstance3D.new()
