@@ -23,6 +23,8 @@ Son="*res://scripts/son.gd"
 Mission="*res://scripts/mission.gd"
 Musique="*res://bande son/musique.gd"
 
+FinitionHD="*res://scripts/finition_hd.gd"
+
 [display]
 
 window/size/viewport_width=1600

@@ -11,6 +11,7 @@ render_mode cull_disabled;
 // lueur bleue d'une télé — et les cages d'escalier restent éclairées.
 global uniform float nuit;
 
+uniform sampler2D enduit_hd : hint_default_white, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform vec3 mur : source_color = vec3(0.86, 0.84, 0.79);
 uniform vec3 garde_corps : source_color = vec3(0.78, 0.76, 0.72);
 uniform vec3 vitre : source_color = vec3(0.13, 0.17, 0.22);
@@ -93,6 +94,12 @@ void fragment() {
 	vec3 col = mc;
 	bool encrer = bd_actif > 0.5 && length(VERTEX) < encre_portee;
 	float rough = 0.92;
+	if (abs(ln.y) < 0.5) {
+		// UV métriques : une tuile de deux mètres, filtrée dans les vues rasantes.
+		float grain = texture(enduit_hd, UV * 0.5).g;
+		mc *= 1.0 + (grain - 0.835) * 0.62;
+		col = mc;
+	}
 	if (abs(ln.y) > 0.5) {
 		col = toit;
 	} else {

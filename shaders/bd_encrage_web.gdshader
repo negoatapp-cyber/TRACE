@@ -13,7 +13,7 @@ uniform vec4 encre : source_color = vec4(0.16, 0.08, 0.22, 1.0);
 // mêlée à une encre violette. 0 = encre pure, 1 = couleur de la surface assombrie.
 uniform float trait_colore = 0.65;
 uniform float assombri = 0.38;
-uniform float opacite = 0.9;
+uniform float opacite = 0.72;
 uniform float epaisseur = 1.3;      // en pixels (rapportés à 900 px de haut)
 uniform float seuil_prof = 0.06;    // sensibilité aux ruptures de profondeur
 uniform float seuil_angle = 0.40;   // 0,4 ≈ arêtes de plus de 50°
@@ -25,7 +25,7 @@ void vertex() {
 }
 
 float distance_vue(float brut, vec2 uv, mat4 inv_proj) {
-	vec4 v = inv_proj * vec4(uv * 2.0 - 1.0, brut, 1.0);
+	vec4 v = inv_proj * vec4(uv * 2.0 - 1.0, brut * 2.0 - 1.0, 1.0);
 	return -v.z / v.w;
 }
 
@@ -47,7 +47,7 @@ void fragment() {
 	bool perso = false;
 	if (ref > 0.0) {
 		float lap = max(abs(g + d - 2.0 * c), abs(h + b - 2.0 * c));
-		bord = step(perso ? seuil_prof * 6.0 : seuil_prof, lap / ref);
+		bord = smoothstep(seuil_prof * 0.72, seuil_prof * 1.45, lap / ref);
 		float z = distance_vue(ref, SCREEN_UV, INV_PROJECTION_MATRIX);
 		bord *= smoothstep(pres, pres + 0.3, z) * (1.0 - smoothstep(loin * 0.55, loin, z));
 	}

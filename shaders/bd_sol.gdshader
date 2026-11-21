@@ -40,21 +40,21 @@ void fragment() {
 	if (zone > 0.60) c = beton.rgb * 0.94;   // plus de terre battue au bord des routes : béton usé
 	if (avec_paix) {
 		float m = 0.6 * bd_bruit(p * 0.02) + 0.4 * bd_bruit(p * 0.07 + vec3(13.0, 0.0, 5.0));
-		vec3 t = texture(paix, monde.xz / metres_paix).rgb;
+		vec3 t = mix(texture(paix, monde.xz / metres_paix).rgb, vec3(0.28,0.275,0.27), 0.60);
 		// délavé et poussiéreux : gris clair chaud, plus sombre par plaques
 		float use = bd_bruit(p * 0.09) * 0.6 + bd_bruit(p * 0.4) * 0.4;
 		t = mix(t * 1.9 + vec3(0.13, 0.12, 0.10), t * 1.3 + vec3(0.06, 0.055, 0.05), smoothstep(0.45, 0.7, use));
 		float f = max(texture(fissures, monde.xz / 16.0).r, texture(fissures, monde.xz / 9.0 + vec2(0.3, 0.7)).r);
-		t = mix(t, vec3(0.10, 0.10, 0.09), f * 0.8);
+		t = mix(t, vec3(0.10, 0.10, 0.09), f * 0.32);
 		// herbes dans les fissures et le long des bordures
 		t = mix(t, herbe.rgb * 0.55, f * step(0.72, bd_bruit(p * 0.6)) * 0.7);
-		c = mix(t, c, smoothstep(seuil_paix - 0.01, seuil_paix + 0.01, m));
+		c = mix(t, c, smoothstep(seuil_paix - 0.10, seuil_paix + 0.10, m));
 	}
 	// talus
 	float talus = smoothstep(0.035, 0.07, pente + (zone - 0.5) * 0.04);
 	vec3 t = herbe_seche.rgb;
 	if (vert > 0.72) t = mix(herbe_seche.rgb, herbe.rgb, 0.6);
-	c = mix(c, t, step(0.5, talus));
+	c = mix(c, t, talus);
 	// Touffes d'herbe et cailloux, en petites taches.
 	float touffe = bd_bruit(p * 1.6);
 	if (talus > 0.5 && touffe > 0.74) c = mix(herbe_seche.rgb, herbe.rgb, step(0.6, vert)) * 0.86;

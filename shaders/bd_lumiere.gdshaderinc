@@ -29,7 +29,12 @@ void light() {
 		// Hachures diagonales, seulement dans l'ombre franche.
 		float hachure = step(0.62, fract((FRAGCOORD.x + FRAGCOORD.y) / 7.0));
 		ombre *= 1.0 - bd_trame * hachure * (1.0 - smoothstep(0.0, 0.06, e));
-		DIFFUSE_LIGHT += mix(ombre, LIGHT_COLOR / PI, t);
+		// Une lampe locale ne doit pas additionner un aplat violet hors de son faisceau.
+		if (LIGHT_IS_DIRECTIONAL) {
+			DIFFUSE_LIGHT += mix(ombre, LIGHT_COLOR / PI, t);
+		} else {
+			DIFFUSE_LIGHT += LIGHT_COLOR / PI * ATTENUATION * smoothstep(0.02, 0.38, nl);
+		}
 	}
 	if (bd_brillance > 0.0) {
 		vec3 hv = normalize(LIGHT + VIEW);

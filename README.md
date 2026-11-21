@@ -2,6 +2,8 @@
 
 Jeu en monde ouvert sur la construction de l'identité. Moteur : **Godot 4.7** (GDScript, physique Jolt).
 
+[Marseille 2013 en HD — accès, captures et tests](docs/FINITION_HD.md)
+
 ## Phase 1 : « Le geste »
 
 On veut un îlot en blocs gris où l'on marche, où l'on monte sur la planche et où l'on enchaîne quelques figures. On ne travaille pas encore l'art : on juge seulement si le skate est **agréable**.

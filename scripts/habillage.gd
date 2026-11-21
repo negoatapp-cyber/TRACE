@@ -94,7 +94,7 @@ func _ready() -> void:
 	_facades(batiments)
 	_rue_de_marathon(batiments)
 	var ly := Node3D.new()
-	ly.set_script(load("res://scripts/habillage_lycee.gd"))
+	ly.set_script(load("res://scripts/habillage_lycee_hd.gd"))
 	ly.name = "LyceeInterieur"
 	ly.set("habillage", self)
 	add_child(ly)

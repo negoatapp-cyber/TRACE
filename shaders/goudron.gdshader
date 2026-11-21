@@ -39,7 +39,11 @@ void fragment() {
 	// coordonnées en mètres : le long / en travers de la voie, ou au sol
 	vec2 m = mode == 0 ? vec2(UV.x * largeur_voie, UV.y) : monde.xz;
 	vec2 uv = m / metres_image;
-	vec3 c = texture(couleur, uv).rgb * teinte;
+	vec3 echantillon = texture(couleur, uv).rgb;
+	// Trottoir sec, plus clair que la chaussée. Le granulat conserve son échelle réelle.
+	vec3 c = mode == 1 ? vec3(0.46, 0.445, 0.425) + (echantillon - vec3(0.26)) * 0.24 :
+		mix(echantillon, vec3(0.22, 0.225, 0.235), 0.48) * teinte;
+	float proche = 1.0 - smoothstep(12.0, 60.0, length(VERTEX));
 	float b = texture(brillant, uv).r;
 
 	vec2 w = monde.xz;
@@ -69,12 +73,12 @@ void fragment() {
 	vec2 marge2 = vec2(0.1 + 0.2 * hash(cel + 2.7), 0.1 + 0.3 * hash(cel + 5.9));
 	float dedans = step(marge.x, loc.x) * step(loc.x, 1.0 - marge2.x) * step(marge.y, loc.y) * step(loc.y, 1.0 - marge2.y);
 	float plaque = step(0.72, tire) * dedans;
-	float lw = mode == 0 ? 0.025 : 0.02;
+	float lw = mode == 0 ? 0.006 : 0.003;
 	float joint = step(0.72, tire) * (1.0 - step(marge.x + lw, loc.x) * step(loc.x, 1.0 - marge2.x - lw) * step(marge.y + lw * 0.3, loc.y) * step(loc.y, 1.0 - marge2.y - lw * 0.3)) * dedans;
 	float neuf = hash(cel + 9.1);
-	c = mix(c, c * mix(0.55, 0.8, neuf), plaque);
+	c = mix(c, c * mix(0.77, 0.91, neuf), plaque);
 	b = mix(b, 0.3, plaque * 0.5);
-	c = mix(c, vec3(0.03), joint * 0.85);
+	c = mix(c, vec3(0.03), joint * 0.48);
 	b = max(b, joint * 0.9);
 	// grandes nuances : bitume délavé, auréoles sèches
 	float nuance = bruit(w * 0.07) * 0.6 + bruit(w * 0.3) * 0.4;
@@ -84,7 +88,7 @@ void fragment() {
 	// fissures : ouvertes sur le vieil enrobé, pontées au bitume (larges traits noirs brillants) par endroits
 	float f = texture(fissures, w / metres_fissures).r * (1.0 - plaque);
 	float f2 = texture(fissures, w / (metres_fissures * 0.55) + vec2(0.37, 0.61)).r * (1.0 - plaque);
-	c = mix(c, vec3(0.03, 0.03, 0.035), max(f, f2 * 0.8) * 0.9);
+	c = mix(c, vec3(0.03, 0.03, 0.035), max(f, f2 * 0.40) * (mode == 0 ? 0.58 : 0.28));
 	b *= 1.0 - f;
 	float ponte = textureLod(fissures, w / metres_fissures + vec2(0.5, 0.13), 3.0).r;
 	ponte = smoothstep(0.08, 0.2, ponte) * step(0.5, bruit(w * 0.05)) * (1.0 - plaque);
@@ -92,7 +96,7 @@ void fragment() {
 	b = max(b, ponte * 0.3);
 	// chewing-gums et petites taches claires
 	float gum = step(0.985, hash(floor(w * 6.0))) * step(0.4, bruit(w * 0.4));
-	c = mix(c, vec3(0.42, 0.41, 0.40), gum * 0.8);
+	c = mix(c, vec3(0.42, 0.41, 0.40), gum * proche * 0.27);
 
 	ALBEDO = c;
 	// relief des granulats : on penche la normale du sol (presque plat) sans passer par les tangentes,
@@ -100,10 +104,10 @@ void fragment() {
 	vec2 nt = texture(relief, uv).rg * 2.0 - 1.0;
 	vec3 nm = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	if (nm.y < 0.0) nm = -nm;   // trottoirs tracés à l'envers : le sol regarde toujours le ciel
-	vec3 wn = normalize(nm + vec3(nt.x, 0.0, -nt.y) * 0.8);
+	vec3 wn = normalize(nm + vec3(nt.x, 0.0, -nt.y) * mix(0.035, 0.24, proche));
 	NORMAL = normalize((VIEW_MATRIX * vec4(wn, 0.0)).xyz);
-	ROUGHNESS = clamp(1.0 - b * 0.75, 0.2, 1.0);
-	SPECULAR = 0.5;
+	ROUGHNESS = clamp(1.0 - b * 0.75, 0.58, 1.0);
+	SPECULAR = 0.28;
 }
 
 void light() {
@@ -124,7 +128,12 @@ void light() {
 		vec3 ombre = bd_ombre.rgb;
 		float hachure = step(0.62, fract((FRAGCOORD.x + FRAGCOORD.y) / 7.0));
 		ombre *= 1.0 - bd_trame * hachure * (1.0 - smoothstep(0.0, 0.06, e));
-		DIFFUSE_LIGHT += mix(ombre, LIGHT_COLOR / PI, t);
+		// Une lampe locale ne doit pas additionner un aplat violet hors de son faisceau.
+		if (LIGHT_IS_DIRECTIONAL) {
+			DIFFUSE_LIGHT += mix(ombre, LIGHT_COLOR / PI, t);
+		} else {
+			DIFFUSE_LIGHT += LIGHT_COLOR / PI * ATTENUATION * smoothstep(0.02, 0.38, nl);
+		}
 		SPECULAR_LIGHT += LIGHT_COLOR * (smoothstep(0.18, 0.26, spec) * 0.18 + spec * 0.2);
 	}
 }
