@@ -498,9 +498,10 @@ func _rangs_voie(fin: PackedVector2Array, demi: float, leve: float, bandes: int)
 func _voie_percee(a: Array, b: Array, bandes: int) -> bool:
 	for j in bandes:
 		for tri in [[a[j], a[j + 1], b[j + 1]], [a[j], b[j + 1], b[j]]]:
-			var p: Vector3 = (tri[0] + tri[1] + tri[2]) / 3.0
-			if h(p.x, p.z) - p.y > 0.015:
-				return true
+			for p: Vector3 in [(tri[0] + tri[1] + tri[2]) / 3.0,
+					(tri[0] + tri[1]) * 0.5, (tri[1] + tri[2]) * 0.5, (tri[2] + tri[0]) * 0.5]:
+				if h(p.x, p.z) - p.y > 0.015:
+					return true
 	return false
 
 
