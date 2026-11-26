@@ -87,3 +87,9 @@ Godot_v4.7.2-stable_win64.exe --path "C:\Users\Chishan\Downloads\TRACE" -s res:/
 Résultat : `export_unreal\quartier_2013.glb` (dossier ignoré par Godot via `.gdignore` et par Git). Les matières à shader maison (style BD) sortent en gris : c'est voulu, elles seront refaites dans Unreal. Le script ne modifie aucun fichier du projet.
 
 À l'import dans Unreal : Godot exporte en mètres, Y vers le haut ; Unreal convertit automatiquement (échelle 100, Z vers le haut) avec l'importeur glTF / Interchange par défaut.
+
+## Machine de Louma (relevé du 26.11)
+
+- GPU dédié : **NVIDIA RTX 3500 Ada Laptop** (Ada Lovelace, 12 Go de mémoire vidéo ; Windows en affiche ~4 Go, c'est une limite de son compteur). Pilote 596.71 (32.0.15.9671).
+- GPU intégré Intel UHD : à ne **jamais** laisser à Unreal (Paramètres Windows → Système → Écran → Graphiques → `UnrealEditor.exe` → Hautes performances). PC branché sur secteur pendant le travail.
+- Réglages retenus : Lumen avec ray tracing matériel, Nanite pour Megascans/Megaplants, ombres virtuelles, DLSS (Super Resolution + Frame Generation, disponibles sur Ada). Cible : 60 i/s en 1440p avec DLSS Qualité, sinon 1080p.
