@@ -30,6 +30,7 @@ func _lancer() -> void:
 	print("[export] scène : ", chemin)
 	var scene: Node = (load(chemin) as PackedScene).instantiate()
 	root.add_child(scene)
+	current_scene = scene # attendu par lumieres.gd, style_bd.gd, temps.gd
 
 	# Attendre que la construction du quartier soit terminée (nombre de nœuds stable).
 	var precedent := -1
