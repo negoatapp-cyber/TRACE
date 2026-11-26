@@ -32,6 +32,7 @@
 !.tools/verify_conduite.gd
 !.tools/verify_scooter_v2.gd
 !.tools/capture_scooter.gd
+!.tools/export_unreal.gd
 
 # Fichiers locaux à ne jamais publier (dépôt public)
 *.mp4
@@ -79,3 +80,6 @@ bande son/*
 !bande son/musique.gd
 !bande son/musique.gd.uid
 mnt/
+
+# Export Godot → Unreal (.tools/export_unreal.gd) : fichier lourd, régénérable
+export_unreal/
