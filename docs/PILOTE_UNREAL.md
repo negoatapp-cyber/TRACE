@@ -76,7 +76,9 @@ Skate complet, scooter, escalade par bonds d'arête, progression Skate/Graff/Gri
 
 Le quartier est construit au lancement (`quartier_reel.gd`, `habillage*.gd`…) : un export depuis l'éditeur Godot serait vide. Le script `.tools/export_unreal.gd` lance `scenes/marseille_2013.tscn`, attend que le nombre de nœuds soit stable, fige la scène, retire Loums, habitants, caméras, interface, particules et éléments cachés (variantes « après », etc.), puis écrit un `.glb`.
 
-Commande (fenêtre visible, **pas** `--headless`, sinon les maillages sortent vides) :
+Le plus simple : **double-clique sur `Exporter-Unreal.cmd`** à la racine du dossier TRACE (à côté de `Jouer-TRACE.cmd`). Une fenêtre Godot s'ouvre, laisse-la faire ; la fenêtre noire dit à la fin si le fichier est créé.
+
+Équivalent en ligne de commande (fenêtre visible, **pas** `--headless`, sinon les maillages sortent vides) :
 
 ```bat
 Godot_v4.7.2-stable_win64.exe --path "C:\Users\Chishan\Downloads\TRACE" -s res://.tools/export_unreal.gd
